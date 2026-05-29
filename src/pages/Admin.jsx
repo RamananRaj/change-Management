@@ -10,23 +10,16 @@ const PHASES = [
   { num: 5, label: '05 Evaluate' },
 ]
 
-const INDUSTRIES = [
-  { value: 'financial-services',  label: '🏦 Financial Services' },
-  { value: 'healthcare',          label: '🏥 Healthcare' },
-  { value: 'utilities-energy',    label: '⚡ Utilities & Energy' },
-  { value: 'telecommunications',  label: '📡 Telecommunications' },
-  { value: 'manufacturing',       label: '🏭 Manufacturing' },
-  { value: 'public-sector',       label: '🏛 Public Sector' },
-  { value: 'retail-consumer',     label: '🛒 Retail & Consumer' },
-]
-
 const CONTENT_TYPES = [
   { value: 'exercise', label: 'Exercise' },
   { value: 'tool',     label: 'Tool' },
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Content Manager', 'Phase Manager', 'Role Manager']
+const SECTIONS = ['Content Manager', 'Phase Manager', 'Role Manager', 'Industry Manager']
+
+const ROLE_ICON_OPTIONS     = ['🔷', '🔶', '🟩', '🟧', '🟪', '🔵', '🟡', '🔴', '⭐', '🏅']
+const INDUSTRY_ICON_OPTIONS = ['🏦', '🏥', '⚡', '📡', '🏭', '🏛', '🛒', '🌐', '🔬', '🏢', '💼', '🚀']
 
 const emptyContentForm = {
   phase_number: 1,
@@ -49,7 +42,14 @@ const emptyRoleForm = {
   is_active: true,
 }
 
-const ICON_OPTIONS = ['🔷', '🔶', '🟩', '🟧', '🟪', '🔵', '🟡', '🔴', '⭐', '🏅']
+const emptyIndustryForm = {
+  code: '',
+  label: '',
+  icon: '🏢',
+  detail: '',
+  sort_order: 0,
+  is_active: true,
+}
 
 export default function Admin() {
   const { profile } = useAuth()
@@ -69,7 +69,7 @@ export default function Admin() {
 
   // ── Phase Manager state ──
   const [allProjects,   setAllProjects]   = useState([])
-  const [selectedUser,  setSelectedUser]  = useState('')   // project id
+  const [selectedUser,  setSelectedUser]  = useState('')
   const [phaseLoading,  setPhaseLoading]  = useState(false)
   const [unlocking,     setUnlocking]     = useState(null)
 
@@ -82,6 +82,15 @@ export default function Admin() {
   const [roleSaving,    setRoleSaving]    = useState(false)
   const [roleFormError, setRoleFormError] = useState(null)
 
+  // ── Industry Manager state ──
+  const [industries,         setIndustries]         = useState([])
+  const [industriesLoading,  setIndustriesLoading]  = useState(false)
+  const [showIndustryForm,   setShowIndustryForm]   = useState(false)
+  const [industryForm,       setIndustryForm]       = useState(emptyIndustryForm)
+  const [industryEditId,     setIndustryEditId]     = useState(null)
+  const [industrySaving,     setIndustrySaving]     = useState(false)
+  const [industryFormError,  setIndustryFormError]  = useState(null)
+
   if (!profile?.is_admin) {
     return (
       <div className="p-8 text-center text-slate-500">
@@ -90,11 +99,19 @@ export default function Admin() {
     )
   }
 
+  // Always fetch roles + industries on mount (needed for Content Manager dropdowns)
+  // eslint-disable-next-line react-hooks/rules-of-hooks
+  useEffect(() => {
+    fetchRoles()
+    fetchIndustries()
+  }, [])
+
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (section === 'Content Manager') fetchItems()
     if (section === 'Phase Manager')   fetchProjects()
     if (section === 'Role Manager')    fetchRoles()
+    if (section === 'Industry Manager') fetchIndustries()
   }, [section, filterPhase, filterIndustry, filterRole])
 
   // ── Content Manager ──
@@ -230,7 +247,6 @@ export default function Admin() {
   async function handleRoleSave() {
     if (!roleForm.label.trim()) { setRoleFormError('Label is required'); return }
     if (!roleForm.code.trim())  { setRoleFormError('Code is required'); return }
-    // Code must be lowercase letters only
     if (!/^[a-z0-9_]+$/.test(roleForm.code)) { setRoleFormError('Code must be lowercase letters, numbers or underscores only'); return }
 
     setRoleSaving(true)
@@ -257,9 +273,66 @@ export default function Admin() {
     fetchRoles()
   }
 
+  // ── Industry Manager ──
+  async function fetchIndustries() {
+    setIndustriesLoading(true)
+    const { data } = await supabase.from('industries').select('*').order('sort_order', { ascending: true })
+    setIndustries(data ?? [])
+    setIndustriesLoading(false)
+  }
+
+  function openNewIndustry() {
+    setIndustryForm({ ...emptyIndustryForm, sort_order: (industries.length + 1) * 10 })
+    setIndustryEditId(null)
+    setIndustryFormError(null)
+    setShowIndustryForm(true)
+  }
+
+  function openEditIndustry(ind) {
+    setIndustryForm({
+      code:       ind.code,
+      label:      ind.label,
+      icon:       ind.icon ?? '🏢',
+      detail:     ind.detail ?? '',
+      sort_order: ind.sort_order ?? 0,
+      is_active:  ind.is_active,
+    })
+    setIndustryEditId(ind.id)
+    setIndustryFormError(null)
+    setShowIndustryForm(true)
+  }
+
+  async function handleIndustrySave() {
+    if (!industryForm.label.trim()) { setIndustryFormError('Label is required'); return }
+    if (!industryForm.code.trim())  { setIndustryFormError('Code is required'); return }
+    if (!/^[a-z0-9_-]+$/.test(industryForm.code)) { setIndustryFormError('Code must be lowercase letters, numbers, hyphens or underscores only'); return }
+
+    setIndustrySaving(true)
+    let error
+    if (industryEditId) {
+      ;({ error } = await supabase.from('industries').update(industryForm).eq('id', industryEditId))
+    } else {
+      ;({ error } = await supabase.from('industries').insert(industryForm))
+    }
+    setIndustrySaving(false)
+    if (error) { setIndustryFormError(error.message); return }
+    setShowIndustryForm(false)
+    fetchIndustries()
+  }
+
+  async function handleIndustryDelete(id) {
+    if (!window.confirm('Delete this industry? Users who selected it will keep it, but it will no longer appear in onboarding.')) return
+    await supabase.from('industries').delete().eq('id', id)
+    fetchIndustries()
+  }
+
+  async function toggleIndustryActive(ind) {
+    await supabase.from('industries').update({ is_active: !ind.is_active }).eq('id', ind.id)
+    fetchIndustries()
+  }
+
   // ── Shared UI helpers ──
   const typeColor = { exercise: 'bg-blue-100 text-blue-700', tool: 'bg-green-100 text-green-700', template: 'bg-purple-100 text-purple-700' }
-
   const selectedProject = allProjects.find(p => p.id === selectedUser)
 
   return (
@@ -271,10 +344,10 @@ export default function Admin() {
       </div>
 
       {/* Section tabs */}
-      <div className="flex gap-2 mb-8 border-b border-slate-200">
+      <div className="flex gap-2 mb-8 border-b border-slate-200 overflow-x-auto">
         {SECTIONS.map(s => (
           <button key={s} onClick={() => setSection(s)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
               section === s ? 'border-[#1F4E79] text-[#1F4E79]' : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}>
             {s}
@@ -298,7 +371,7 @@ export default function Admin() {
               <select value={filterIndustry} onChange={e => setFilterIndustry(e.target.value)}
                 className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1F4E79]">
                 <option value="">All industries</option>
-                {INDUSTRIES.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+                {industries.map(i => <option key={i.code} value={i.code}>{i.icon} {i.label}</option>)}
               </select>
             </div>
             <div>
@@ -332,7 +405,11 @@ export default function Admin() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeColor[item.content_type]}`}>{item.content_type}</span>
                       {!item.is_common && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Add-on</span>}
-                      {item.industry && <span className="text-[10px] text-slate-400">{item.industry}</span>}
+                      {item.industry && (
+                        <span className="text-[10px] text-slate-400">
+                          {industries.find(i => i.code === item.industry)?.icon ?? ''} {item.industry}
+                        </span>
+                      )}
                       {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
                     </div>
                     <p className="font-medium text-slate-800 text-sm">{item.title}</p>
@@ -367,7 +444,7 @@ export default function Admin() {
                 <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-2">Select User</label>
                 <div className="flex flex-wrap gap-2">
                   {allProjects.map(proj => {
-                    const name = proj.profiles?.full_name ?? 'Unknown'
+                    const name     = proj.profiles?.full_name ?? 'Unknown'
                     const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
                     const isSelected = selectedUser === proj.id
                     return (
@@ -395,14 +472,15 @@ export default function Admin() {
               {/* Selected user phases */}
               {selectedProject && (
                 <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                  {/* User detail header */}
                   <div className="px-5 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
                     <div>
                       <p className="font-semibold text-slate-800">{selectedProject.profiles?.full_name ?? 'Unknown'}</p>
                       <p className="text-xs text-slate-400 mt-0.5">
                         {roles.find(r => r.code === selectedProject.profiles?.role)?.label ?? selectedProject.profiles?.role ?? '—'}
                         {' · '}
-                        {INDUSTRIES.find(i => i.value === selectedProject.profiles?.industry)?.label ?? selectedProject.profiles?.industry ?? '—'}
+                        {industries.find(i => i.code === selectedProject.profiles?.industry)
+                          ? `${industries.find(i => i.code === selectedProject.profiles?.industry).icon} ${industries.find(i => i.code === selectedProject.profiles?.industry).label}`
+                          : selectedProject.profiles?.industry ?? '—'}
                       </p>
                     </div>
                     <div className="flex gap-1">
@@ -418,7 +496,6 @@ export default function Admin() {
                     </div>
                   </div>
 
-                  {/* Phase rows */}
                   <div className="divide-y divide-slate-50">
                     {selectedProject.phases.map(phase => {
                       const cfg    = PHASES.find(p => p.num === phase.phase_number)
@@ -486,10 +563,7 @@ export default function Admin() {
             <div className="space-y-2">
               {roles.map(role => (
                 <div key={role.id} className={`flex items-center gap-4 bg-white border rounded-2xl px-5 py-4 transition-opacity ${!role.is_active ? 'opacity-50' : ''}`}>
-                  {/* Icon */}
                   <span className="text-2xl shrink-0">{role.icon}</span>
-
-                  {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <p className="font-semibold text-slate-800 text-sm">{role.label}</p>
@@ -500,8 +574,6 @@ export default function Admin() {
                     </div>
                     {role.description && <p className="text-xs text-slate-500 truncate">{role.description}</p>}
                   </div>
-
-                  {/* Controls */}
                   <div className="flex items-center gap-3 shrink-0">
                     <button onClick={() => toggleRoleActive(role)}
                       className={`text-xs font-semibold px-3 py-1 rounded-lg border transition-colors ${
@@ -513,6 +585,60 @@ export default function Admin() {
                     </button>
                     <button onClick={() => openEditRole(role)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
                     <button onClick={() => handleRoleDelete(role.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── INDUSTRY MANAGER ── */}
+      {section === 'Industry Manager' && (
+        <div>
+          <div className="flex items-center justify-between mb-5">
+            <p className="text-sm text-slate-500">
+              Industries appear in onboarding and filter which content users see. Adding a new industry here makes it available immediately.
+            </p>
+            <button onClick={openNewIndustry}
+              className="shrink-0 ml-4 bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#d07e2e] transition-colors">
+              + Add Industry
+            </button>
+          </div>
+
+          {industriesLoading ? (
+            <p className="text-sm text-slate-400">Loading industries…</p>
+          ) : industries.length === 0 ? (
+            <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-200">
+              <p className="text-slate-400 text-sm mb-3">No industries yet.</p>
+              <button onClick={openNewIndustry} className="text-[#1F4E79] text-sm font-semibold hover:underline">+ Add the first industry</button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {industries.map(ind => (
+                <div key={ind.id} className={`flex items-center gap-4 bg-white border rounded-2xl px-5 py-4 transition-opacity ${!ind.is_active ? 'opacity-50' : ''}`}>
+                  <span className="text-2xl shrink-0">{ind.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="font-semibold text-slate-800 text-sm">{ind.label}</p>
+                      <code className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">{ind.code}</code>
+                      {!ind.is_active && (
+                        <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>
+                      )}
+                    </div>
+                    {ind.detail && <p className="text-xs text-slate-500 truncate">{ind.detail}</p>}
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button onClick={() => toggleIndustryActive(ind)}
+                      className={`text-xs font-semibold px-3 py-1 rounded-lg border transition-colors ${
+                        ind.is_active
+                          ? 'text-slate-400 border-slate-200 hover:border-slate-300'
+                          : 'text-green-600 border-green-200 hover:bg-green-50'
+                      }`}>
+                      {ind.is_active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button onClick={() => openEditIndustry(ind)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                    <button onClick={() => handleIndustryDelete(ind.id)} className="text-xs text-red-400 hover:underline">Delete</button>
                   </div>
                 </div>
               ))}
@@ -552,7 +678,7 @@ export default function Admin() {
                   <select value={form.industry} onChange={e => setForm({...form, industry: e.target.value})}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]">
                     <option value="">All industries</option>
-                    {INDUSTRIES.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+                    {industries.map(i => <option key={i.code} value={i.code}>{i.icon} {i.label}</option>)}
                   </select>
                 </div>
                 <div>
@@ -610,12 +736,10 @@ export default function Admin() {
               <button onClick={() => setShowRoleForm(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
             </div>
             <div className="px-6 py-5 space-y-4">
-
-              {/* Icon picker */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-2">Icon</label>
                 <div className="flex gap-2 flex-wrap">
-                  {ICON_OPTIONS.map(icon => (
+                  {ROLE_ICON_OPTIONS.map(icon => (
                     <button key={icon} onClick={() => setRoleForm({...roleForm, icon})}
                       className={`w-9 h-9 text-xl rounded-lg border-2 transition-all ${
                         roleForm.icon === icon ? 'border-[#1F4E79] bg-[#1F4E79]/5' : 'border-slate-200 hover:border-slate-300'
@@ -625,8 +749,6 @@ export default function Admin() {
                   ))}
                 </div>
               </div>
-
-              {/* Label + Code */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Label * <span className="font-normal text-slate-400">(display name)</span></label>
@@ -639,29 +761,22 @@ export default function Admin() {
                   <input value={roleForm.code} onChange={e => setRoleForm({...roleForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')})}
                     placeholder="e.g. exec_sponsor"
                     disabled={!!roleEditId}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] disabled:bg-slate-50 disabled:text-slate-400"
-                  />
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] disabled:bg-slate-50 disabled:text-slate-400" />
                   {roleEditId && <p className="text-[10px] text-slate-400 mt-1">Code cannot be changed after creation</p>}
                 </div>
               </div>
-
-              {/* Short description */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Short Description <span className="font-normal text-slate-400">(shown on card)</span></label>
                 <input value={roleForm.description} onChange={e => setRoleForm({...roleForm, description: e.target.value})}
                   placeholder="e.g. Vision, sponsorship & decision authority"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
               </div>
-
-              {/* Detail */}
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Detail <span className="font-normal text-slate-400">(longer explanation on card)</span></label>
                 <textarea value={roleForm.detail} onChange={e => setRoleForm({...roleForm, detail: e.target.value})}
                   placeholder="Describe what this role does in a change programme..."
                   rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
               </div>
-
-              {/* Sort order + Active */}
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={roleForm.is_active} onChange={e => setRoleForm({...roleForm, is_active: e.target.checked})}
@@ -674,7 +789,6 @@ export default function Admin() {
                     className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79]" />
                 </div>
               </div>
-
               {roleFormError && <p className="text-sm text-red-500">{roleFormError}</p>}
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
@@ -682,6 +796,75 @@ export default function Admin() {
               <button onClick={handleRoleSave} disabled={roleSaving}
                 className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
                 {roleSaving ? 'Saving…' : roleEditId ? 'Save Changes' : 'Add Role'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INDUSTRY FORM MODAL ── */}
+      {showIndustryForm && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800">{industryEditId ? 'Edit Industry' : 'Add New Industry'}</h2>
+              <button onClick={() => setShowIndustryForm(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-2">Icon</label>
+                <div className="flex gap-2 flex-wrap">
+                  {INDUSTRY_ICON_OPTIONS.map(icon => (
+                    <button key={icon} onClick={() => setIndustryForm({...industryForm, icon})}
+                      className={`w-9 h-9 text-xl rounded-lg border-2 transition-all ${
+                        industryForm.icon === icon ? 'border-[#1F4E79] bg-[#1F4E79]/5' : 'border-slate-200 hover:border-slate-300'
+                      }`}>
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Label * <span className="font-normal text-slate-400">(display name)</span></label>
+                  <input value={industryForm.label} onChange={e => setIndustryForm({...industryForm, label: e.target.value})}
+                    placeholder="e.g. Mining & Resources"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Code * <span className="font-normal text-slate-400">(unique, lowercase)</span></label>
+                  <input value={industryForm.code} onChange={e => setIndustryForm({...industryForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '')})}
+                    placeholder="e.g. mining-resources"
+                    disabled={!!industryEditId}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] disabled:bg-slate-50 disabled:text-slate-400" />
+                  {industryEditId && <p className="text-[10px] text-slate-400 mt-1">Code cannot be changed after creation</p>}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Framework / Detail <span className="font-normal text-slate-400">(shown on onboarding card)</span></label>
+                <input value={industryForm.detail} onChange={e => setIndustryForm({...industryForm, detail: e.target.value})}
+                  placeholder="e.g. ADKAR + ISO 31000 + Regulatory"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={industryForm.is_active} onChange={e => setIndustryForm({...industryForm, is_active: e.target.checked})}
+                    className="w-4 h-4 accent-[#1F4E79]" />
+                  <span className="text-sm text-slate-700">Active <span className="text-slate-400 text-xs">(visible in onboarding)</span></span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-500">Order</label>
+                  <input type="number" value={industryForm.sort_order} onChange={e => setIndustryForm({...industryForm, sort_order: Number(e.target.value)})}
+                    className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+              </div>
+              {industryFormError && <p className="text-sm text-red-500">{industryFormError}</p>}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+              <button onClick={() => setShowIndustryForm(false)} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Cancel</button>
+              <button onClick={handleIndustrySave} disabled={industrySaving}
+                className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+                {industrySaving ? 'Saving…' : industryEditId ? 'Save Changes' : 'Add Industry'}
               </button>
             </div>
           </div>

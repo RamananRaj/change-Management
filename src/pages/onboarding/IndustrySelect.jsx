@@ -1,21 +1,27 @@
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useOnboarding } from '../../context/OnboardingContext'
-
-const industries = [
-  { id: 'financial-services', icon: '🏦', label: 'Financial Services',  fw: 'ADKAR + Regulatory' },
-  { id: 'healthcare',         icon: '🏥', label: 'Healthcare',           fw: 'ADKAR + Clinical Gov.' },
-  { id: 'utilities-energy',   icon: '⚡', label: 'Utilities & Energy',   fw: 'Kotter + Safety + ADKAR' },
-  { id: 'telecommunications', icon: '📡', label: 'Telecommunications',   fw: 'Agile Change + ADKAR' },
-  { id: 'manufacturing',      icon: '🏭', label: 'Manufacturing',         fw: 'Lewin + ADKAR + Lean' },
-  { id: 'public-sector',      icon: '🏛', label: 'Public Sector',         fw: 'ADKAR + MSP/PRINCE2' },
-  { id: 'retail-consumer',    icon: '🛒', label: 'Retail & Consumer',     fw: 'Agile + ADKAR' },
-]
+import { supabase } from '../../lib/supabase'
 
 export default function IndustrySelect() {
   const { setIndustry } = useOnboarding()
   const navigate        = useNavigate()
-  const [selected, setSelected] = useState(null)
+  const [selected,    setSelected]    = useState(null)
+  const [industries,  setIndustries]  = useState([])
+  const [loading,     setLoading]     = useState(true)
+
+  useEffect(() => {
+    async function fetchIndustries() {
+      const { data } = await supabase
+        .from('industries')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+      setIndustries(data ?? [])
+      setLoading(false)
+    }
+    fetchIndustries()
+  }, [])
 
   function handleContinue() {
     if (!selected) return
@@ -48,25 +54,37 @@ export default function IndustrySelect() {
         This configures your entire platform — frameworks, terminology, tools, and certifications.
       </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8">
-        {industries.map(ind => (
-          <button
-            key={ind.id}
-            onClick={() => setSelected(ind.id)}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
-              selected === ind.id
-                ? 'border-[#1F4E79] bg-slate-50'
-                : 'border-slate-200 hover:border-slate-300'
-            }`}
-          >
-            <span className="text-2xl shrink-0">{ind.icon}</span>
-            <div>
-              <p className="font-semibold text-slate-800 text-sm">{ind.label}</p>
-              <p className="text-xs text-slate-400">{ind.fw}</p>
-            </div>
-          </button>
-        ))}
-      </div>
+      {loading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg mb-8">
+          {[1, 2, 3, 4, 5, 6].map(n => (
+            <div key={n} className="h-16 bg-slate-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className={`grid gap-3 w-full max-w-lg mb-8 ${
+          industries.length <= 2 ? 'grid-cols-1' :
+          industries.length <= 4 ? 'grid-cols-1 sm:grid-cols-2' :
+          'grid-cols-1 sm:grid-cols-2'
+        }`}>
+          {industries.map(ind => (
+            <button
+              key={ind.code}
+              onClick={() => setSelected(ind.code)}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 text-left transition-all ${
+                selected === ind.code
+                  ? 'border-[#1F4E79] bg-slate-50 shadow-sm'
+                  : 'border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <span className="text-2xl shrink-0">{ind.icon}</span>
+              <div>
+                <p className="font-semibold text-slate-800 text-sm">{ind.label}</p>
+                {ind.detail && <p className="text-xs text-slate-400">{ind.detail}</p>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex gap-3">
         <button
@@ -77,9 +95,9 @@ export default function IndustrySelect() {
         </button>
         <button
           onClick={handleContinue}
-          disabled={!selected}
+          disabled={!selected || loading}
           className={`px-8 py-3 rounded-lg font-semibold text-sm transition-colors ${
-            selected
+            selected && !loading
               ? 'bg-[#E8913A] text-white hover:bg-[#d07e2e]'
               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
           }`}
