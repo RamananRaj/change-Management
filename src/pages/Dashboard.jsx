@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useOnboarding } from '../context/OnboardingContext'
+import { useAuth } from '../context/AuthContext'
 
 const roleLabels = { po: 'Product Owner', cm: 'Change Manager', pm: 'Project Manager' }
 
@@ -13,13 +14,15 @@ const phases = [
 
 export default function Dashboard() {
   const { role, industry } = useOnboarding()
+  const { profile } = useAuth()
+  const firstName = profile?.full_name ?? 'back'
 
   return (
     <div className="p-8 max-w-3xl">
       {/* Header */}
       <div className="mb-8">
         <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-1">Dashboard</p>
-        <h1 className="text-2xl font-bold text-slate-800 mb-1">Welcome back</h1>
+        <h1 className="text-2xl font-bold text-slate-800 mb-1">Welcome back, {firstName}</h1>
         {role && (
           <p className="text-sm text-slate-500">
             {roleLabels[role]} · {industry?.replace(/-/g, ' ')}
