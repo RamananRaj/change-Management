@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import ExerciseDrawer from './ExerciseDrawer'
 
 const industryLabels = {
   'financial-services': '🏦 Financial Services',
@@ -64,9 +65,11 @@ const phaseNames = {
 export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const { profile, user } = useAuth()
   const [items,       setItems]       = useState([])
-  const [allPhases,   setAllPhases]   = useState([])   // all project_phases rows
+  const [allPhases,   setAllPhases]   = useState([])
+  const [activities,  setActivities]  = useState([])   // user's activity records
   const [loading,     setLoading]     = useState(true)
   const [activeType,  setActiveType]  = useState('exercise')
+  const [drawerItem,  setDrawerItem]  = useState(null) // item open in drawer
 
   const color = phaseColors[phaseNum] ?? phaseColors[1]
 
@@ -106,7 +109,20 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
       .order('sort_order', { ascending: true })
 
     setItems(data ?? [])
+
+    // Fetch this user's activity records for this phase
+    await fetchActivities()
+
     setLoading(false)
+  }
+
+  async function fetchActivities() {
+    const { data } = await supabase
+      .from('user_activities')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('phase_number', phaseNum)
+    setActivities(data ?? [])
   }
 
   const thisPhase    = allPhases.find(p => p.phase_number === phaseNum)
@@ -268,35 +284,67 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                   <span className="text-xs text-slate-400">({grouped[activeType].length})</span>
                 </div>
                 <div className="space-y-3">
-                  {grouped[activeType].map(item => (
-                    <ContentCard key={item.id} item={item} typeCfg={typeConfig[activeType]} />
-                  ))}
+                  {grouped[activeType].map(item => {
+                    const activity = activities.find(a => a.content_id === item.id)
+                    return (
+                      <ContentCard
+                        key={item.id}
+                        item={item}
+                        typeCfg={typeConfig[activeType]}
+                        activity={activity}
+                        onStart={() => setDrawerItem(item)}
+                      />
+                    )
+                  })}
                 </div>
               </div>
             )}
           </>
         )}
       </div>
+
+      {/* Exercise / Tool / Template drawer */}
+      {drawerItem && (
+        <ExerciseDrawer
+          item={drawerItem}
+          activity={activities.find(a => a.content_id === drawerItem.id)}
+          onClose={() => setDrawerItem(null)}
+          onActivityChange={fetchActivities}
+        />
+      )}
     </div>
   )
 }
 
-function ContentCard({ item, typeCfg }) {
+function ContentCard({ item, typeCfg, activity, onStart }) {
   const [expanded, setExpanded] = useState(false)
+
+  const isCompleted  = activity?.status === 'completed'
+  const isInProgress = activity?.status === 'in_progress'
 
   return (
     <div className={`bg-white border rounded-2xl overflow-hidden transition-shadow hover:shadow-md ${
-      item.industry || item.role ? 'border-slate-200' : 'border-slate-100'
+      isCompleted ? 'border-green-200' : item.industry || item.role ? 'border-slate-200' : 'border-slate-100'
     }`}>
       <div className="flex items-start gap-4 p-5 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-base ${typeCfg.color}`}>
-          {typeCfg.icon}
+        {/* Icon — green tick if completed */}
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-base ${
+          isCompleted ? 'bg-green-50' : typeCfg.color
+        }`}>
+          {isCompleted ? '✅' : typeCfg.icon}
         </div>
+
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 mb-1">
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeCfg.badge}`}>
               {item.content_type}
             </span>
+            {isCompleted && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">Completed</span>
+            )}
+            {isInProgress && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">In Progress</span>
+            )}
             {item.industry && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
                 {industryLabels[item.industry] ?? item.industry}
@@ -316,17 +364,29 @@ function ContentCard({ item, typeCfg }) {
         <span className={`text-slate-300 transition-transform shrink-0 mt-1 ${expanded ? 'rotate-180' : ''}`}>▼</span>
       </div>
 
-      {expanded && item.description && (
+      {expanded && (
         <div className="px-5 pb-5 -mt-2">
-          <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-            <p className="text-sm text-slate-600 leading-relaxed">{item.description}</p>
-          </div>
-          <div className="flex gap-3 mt-3">
-            <button className="text-xs font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] transition-colors">
-              Start this {item.content_type} →
-            </button>
-            <button className="text-xs font-semibold text-slate-500 border border-slate-200 px-4 py-2 rounded-lg hover:border-slate-300 transition-colors">
-              Save for later
+          {item.description && (
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 mb-3">
+              <p className="text-sm text-slate-600 leading-relaxed">{item.description}</p>
+            </div>
+          )}
+          {activity?.notes && (
+            <div className="bg-blue-50 rounded-xl p-3 border border-blue-100 mb-3">
+              <p className="text-[10px] font-semibold text-blue-400 uppercase tracking-widest mb-1">Your notes</p>
+              <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap line-clamp-3">{activity.notes}</p>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={e => { e.stopPropagation(); onStart() }}
+              className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors ${
+                isCompleted
+                  ? 'text-slate-500 border border-slate-200 hover:border-slate-300'
+                  : 'text-white bg-[#1F4E79] hover:bg-[#163a5c]'
+              }`}
+            >
+              {isCompleted ? 'Review notes' : isInProgress ? 'Continue →' : `Start this ${item.content_type} →`}
             </button>
           </div>
         </div>
