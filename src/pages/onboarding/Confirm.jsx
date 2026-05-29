@@ -40,7 +40,8 @@ export default function Confirm() {
       .eq('id', user.id)
 
     if (profileError) {
-      setError('Could not save your setup. Please try again.')
+      console.error('Profile update error:', profileError)
+      setError(`Profile error: ${profileError.message} (code: ${profileError.code})`)
       setSaving(false)
       return
     }
@@ -53,7 +54,8 @@ export default function Confirm() {
       .single()
 
     if (projectError) {
-      setError('Could not create your project. Please try again.')
+      console.error('Project insert error:', projectError)
+      setError(`Project error: ${projectError.message} (code: ${projectError.code})`)
       setSaving(false)
       return
     }
