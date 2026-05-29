@@ -1,5 +1,6 @@
 import { Outlet, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import AdminNotes from '../components/AdminNotes'
 
 const phases = [
   { path: '/phases/diagnose', label: '01 Diagnose' },
@@ -70,6 +71,8 @@ export default function AppLayout() {
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
+
+      <AdminNotes />
     </div>
   )
 }
