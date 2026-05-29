@@ -52,20 +52,42 @@ const phaseColors = [
 ]
 
 export default function PhasePageLayout({ phaseNum, title, subtitle }) {
-  const { profile } = useAuth()
-  const [items,      setItems]      = useState([])
-  const [loading,    setLoading]    = useState(true)
-  const [activeType, setActiveType] = useState('exercise')
+  const { profile, user } = useAuth()
+  const [items,       setItems]       = useState([])
+  const [phaseStatus, setPhaseStatus] = useState(null) // 'active' | 'completed' | 'locked' | null
+  const [loading,     setLoading]     = useState(true)
+  const [activeType,  setActiveType]  = useState('exercise')
 
   const color = phaseColors[phaseNum] ?? phaseColors[1]
 
   useEffect(() => {
-    if (!profile) return
-    fetchContent()
-  }, [profile])
+    if (!profile || !user) return
+    loadAll()
+  }, [profile, user])
 
-  async function fetchContent() {
+  async function loadAll() {
     setLoading(true)
+
+    // Check phase lock status for this user
+    const { data: proj } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (proj) {
+      const { data: phaseRow } = await supabase
+        .from('project_phases')
+        .select('status')
+        .eq('project_id', proj.id)
+        .eq('phase_number', phaseNum)
+        .single()
+      setPhaseStatus(phaseRow?.status ?? null)
+    }
+
+    // Fetch content filtered by industry + role
     const { data } = await supabase
       .from('phase_content')
       .select('*')
@@ -85,6 +107,22 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   }
 
   const tabs = ['exercise', 'tool', 'template'].filter(t => grouped[t].length > 0)
+
+  // Locked gate — admins can always see content
+  if (!loading && phaseStatus === 'locked' && !profile?.is_admin) {
+    return (
+      <div className="min-h-full bg-slate-50 flex items-center justify-center">
+        <div className="text-center max-w-sm px-8">
+          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4">🔒</div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Phase {String(phaseNum).padStart(2, '0')} is locked</h2>
+          <p className="text-slate-500 text-sm mb-6">Complete the previous phase first to unlock <strong>{title}</strong>.</p>
+          <a href="/dashboard" className="inline-block bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-[#163a5c] transition-colors">
+            Back to Dashboard →
+          </a>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-full bg-slate-50">

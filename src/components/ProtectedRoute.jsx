@@ -1,8 +1,11 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
+const ONBOARDING_PATHS = ['/onboarding/role', '/onboarding/industry', '/onboarding/confirm']
+
 export default function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
+  const { user, profile, loading } = useAuth()
+  const { pathname } = useLocation()
 
   if (loading) {
     return (
@@ -17,6 +20,12 @@ export default function ProtectedRoute({ children }) {
 
   if (!user) {
     return <Navigate to="/auth/signin" replace />
+  }
+
+  // If onboarding not done and trying to access app pages, send to onboarding
+  const isOnboardingPath = ONBOARDING_PATHS.includes(pathname)
+  if (profile && !profile.onboarding_done && !isOnboardingPath) {
+    return <Navigate to="/onboarding/role" replace />
   }
 
   return children
