@@ -4,21 +4,6 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ExerciseDrawer from './ExerciseDrawer'
 
-const industryLabels = {
-  'financial-services': '🏦 Financial Services',
-  'healthcare':         '🏥 Healthcare',
-  'utilities-energy':   '⚡ Utilities & Energy',
-  'telecommunications': '📡 Telecommunications',
-  'manufacturing':      '🏭 Manufacturing',
-  'public-sector':      '🏛 Public Sector',
-  'retail-consumer':    '🛒 Retail & Consumer',
-}
-
-const roleLabels = {
-  po: 'Product Owner',
-  cm: 'Change Manager',
-  pm: 'Project Manager',
-}
 
 const typeConfig = {
   exercise: {
@@ -64,18 +49,24 @@ const phaseNames = {
 
 export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const { profile, user } = useAuth()
-  const [items,       setItems]       = useState([])
-  const [allPhases,   setAllPhases]   = useState([])
-  const [activities,  setActivities]  = useState([])   // user's activity records
-  const [loading,     setLoading]     = useState(true)
-  const [activeType,  setActiveType]  = useState('exercise')
-  const [drawerItem,  setDrawerItem]  = useState(null) // item open in drawer
+  const [items,         setItems]         = useState([])
+  const [allPhases,     setAllPhases]     = useState([])
+  const [activities,    setActivities]    = useState([])
+  const [loading,       setLoading]       = useState(true)
+  const [activeType,    setActiveType]    = useState('exercise')
+  const [drawerItem,    setDrawerItem]    = useState(null)
+  const [scopeFilter,   setScopeFilter]   = useState('all')
+  // Live label lookups from Supabase (roles + industries)
+  const [roleLabel,     setRoleLabel]     = useState(null)
+  const [industryLabel, setIndustryLabel] = useState(null)
+  const [industryIcon,  setIndustryIcon]  = useState(null)
 
   const color = phaseColors[phaseNum] ?? phaseColors[1]
 
   useEffect(() => {
     if (!profile || !user) return
     loadAll()
+    loadLabels()
   }, [profile, user])
 
   async function loadAll() {
@@ -116,6 +107,17 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
     setLoading(false)
   }
 
+  async function loadLabels() {
+    if (profile?.role) {
+      const { data: r } = await supabase.from('roles').select('label').eq('code', profile.role).single()
+      if (r) setRoleLabel(r.label)
+    }
+    if (profile?.industry) {
+      const { data: i } = await supabase.from('industries').select('label, icon').eq('code', profile.industry).single()
+      if (i) { setIndustryLabel(i.label); setIndustryIcon(i.icon) }
+    }
+  }
+
   async function fetchActivities() {
     const { data } = await supabase
       .from('user_activities')
@@ -132,13 +134,42 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const progressPct  = allPhases.length > 0 ? Math.round((completedCount / allPhases.length) * 100) : 0
   const isLocked     = phaseStatus === 'locked' && !profile?.is_admin
 
+  // Scope filter counts (for pill labels)
+  const scopeCounts = {
+    all:      items.length,
+    common:   items.filter(i => !i.industry && !i.role).length,
+    industry: items.filter(i => i.industry === profile?.industry && !i.role).length,
+    role:     items.filter(i => i.role === profile?.role && !i.industry).length,
+  }
+
+  // Apply scope filter
+  const scopedItems = scopeFilter === 'common'
+    ? items.filter(i => !i.industry && !i.role)
+    : scopeFilter === 'industry'
+    ? items.filter(i => i.industry === profile?.industry && !i.role)
+    : scopeFilter === 'role'
+    ? items.filter(i => i.role === profile?.role && !i.industry)
+    : items  // 'all'
+
   const grouped = {
-    exercise: items.filter(i => i.content_type === 'exercise'),
-    tool:     items.filter(i => i.content_type === 'tool'),
-    template: items.filter(i => i.content_type === 'template'),
+    exercise: scopedItems.filter(i => i.content_type === 'exercise'),
+    tool:     scopedItems.filter(i => i.content_type === 'tool'),
+    template: scopedItems.filter(i => i.content_type === 'template'),
   }
 
   const tabs = ['exercise', 'tool', 'template'].filter(t => grouped[t].length > 0)
+
+  // Scope filter pills to show
+  const scopePills = [
+    { key: 'all',      label: 'All',                                         count: scopeCounts.all },
+    { key: 'common',   label: 'Common',                                      count: scopeCounts.common },
+    ...(profile?.industry && scopeCounts.industry > 0
+      ? [{ key: 'industry', label: `${industryIcon ?? ''} ${industryLabel ?? profile.industry}`, count: scopeCounts.industry }]
+      : []),
+    ...(profile?.role && scopeCounts.role > 0
+      ? [{ key: 'role', label: roleLabel ?? profile.role, count: scopeCounts.role }]
+      : []),
+  ]
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -156,12 +187,12 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
             )}
             {profile?.industry && (
               <span className="text-xs font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
-                {industryLabels[profile.industry] ?? profile.industry}
+                {industryIcon} {industryLabel ?? profile.industry}
               </span>
             )}
             {profile?.role && (
               <span className="text-xs font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
-                {roleLabels[profile.role] ?? profile.role}
+                {roleLabel ?? profile.role}
               </span>
             )}
           </div>
@@ -169,26 +200,52 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
           <p className="text-white/60 text-sm">{subtitle}</p>
         </div>
 
-        {/* Tab pills — only for unlocked phases */}
+        {/* Tab pills + scope filter — only for unlocked phases */}
         {!loading && !isLocked && (
-          <div className="flex gap-3 mt-5">
-            {Object.entries(grouped).map(([type, list]) => list.length > 0 && (
-              <button
-                key={type}
-                onClick={() => setActiveType(type)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                  activeType === type
-                    ? 'bg-white text-slate-800 shadow'
-                    : 'bg-white/15 text-white hover:bg-white/25'
-                }`}
-              >
-                <span>{typeConfig[type].icon}</span>
-                {typeConfig[type].label}
-                <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
-                  activeType === type ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
-                }`}>{list.length}</span>
-              </button>
-            ))}
+          <div className="mt-5 space-y-2">
+            {/* Content type tabs */}
+            <div className="flex gap-2 flex-wrap">
+              {Object.entries(typeConfig).map(([type, cfg]) => grouped[type]?.length > 0 && (
+                <button
+                  key={type}
+                  onClick={() => setActiveType(type)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    activeType === type
+                      ? 'bg-white text-slate-800 shadow'
+                      : 'bg-white/15 text-white hover:bg-white/25'
+                  }`}
+                >
+                  <span>{cfg.icon}</span>
+                  {cfg.label}
+                  <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
+                    activeType === type ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
+                  }`}>{grouped[type].length}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Scope filter — only show if there are multiple scopes */}
+            {scopePills.length > 1 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] text-white/40 font-semibold uppercase tracking-widest">Show:</span>
+                {scopePills.map(pill => (
+                  <button
+                    key={pill.key}
+                    onClick={() => { setScopeFilter(pill.key); setActiveType('exercise') }}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                      scopeFilter === pill.key
+                        ? 'bg-white/90 text-slate-700 shadow-sm'
+                        : 'bg-white/10 text-white/70 hover:bg-white/20'
+                    }`}
+                  >
+                    {pill.label}
+                    <span className={`rounded-full px-1 text-[9px] font-bold ${
+                      scopeFilter === pill.key ? 'text-slate-500' : 'text-white/50'
+                    }`}>{pill.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -292,6 +349,9 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                         item={item}
                         typeCfg={typeConfig[activeType]}
                         activity={activity}
+                        industryLabel={industryLabel}
+                        industryIcon={industryIcon}
+                        roleLabel={roleLabel}
                         onStart={() => setDrawerItem(item)}
                       />
                     )
@@ -316,7 +376,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   )
 }
 
-function ContentCard({ item, typeCfg, activity, onStart }) {
+function ContentCard({ item, typeCfg, activity, industryLabel, industryIcon, roleLabel, onStart }) {
   const [expanded, setExpanded] = useState(false)
 
   const isCompleted  = activity?.status === 'completed'
@@ -347,12 +407,12 @@ function ContentCard({ item, typeCfg, activity, onStart }) {
             )}
             {item.industry && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
-                {industryLabels[item.industry] ?? item.industry}
+                {industryIcon} {industryLabel ?? item.industry}
               </span>
             )}
             {item.role && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                {roleLabels[item.role] ?? item.role}
+                {roleLabel ?? item.role}
               </span>
             )}
           </div>
