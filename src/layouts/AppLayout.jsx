@@ -45,6 +45,24 @@ export default function AppLayout() {
               {p.label}
             </NavLink>
           ))}
+
+          {profile?.is_admin && (
+            <>
+              <p className="text-[10px] font-semibold tracking-widest text-white/40 uppercase px-2 mb-2 mt-6">Admin</p>
+              <NavLink
+                to="/admin"
+                className={({ isActive }) =>
+                  `block px-3 py-2 rounded-md text-sm mb-1 transition-colors ${
+                    isActive
+                      ? 'bg-white/20 text-white font-medium'
+                      : 'text-white/70 hover:bg-white/10 hover:text-white'
+                  }`
+                }
+              >
+                ⚙️ Platform Admin
+              </NavLink>
+            </>
+          )}
         </nav>
 
         {/* User section */}

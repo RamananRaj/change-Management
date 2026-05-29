@@ -10,6 +10,7 @@ import RoleSelect     from './pages/onboarding/RoleSelect'
 import IndustrySelect from './pages/onboarding/IndustrySelect'
 import Confirm        from './pages/onboarding/Confirm'
 import Dashboard      from './pages/Dashboard'
+import Admin         from './pages/Admin'
 import Diagnose       from './pages/phases/Diagnose'
 import Design         from './pages/phases/Design'
 import Engage         from './pages/phases/Engage'
@@ -36,6 +37,7 @@ export default function App() {
             {/* App — requires auth, wrapped in sidebar layout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/dashboard"       element={<Dashboard />} />
+              <Route path="/admin"           element={<Admin />} />
               <Route path="/phases/diagnose" element={<Diagnose />} />
               <Route path="/phases/design"   element={<Design />} />
               <Route path="/phases/engage"   element={<Engage />} />
