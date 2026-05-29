@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -24,37 +25,46 @@ const typeConfig = {
     icon: '🎯',
     color: 'bg-blue-50 border-blue-100',
     badge: 'bg-blue-100 text-blue-700',
-    heading: 'text-blue-800',
   },
   tool: {
     label: 'Tools',
     icon: '🔧',
     color: 'bg-green-50 border-green-100',
     badge: 'bg-green-100 text-green-700',
-    heading: 'text-green-800',
   },
   template: {
     label: 'Templates',
     icon: '📄',
     color: 'bg-purple-50 border-purple-100',
     badge: 'bg-purple-100 text-purple-700',
-    heading: 'text-purple-800',
   },
 }
 
 const phaseColors = [
   null,
-  { bg: 'from-blue-600 to-blue-800',   light: 'bg-blue-50',   text: 'text-blue-700',   badge: 'bg-blue-100 text-blue-800'   },
-  { bg: 'from-indigo-600 to-indigo-800', light: 'bg-indigo-50', text: 'text-indigo-700', badge: 'bg-indigo-100 text-indigo-800' },
-  { bg: 'from-violet-600 to-violet-800', light: 'bg-violet-50', text: 'text-violet-700', badge: 'bg-violet-100 text-violet-800' },
-  { bg: 'from-purple-600 to-purple-800', light: 'bg-purple-50', text: 'text-purple-700', badge: 'bg-purple-100 text-purple-800' },
-  { bg: 'from-teal-600 to-teal-800',   light: 'bg-teal-50',   text: 'text-teal-700',   badge: 'bg-teal-100 text-teal-800'   },
+  { bg: 'from-blue-600 to-blue-800' },
+  { bg: 'from-indigo-600 to-indigo-800' },
+  { bg: 'from-violet-600 to-violet-800' },
+  { bg: 'from-purple-600 to-purple-800' },
+  { bg: 'from-teal-600 to-teal-800' },
 ]
+
+const phasePaths = {
+  1: '/phases/diagnose',
+  2: '/phases/design',
+  3: '/phases/engage',
+  4: '/phases/embed',
+  5: '/phases/evaluate',
+}
+
+const phaseNames = {
+  1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate',
+}
 
 export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const { profile, user } = useAuth()
   const [items,       setItems]       = useState([])
-  const [phaseStatus, setPhaseStatus] = useState(null) // 'active' | 'completed' | 'locked' | null
+  const [allPhases,   setAllPhases]   = useState([])   // all project_phases rows
   const [loading,     setLoading]     = useState(true)
   const [activeType,  setActiveType]  = useState('exercise')
 
@@ -68,7 +78,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   async function loadAll() {
     setLoading(true)
 
-    // Check phase lock status for this user
+    // Fetch all phases for this user's project
     const { data: proj } = await supabase
       .from('projects')
       .select('id')
@@ -78,13 +88,12 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
       .single()
 
     if (proj) {
-      const { data: phaseRow } = await supabase
+      const { data: phaseRows } = await supabase
         .from('project_phases')
-        .select('status')
+        .select('*')
         .eq('project_id', proj.id)
-        .eq('phase_number', phaseNum)
-        .single()
-      setPhaseStatus(phaseRow?.status ?? null)
+        .order('phase_number', { ascending: true })
+      setAllPhases(phaseRows ?? [])
     }
 
     // Fetch content filtered by industry + role
@@ -100,6 +109,13 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
     setLoading(false)
   }
 
+  const thisPhase    = allPhases.find(p => p.phase_number === phaseNum)
+  const phaseStatus  = thisPhase?.status ?? null
+  const activePhase  = allPhases.find(p => p.status === 'active')
+  const completedCount = allPhases.filter(p => p.status === 'completed').length
+  const progressPct  = allPhases.length > 0 ? Math.round((completedCount / allPhases.length) * 100) : 0
+  const isLocked     = phaseStatus === 'locked' && !profile?.is_admin
+
   const grouped = {
     exercise: items.filter(i => i.content_type === 'exercise'),
     tool:     items.filter(i => i.content_type === 'tool'),
@@ -107,22 +123,6 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   }
 
   const tabs = ['exercise', 'tool', 'template'].filter(t => grouped[t].length > 0)
-
-  // Locked gate — admins can always see content
-  if (!loading && phaseStatus === 'locked' && !profile?.is_admin) {
-    return (
-      <div className="min-h-full bg-slate-50 flex items-center justify-center">
-        <div className="text-center max-w-sm px-8">
-          <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4">🔒</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Phase {String(phaseNum).padStart(2, '0')} is locked</h2>
-          <p className="text-slate-500 text-sm mb-6">Complete the previous phase first to unlock <strong>{title}</strong>.</p>
-          <a href="/dashboard" className="inline-block bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-[#163a5c] transition-colors">
-            Back to Dashboard →
-          </a>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -133,6 +133,11 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
             <span className="text-xs font-bold tracking-widest text-white/60 uppercase">
               Phase {String(phaseNum).padStart(2, '0')}
             </span>
+            {isLocked && (
+              <span className="text-xs font-semibold text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2 py-0.5 rounded-full">
+                Coming Up
+              </span>
+            )}
             {profile?.industry && (
               <span className="text-xs font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
                 {industryLabels[profile.industry] ?? profile.industry}
@@ -148,8 +153,8 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
           <p className="text-white/60 text-sm">{subtitle}</p>
         </div>
 
-        {/* Content summary pills */}
-        {!loading && (
+        {/* Tab pills — only for unlocked phases */}
+        {!loading && !isLocked && (
           <div className="flex gap-3 mt-5">
             {Object.entries(grouped).map(([type, list]) => list.length > 0 && (
               <button
@@ -177,18 +182,84 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         {loading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(n => (
-              <div key={n} className="h-28 bg-white rounded-2xl border border-slate-100 animate-pulse" />
+              <div key={n} className="h-20 bg-white rounded-2xl border border-slate-100 animate-pulse" />
             ))}
+          </div>
+        ) : isLocked ? (
+          /* ── LOCKED: progress nudge + blurred preview ── */
+          <div>
+            {/* Progress nudge banner */}
+            <div className="bg-white border border-amber-200 rounded-2xl p-5 mb-6 flex items-start gap-4">
+              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-xl shrink-0">⏳</div>
+              <div className="flex-1">
+                <p className="font-semibold text-slate-800 text-sm mb-0.5">
+                  Complete Phase {activePhase ? String(activePhase.phase_number).padStart(2, '0') : 'your current phase'} first
+                </p>
+                <p className="text-slate-500 text-xs mb-3">
+                  You're {progressPct}% through your change journey.
+                  {activePhase
+                    ? ` Finish ${phaseNames[activePhase.phase_number]} to unlock ${title}.`
+                    : ` Your admin can also open this phase for you on request.`}
+                </p>
+                {/* Mini progress bar */}
+                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-3">
+                  <div
+                    className="h-full bg-[#E8913A] rounded-full transition-all"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  {activePhase && (
+                    <Link
+                      to={phasePaths[activePhase.phase_number]}
+                      className="text-xs font-semibold bg-[#1F4E79] text-white px-4 py-1.5 rounded-lg hover:bg-[#163a5c] transition-colors"
+                    >
+                      Go to Phase {activePhase.phase_number}: {phaseNames[activePhase.phase_number]} →
+                    </Link>
+                  )}
+                  <Link
+                    to="/dashboard"
+                    className="text-xs font-semibold text-slate-500 border border-slate-200 px-4 py-1.5 rounded-lg hover:border-slate-300 transition-colors"
+                  >
+                    Back to Dashboard
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Blurred preview of what's inside */}
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+              Preview — {items.length} items in this phase
+            </p>
+            <div className="space-y-2 select-none pointer-events-none">
+              {items.slice(0, 5).map(item => (
+                <div key={item.id} className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl p-4 opacity-40">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0 ${typeConfig[item.content_type]?.color ?? 'bg-slate-50'}`}>
+                    {typeConfig[item.content_type]?.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="h-3 bg-slate-200 rounded w-2/3 mb-1.5" />
+                    <div className="h-2 bg-slate-100 rounded w-full" />
+                  </div>
+                  <span className="text-slate-200 text-xs">🔒</span>
+                </div>
+              ))}
+              {items.length > 5 && (
+                <p className="text-center text-xs text-slate-300 py-2">
+                  +{items.length - 5} more items waiting…
+                </p>
+              )}
+            </div>
           </div>
         ) : items.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-2xl border border-slate-100">
             <p className="text-3xl mb-3">📭</p>
-            <p className="text-slate-500 text-sm">No content has been added for this phase yet.</p>
+            <p className="text-slate-500 text-sm">No content added for this phase yet.</p>
             <p className="text-slate-400 text-xs mt-1">Admins can add content in Platform Admin → Content Manager.</p>
           </div>
         ) : (
+          /* ── UNLOCKED: full interactive content ── */
           <>
-            {/* Active type section */}
             {tabs.includes(activeType) && (
               <div>
                 <div className="flex items-center gap-2 mb-4">
@@ -196,10 +267,9 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                   <h2 className="font-bold text-slate-800">{typeConfig[activeType].label}</h2>
                   <span className="text-xs text-slate-400">({grouped[activeType].length})</span>
                 </div>
-
                 <div className="space-y-3">
                   {grouped[activeType].map(item => (
-                    <ContentCard key={item.id} item={item} profile={profile} typeCfg={typeConfig[activeType]} />
+                    <ContentCard key={item.id} item={item} typeCfg={typeConfig[activeType]} />
                   ))}
                 </div>
               </div>
@@ -211,39 +281,28 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   )
 }
 
-function ContentCard({ item, profile, typeCfg }) {
+function ContentCard({ item, typeCfg }) {
   const [expanded, setExpanded] = useState(false)
 
-  const isIndustrySpecific = item.industry !== null
-  const isRoleSpecific     = item.role !== null
-
   return (
-    <div
-      className={`bg-white border rounded-2xl overflow-hidden transition-shadow hover:shadow-md ${
-        isIndustrySpecific || isRoleSpecific ? 'border-slate-200' : 'border-slate-100'
-      }`}
-    >
-      <div
-        className="flex items-start gap-4 p-5 cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
-        {/* Icon */}
+    <div className={`bg-white border rounded-2xl overflow-hidden transition-shadow hover:shadow-md ${
+      item.industry || item.role ? 'border-slate-200' : 'border-slate-100'
+    }`}>
+      <div className="flex items-start gap-4 p-5 cursor-pointer" onClick={() => setExpanded(!expanded)}>
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-base ${typeCfg.color}`}>
           {typeCfg.icon}
         </div>
-
-        {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 mb-1">
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeCfg.badge}`}>
               {item.content_type}
             </span>
-            {isIndustrySpecific && (
+            {item.industry && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
                 {industryLabels[item.industry] ?? item.industry}
               </span>
             )}
-            {isRoleSpecific && (
+            {item.role && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                 {roleLabels[item.role] ?? item.role}
               </span>
@@ -254,12 +313,9 @@ function ContentCard({ item, profile, typeCfg }) {
             <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{item.description}</p>
           )}
         </div>
-
-        {/* Expand arrow */}
         <span className={`text-slate-300 transition-transform shrink-0 mt-1 ${expanded ? 'rotate-180' : ''}`}>▼</span>
       </div>
 
-      {/* Expanded description */}
       {expanded && item.description && (
         <div className="px-5 pb-5 -mt-2">
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">

@@ -32,7 +32,7 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Content Manager', 'Role Manager']
+const SECTIONS = ['Content Manager', 'Phase Manager', 'Role Manager']
 
 const emptyForm = {
   phase_number: 1,
@@ -58,6 +58,11 @@ export default function Admin() {
   const [items,   setItems]   = useState([])
   const [loading, setLoading] = useState(false)
 
+  // Phase manager
+  const [userPhases,    setUserPhases]    = useState([])  // [{ user, project, phases[] }]
+  const [phaseLoading,  setPhaseLoading]  = useState(false)
+  const [unlocking,     setUnlocking]     = useState(null) // phase row id being unlocked
+
   // Form
   const [showForm,  setShowForm]  = useState(false)
   const [form,      setForm]      = useState(emptyForm)
@@ -76,6 +81,7 @@ export default function Admin() {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (section === 'Content Manager') fetchItems()
+    if (section === 'Phase Manager')   fetchUserPhases()
   }, [section, filterPhase, filterIndustry, filterRole])
 
   async function fetchItems() {
@@ -92,6 +98,54 @@ export default function Admin() {
     const { data } = await query
     setItems(data ?? [])
     setLoading(false)
+  }
+
+  async function fetchUserPhases() {
+    setPhaseLoading(true)
+    // Fetch all projects with their phases and user profile
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('id, name, user_id, current_phase, created_at, profiles(full_name, role, industry)')
+      .order('created_at', { ascending: true })
+
+    if (!projects) { setPhaseLoading(false); return }
+
+    // For each project, fetch its phases
+    const enriched = await Promise.all(projects.map(async proj => {
+      const { data: phases } = await supabase
+        .from('project_phases')
+        .select('*')
+        .eq('project_id', proj.id)
+        .order('phase_number', { ascending: true })
+      return { ...proj, phases: phases ?? [] }
+    }))
+
+    setUserPhases(enriched)
+    setPhaseLoading(false)
+  }
+
+  async function unlockPhase(projectId, phaseNumber) {
+    const rowKey = `${projectId}-${phaseNumber}`
+    setUnlocking(rowKey)
+    await supabase
+      .from('project_phases')
+      .update({ status: 'active' })
+      .eq('project_id', projectId)
+      .eq('phase_number', phaseNumber)
+    await fetchUserPhases()
+    setUnlocking(null)
+  }
+
+  async function lockPhase(projectId, phaseNumber) {
+    const rowKey = `${projectId}-${phaseNumber}`
+    setUnlocking(rowKey)
+    await supabase
+      .from('project_phases')
+      .update({ status: 'locked' })
+      .eq('project_id', projectId)
+      .eq('phase_number', phaseNumber)
+    await fetchUserPhases()
+    setUnlocking(null)
   }
 
   function openNew() {
@@ -259,6 +313,95 @@ export default function Admin() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PHASE MANAGER ── */}
+      {section === 'Phase Manager' && (
+        <div>
+          <p className="text-sm text-slate-500 mb-5">
+            Open or lock any phase for any user. Users see a preview of locked phases and are nudged to complete the current one first.
+          </p>
+
+          {phaseLoading ? (
+            <p className="text-sm text-slate-400">Loading users…</p>
+          ) : userPhases.length === 0 ? (
+            <p className="text-sm text-slate-400">No projects found.</p>
+          ) : (
+            <div className="space-y-6">
+              {userPhases.map(proj => {
+                const userName    = proj.profiles?.full_name ?? 'Unknown'
+                const userRole    = ROLES.find(r => r.value === proj.profiles?.role)?.label ?? proj.profiles?.role ?? '—'
+                const userIndustry = INDUSTRIES.find(i => i.value === proj.profiles?.industry)?.label ?? proj.profiles?.industry ?? '—'
+
+                return (
+                  <div key={proj.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                    {/* User header */}
+                    <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-100 bg-slate-50">
+                      <div className="w-8 h-8 rounded-full bg-[#1F4E79] flex items-center justify-center text-white text-xs font-bold shrink-0">
+                        {userName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-800 text-sm">{userName}</p>
+                        <p className="text-xs text-slate-400">{userRole} · {userIndustry}</p>
+                      </div>
+                    </div>
+
+                    {/* Phase rows */}
+                    <div className="divide-y divide-slate-50">
+                      {proj.phases.map(phase => {
+                        const cfg    = PHASES.find(p => p.num === phase.phase_number)
+                        const rowKey = `${proj.id}-${phase.phase_number}`
+                        const busy   = unlocking === rowKey
+
+                        return (
+                          <div key={phase.phase_number} className="flex items-center gap-4 px-5 py-3">
+                            <span className="text-xs font-bold text-slate-400 w-14 shrink-0">{cfg?.label}</span>
+
+                            {/* Status badge */}
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+                              phase.status === 'completed'
+                                ? 'bg-green-100 text-green-700'
+                                : phase.status === 'active'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-slate-100 text-slate-400'
+                            }`}>
+                              {phase.status === 'completed' ? '✓ Completed' : phase.status === 'active' ? '● Active' : '○ Locked'}
+                            </span>
+
+                            <div className="flex-1" />
+
+                            {/* Admin controls */}
+                            {phase.status === 'locked' && (
+                              <button
+                                onClick={() => unlockPhase(proj.id, phase.phase_number)}
+                                disabled={busy}
+                                className="text-xs font-semibold text-[#1F4E79] border border-[#1F4E79]/30 hover:bg-[#1F4E79]/5 px-3 py-1 rounded-lg transition-colors disabled:opacity-50"
+                              >
+                                {busy ? 'Opening…' : '🔓 Open for user'}
+                              </button>
+                            )}
+                            {phase.status === 'active' && (
+                              <button
+                                onClick={() => lockPhase(proj.id, phase.phase_number)}
+                                disabled={busy}
+                                className="text-xs font-semibold text-slate-400 border border-slate-200 hover:border-slate-300 px-3 py-1 rounded-lg transition-colors disabled:opacity-50"
+                              >
+                                {busy ? 'Locking…' : '🔒 Lock'}
+                              </button>
+                            )}
+                            {phase.status === 'completed' && (
+                              <span className="text-xs text-slate-300">—</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
