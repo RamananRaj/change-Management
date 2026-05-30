@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -463,6 +463,71 @@ export default function Admin() {
   }
 
   // Column builder helpers
+  const xlsxInputRef = useRef(null)
+
+  async function importFromExcel(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Load SheetJS from CDN if not already present
+    if (!window.XLSX) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+        script.onload = resolve
+        script.onerror = reject
+        document.head.appendChild(script)
+      })
+    }
+
+    const buffer = await file.arrayBuffer()
+    const workbook = window.XLSX.read(buffer)
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1 })
+
+    if (!rows || rows.length === 0) return
+
+    const headers = rows[0]
+    const dataRows = rows.slice(1, 6) // sample up to 5 rows for type inference
+
+    const cols = headers.filter(Boolean).map(header => {
+      const colIdx = headers.indexOf(header)
+      const samples = dataRows
+        .map(r => r[colIdx])
+        .filter(v => v !== undefined && v !== '' && v !== null)
+
+      let type = 'text'
+      let options = ''
+
+      if (samples.length > 0) {
+        const nums = samples.map(Number)
+        const allNums = samples.every(v => !isNaN(Number(v)))
+        const allInt1to5 = allNums && nums.every(n => n >= 1 && n <= 5 && Number.isInteger(n))
+        const unique = [...new Set(samples.map(String))]
+
+        if (allInt1to5 && samples.length >= 2) {
+          type = 'rating'
+        } else if (allNums) {
+          type = 'number'
+        } else if (unique.length <= 5 && samples.length >= 3) {
+          type = 'select'
+          options = unique.join(', ')
+        }
+      }
+
+      return {
+        _id:      Math.random().toString(36).slice(2),
+        label:    String(header).trim(),
+        type,
+        required: false,
+        options,
+      }
+    })
+
+    setTemplateCols(cols)
+    e.target.value = '' // allow re-import of same file
+  }
+
   function addCol()          { setTemplateCols(prev => [...prev, makeCol()]) }
   function removeCol(id)     { setTemplateCols(prev => prev.filter(c => c._id !== id)) }
   function moveCol(id, dir)  {
@@ -1188,9 +1253,24 @@ export default function Admin() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-semibold text-slate-600">Columns * <span className="font-normal text-slate-400">(define the table structure)</span></label>
-                  <button onClick={addCol} className="text-xs font-semibold text-[#1F4E79] border border-[#1F4E79]/30 px-3 py-1 rounded-lg hover:bg-[#1F4E79]/5 transition-colors">
-                    + Add Column
-                  </button>
+                  <div className="flex gap-2">
+                    <input
+                      ref={xlsxInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={importFromExcel}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => xlsxInputRef.current?.click()}
+                      className="text-xs font-semibold text-[#E8913A] border border-[#E8913A]/30 px-3 py-1 rounded-lg hover:bg-[#E8913A]/5 transition-colors"
+                    >
+                      ⬆ Import from Excel
+                    </button>
+                    <button onClick={addCol} className="text-xs font-semibold text-[#1F4E79] border border-[#1F4E79]/30 px-3 py-1 rounded-lg hover:bg-[#1F4E79]/5 transition-colors">
+                      + Add Column
+                    </button>
+                  </div>
                 </div>
 
                 {templateCols.length === 0 ? (
