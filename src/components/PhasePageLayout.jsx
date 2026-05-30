@@ -265,7 +265,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                 {scopePills.map(pill => (
                   <button
                     key={pill.key}
-                    onClick={() => setScopeFilter(pill.key)
+                    onClick={() => setScopeFilter(pill.key)}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
                       scopeFilter === pill.key
                         ? 'bg-white/90 text-slate-700 shadow-sm'
