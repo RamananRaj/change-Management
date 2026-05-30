@@ -25,11 +25,36 @@ const industryLabels = {
   'retail-consumer':    'Retail & Consumer',
 }
 
+function getRag(score, green = 3.5, amber = 2.5) {
+  if (score === null || score === undefined) return null
+  if (score >= green) return 'green'
+  if (score >= amber) return 'amber'
+  return 'red'
+}
+
+function RagPill({ score, green, amber }) {
+  const rag = getRag(score, green, amber)
+  if (!rag) return null
+  const cfg = {
+    green: { label: 'On Track',  bg: 'bg-green-100', text: 'text-green-700', dot: 'bg-green-500' },
+    amber: { label: 'At Risk',   bg: 'bg-amber-100',  text: 'text-amber-700',  dot: 'bg-amber-500' },
+    red:   { label: 'Critical',  bg: 'bg-red-100',    text: 'text-red-700',    dot: 'bg-red-500'   },
+  }[rag]
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${cfg.bg} ${cfg.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  )
+}
+
 export default function Dashboard() {
   const { profile, user } = useAuth()
-  const [phases,       setPhases]       = useState([])
-  const [phaseStats,   setPhaseStats]   = useState({}) // { [phaseNum]: { available, completed } }
-  const [loading,      setLoading]      = useState(true)
+  const [phases,         setPhases]         = useState([])
+  const [phaseStats,     setPhaseStats]     = useState({})
+  const [surveyResults,  setSurveyResults]  = useState([])   // submitted survey responses
+  const [templateCount,  setTemplateCount]  = useState(0)    // templates started by user
+  const [loading,        setLoading]        = useState(true)
 
   const firstName = profile?.full_name ? profile.full_name.split(' ')[0] : 'back'
   const hour      = new Date().getHours()
@@ -59,7 +84,6 @@ export default function Dashboard() {
       .select('*')
       .eq('project_id', proj.id)
       .order('phase_number', { ascending: true })
-
     setPhases(phaseRows ?? [])
 
     // 2. Fetch all available content for this user's role + industry
@@ -84,6 +108,23 @@ export default function Dashboard() {
       stats[cfg.num] = { available, completed }
     }
     setPhaseStats(stats)
+
+    // 5. Fetch submitted survey responses for this user (with survey metadata)
+    const { data: surveyResps } = await supabase
+      .from('survey_responses')
+      .select('score, submitted_at, surveys(id, title, phase_number, rag_green_threshold, rag_amber_threshold)')
+      .eq('user_id', user.id)
+      .not('submitted_at', 'is', null)
+      .order('submitted_at', { ascending: false })
+    setSurveyResults(surveyResps ?? [])
+
+    // 6. Fetch template responses started/saved by this user
+    const { data: tmplResps } = await supabase
+      .from('template_responses')
+      .select('id')
+      .eq('user_id', user.id)
+    setTemplateCount((tmplResps ?? []).length)
+
     setLoading(false)
   }
 
@@ -99,6 +140,12 @@ export default function Dashboard() {
     const row = phases.find(p => p.phase_number === cfg.num)
     return { ...cfg, status: row?.status ?? 'locked', ...phaseStats[cfg.num] }
   })
+
+  // Overall readiness score (avg of all submitted survey scores)
+  const scoredSurveys    = surveyResults.filter(r => r.score !== null)
+  const overallReadiness = scoredSurveys.length > 0
+    ? scoredSurveys.reduce((s, r) => s + r.score, 0) / scoredSurveys.length
+    : null
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -177,8 +224,95 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* ── COCKPIT SECTION ─────────────────────────────────────────────── */}
+      {!loading && (
+        <div className="max-w-4xl px-8 pt-8">
+          <p className="text-xs font-semibold tracking-widest text-slate-400 uppercase mb-4">Readiness Cockpit</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+
+            {/* Survey Readiness tile */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 col-span-1 md:col-span-2">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Survey Readiness</p>
+                {overallReadiness !== null && (
+                  <RagPill score={overallReadiness} green={3.5} amber={2.5} />
+                )}
+              </div>
+
+              {surveyResults.length === 0 ? (
+                <div className="flex items-center gap-3 py-2">
+                  <span className="text-2xl">📋</span>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700">No surveys submitted yet</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Complete readiness surveys in your phase to see scores here.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {surveyResults.map((r, i) => {
+                    const sv = r.surveys
+                    if (!sv) return null
+                    const score = r.score
+                    const rag   = getRag(score, sv.rag_green_threshold, sv.rag_amber_threshold)
+                    const barColor = rag === 'green' ? 'bg-green-400' : rag === 'amber' ? 'bg-amber-400' : 'bg-red-400'
+                    const barPct   = score !== null ? Math.round((score / 5) * 100) : 0
+                    return (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-xs font-medium text-slate-700 truncate">{sv.title}</span>
+                            <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                              <span className="text-[10px] text-slate-400">Ph.{sv.phase_number}</span>
+                              {score !== null && (
+                                <span className="text-[10px] font-bold text-slate-600">{score.toFixed(1)}/5</span>
+                              )}
+                              <RagPill score={score} green={sv.rag_green_threshold} amber={sv.rag_amber_threshold} />
+                            </div>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${barPct}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {/* Overall avg if multiple surveys */}
+                  {scoredSurveys.length > 1 && (
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-xs text-slate-400 font-medium">Overall avg</span>
+                      <span className="text-sm font-bold text-[#1F4E79]">{overallReadiness.toFixed(1)}/5</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Quick-stats tile */}
+            <div className="flex flex-col gap-4">
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 flex-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Templates</p>
+                <p className="text-2xl font-bold text-[#1F4E79]">{templateCount}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {templateCount === 0 ? 'None started yet' : `template${templateCount === 1 ? '' : 's'} in progress`}
+                </p>
+              </div>
+
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 flex-1">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Surveys Done</p>
+                <p className="text-2xl font-bold text-[#E8913A]">{surveyResults.length}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  {surveyResults.length === 0 ? 'None submitted yet' : `survey${surveyResults.length === 1 ? '' : 's'} submitted`}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Phase cards */}
-      <div className="max-w-4xl px-8 py-8">
+      <div className="max-w-4xl px-8 pb-8">
         <p className="text-xs font-semibold tracking-widest text-slate-400 uppercase mb-4">All Phases</p>
 
         {loading ? (
@@ -195,6 +329,12 @@ export default function Dashboard() {
               const isLocked    = ph.status === 'locked'
               const phasePct    = ph.available > 0 ? Math.round((ph.completed / ph.available) * 100) : 0
 
+              // Survey signal for this phase
+              const phaseSurveys = surveyResults.filter(r => r.surveys?.phase_number === ph.num)
+              const phaseAvgScore = phaseSurveys.length > 0
+                ? phaseSurveys.filter(r => r.score !== null).reduce((s, r) => s + r.score, 0) / phaseSurveys.filter(r => r.score !== null).length
+                : null
+
               return (
                 <div key={ph.num} className={`flex items-center gap-5 p-5 rounded-2xl border transition-all ${
                   isActive    ? 'bg-white border-[#1F4E79]/20 shadow-md shadow-blue-900/5' :
@@ -210,10 +350,13 @@ export default function Dashboard() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">{ph.label}</span>
                       {isActive && <span className="text-[10px] font-semibold text-[#1F4E79] bg-[#1F4E79]/10 px-2 py-0.5 rounded-full">In Progress</span>}
                       {phasePct === 100 && <span className="text-[10px] font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">All done ✓</span>}
+                      {phaseAvgScore !== null && (
+                        <RagPill score={phaseAvgScore} green={3.5} amber={2.5} />
+                      )}
                     </div>
                     <p className={`font-semibold text-sm ${isLocked ? 'text-slate-400' : 'text-slate-800'}`}>{ph.name}</p>
                     <p className="text-xs text-slate-400 mt-0.5">{ph.desc}</p>
