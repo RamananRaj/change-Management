@@ -159,6 +159,9 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
 
   const tabs = ['exercise', 'tool', 'template'].filter(t => grouped[t].length > 0)
 
+  // If active tab has no items in the current scope, fall back to first available tab
+  const displayType = tabs.includes(activeType) ? activeType : (tabs[0] ?? 'exercise')
+
   // Scope filter pills to show
   const scopePills = [
     { key: 'all',      label: 'All',                                         count: scopeCounts.all },
@@ -231,7 +234,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                 {scopePills.map(pill => (
                   <button
                     key={pill.key}
-                    onClick={() => { setScopeFilter(pill.key); setActiveType('exercise') }}
+                    onClick={() => setScopeFilter(pill.key)
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all ${
                       scopeFilter === pill.key
                         ? 'bg-white/90 text-slate-700 shadow-sm'
@@ -333,21 +336,29 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         ) : (
           /* ── UNLOCKED: full interactive content ── */
           <>
-            {tabs.includes(activeType) && (
+            {tabs.length === 0 ? (
+              <div className="text-center py-12 bg-white rounded-2xl border border-slate-100">
+                <p className="text-2xl mb-2">🔍</p>
+                <p className="text-slate-500 text-sm">No content in this filter.</p>
+                <button onClick={() => setScopeFilter('all')} className="text-xs text-[#1F4E79] font-semibold mt-2 hover:underline">
+                  Show all content
+                </button>
+              </div>
+            ) : (
               <div>
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="text-lg">{typeConfig[activeType].icon}</span>
-                  <h2 className="font-bold text-slate-800">{typeConfig[activeType].label}</h2>
-                  <span className="text-xs text-slate-400">({grouped[activeType].length})</span>
+                  <span className="text-lg">{typeConfig[displayType].icon}</span>
+                  <h2 className="font-bold text-slate-800">{typeConfig[displayType].label}</h2>
+                  <span className="text-xs text-slate-400">({grouped[displayType].length})</span>
                 </div>
                 <div className="space-y-3">
-                  {grouped[activeType].map(item => {
+                  {grouped[displayType].map(item => {
                     const activity = activities.find(a => a.content_id === item.id)
                     return (
                       <ContentCard
                         key={item.id}
                         item={item}
-                        typeCfg={typeConfig[activeType]}
+                        typeCfg={typeConfig[displayType]}
                         activity={activity}
                         industryLabel={industryLabel}
                         industryIcon={industryIcon}
