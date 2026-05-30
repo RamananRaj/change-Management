@@ -56,6 +56,7 @@ const emptyContentForm = {
   file_url: '',
   is_common: true,
   sort_order: 0,
+  template_id: '',
 }
 
 const emptyRoleForm = {
@@ -140,6 +141,7 @@ export default function Admin() {
   useEffect(() => {
     fetchRoles()
     fetchIndustries()
+    fetchTemplates()
   }, [])
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -185,6 +187,7 @@ export default function Admin() {
       file_url:     item.file_url ?? '',
       is_common:    item.is_common,
       sort_order:   item.sort_order ?? 0,
+      template_id:  item.template_id ?? '',
     })
     setEditId(item.id)
     setFormError(null)
@@ -196,10 +199,11 @@ export default function Admin() {
     setSaving(true)
     const payload = {
       ...form,
-      industry: form.industry || null,
-      role:     form.role     || null,
-      body:     form.body     || null,
-      file_url: form.file_url || null,
+      industry:    form.industry    || null,
+      role:        form.role        || null,
+      body:        form.body        || null,
+      file_url:    form.file_url    || null,
+      template_id: form.template_id || null,
     }
     let error
     if (editId) {
@@ -992,6 +996,35 @@ export default function Admin() {
                 <textarea value={form.description} onChange={e => setForm({...form, description: e.target.value})}
                   placeholder="What does this tool/exercise help the user achieve?"
                   rows={3} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
+              </div>
+
+              {/* Linked Template */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Linked Template <span className="font-normal text-slate-400">(optional — embeds interactive table in user's drawer)</span>
+                </label>
+                <select
+                  value={form.template_id}
+                  onChange={e => setForm({...form, template_id: e.target.value})}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]"
+                >
+                  <option value="">No template linked</option>
+                  {templates
+                    .filter(t => t.phase_number === form.phase_number && t.is_active)
+                    .map(t => (
+                      <option key={t.id} value={t.id}>
+                        📋 {t.title}
+                        {t.industry ? ` · ${t.industry}` : ''}
+                        {t.role ? ` · ${t.role}` : ''}
+                      </option>
+                    ))
+                  }
+                </select>
+                {form.template_id && (
+                  <p className="text-[10px] text-[#1F4E79] mt-1">
+                    ✓ Users will see the {templates.find(t => t.id === form.template_id)?.title} table embedded in this item's drawer.
+                  </p>
+                )}
               </div>
 
               {/* Template-only fields */}
