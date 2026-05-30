@@ -204,10 +204,11 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/40 z-40 transition-opacity" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 z-40 transition-opacity" onClick={onClose} />
 
-      {/* Drawer — widens when template is embedded */}
-      <div className={`fixed right-0 top-0 h-full bg-white z-50 shadow-2xl flex flex-col ${linkedTemplate ? 'w-full max-w-4xl' : 'w-full max-w-xl'}`}>
+      {/* Centered floating modal — grows wider when a template table is embedded */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <div className={`relative bg-white rounded-2xl shadow-2xl flex flex-col pointer-events-auto w-full ${linkedTemplate ? 'max-w-6xl' : 'max-w-2xl'}`} style={{ maxHeight: '92vh' }}>
 
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-slate-100 shrink-0">
@@ -430,6 +431,7 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
             </div>
           )}
         </div>
+      </div>
       </div>
     </>
   )
