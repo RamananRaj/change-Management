@@ -228,13 +228,8 @@ export default function AdminSurveys({ roles }) {
     ))
   }
 
-  // AI Insight generation
+  // Rule-based insight generation — no API key required
   async function generateInsight() {
-    const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
-    if (!apiKey) {
-      alert('Add VITE_ANTHROPIC_API_KEY to your .env file to enable AI insights.')
-      return
-    }
     setGeneratingInsight(true)
 
     // Aggregate scores per question
@@ -251,71 +246,100 @@ export default function AdminSurveys({ roles }) {
       ? totalScores.reduce((a, b) => a + b, 0) / totalScores.length
       : 0
 
-    const ragStatus = overallAvg >= Number(resultsFor.rag_green_threshold) ? 'Green'
-      : overallAvg >= Number(resultsFor.rag_amber_threshold) ? 'Amber' : 'Red'
+    const insight = buildRuleBasedInsight(resultsFor, resultsResponses, qAvgs, overallAvg)
 
-    const phaseName = PHASES.find(p => p.num === resultsFor.phase_number)?.label ?? `Phase ${resultsFor.phase_number}`
+    await supabase.from('surveys').update({
+      ai_insight:                insight,
+      ai_insight_generated_at:   new Date().toISOString(),
+      ai_insight_response_count: resultsResponses.length,
+    }).eq('id', resultsFor.id)
 
-    const prompt = `You are an expert change management consultant analysing survey results for an organisation going through a change programme.
+    setResultsFor(prev => ({
+      ...prev,
+      ai_insight:                insight,
+      ai_insight_generated_at:   new Date().toISOString(),
+      ai_insight_response_count: resultsResponses.length,
+    }))
+    setSurveys(prev => prev.map(s => s.id === resultsFor.id
+      ? { ...s, ai_insight: insight, ai_insight_generated_at: new Date().toISOString(), ai_insight_response_count: resultsResponses.length }
+      : s
+    ))
 
-Survey: "${resultsFor.title}"
-Phase: ${phaseName}
-Total respondents: ${resultsResponses.length}
-Overall readiness score: ${overallAvg.toFixed(1)}/5 (${ragStatus})
-
-Question-level results:
-${qAvgs.filter(q => q.avg !== null).map(q => `- ${q.question_text} [${q.question_type}]: ${q.avg.toFixed(1)}/5`).join('\n')}
-${qAvgs.filter(q => q.avg === null).map(q => `- ${q.question_text} [text/qualitative]: no score`).join('\n')}
-
-Provide a concise organisational insight in 3–4 paragraphs covering:
-1. What these scores reveal about this organisation or division's change readiness profile and culture
-2. Key strengths to leverage in the change programme
-3. Priority risk areas, what they mean for implementation, and the likely root causes
-4. 2–3 specific, actionable recommendations for the change manager
-
-Be direct and specific to change management. Avoid generic advice. Reference the actual scores and question topics.`
-
-    try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key':          apiKey,
-          'anthropic-version':  '2023-06-01',
-          'content-type':       'application/json',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
-        body: JSON.stringify({
-          model:      'claude-haiku-4-5-20251001',
-          max_tokens: 700,
-          messages:   [{ role: 'user', content: prompt }],
-        }),
-      })
-
-      const data   = await res.json()
-      const insight = data.content?.[0]?.text
-
-      if (insight) {
-        await supabase.from('surveys').update({
-          ai_insight:                insight,
-          ai_insight_generated_at:   new Date().toISOString(),
-          ai_insight_response_count: resultsResponses.length,
-        }).eq('id', resultsFor.id)
-
-        setResultsFor(prev => ({
-          ...prev,
-          ai_insight:                insight,
-          ai_insight_generated_at:   new Date().toISOString(),
-          ai_insight_response_count: resultsResponses.length,
-        }))
-        setSurveys(prev => prev.map(s => s.id === resultsFor.id
-          ? { ...s, ai_insight: insight, ai_insight_generated_at: new Date().toISOString(), ai_insight_response_count: resultsResponses.length }
-          : s
-        ))
-      }
-    } catch (err) {
-      alert('Could not generate insight: ' + err.message)
-    }
     setGeneratingInsight(false)
+  }
+
+  function buildRuleBasedInsight(survey, responses, qAvgs, overallAvg) {
+    const n          = responses.length
+    const greenT     = Number(survey.rag_green_threshold)
+    const amberT     = Number(survey.rag_amber_threshold)
+    const ragStatus  = overallAvg >= greenT ? 'Green' : overallAvg >= amberT ? 'Amber' : 'Red'
+    const phaseName  = PHASES.find(p => p.num === survey.phase_number)?.label ?? `Phase ${survey.phase_number}`
+    const scored     = qAvgs.filter(q => q.avg !== null).sort((a, b) => b.avg - a.avg)
+    const strengths  = scored.slice(0, 2)
+    const risks      = scored.slice(-2).reverse()
+    const submitted  = responses.filter(r => r.submitted_at).length
+    const inProgress = n - submitted
+
+    // ── Overall readiness paragraph ──────────────────────────────────────────
+    const overallLine = {
+      Green: `This organisation shows strong change readiness for ${phaseName} with an overall score of ${overallAvg.toFixed(1)}/5. The data suggests a solid foundation is in place to progress through this phase with confidence.`,
+      Amber: `This organisation shows moderate change readiness for ${phaseName} with an overall score of ${overallAvg.toFixed(1)}/5. There are clear strengths to build on, but targeted action is needed in specific areas before this phase is complete.`,
+      Red:   `This organisation is showing low change readiness for ${phaseName} with an overall score of ${overallAvg.toFixed(1)}/5. Immediate attention is required across several areas before progressing. The change manager should consider a reset conversation with sponsors.`,
+    }[ragStatus]
+
+    // ── Participation note ───────────────────────────────────────────────────
+    const participationLine = submitted === n
+      ? `All ${n} respondent${n !== 1 ? 's' : ''} have submitted their responses.`
+      : `${submitted} of ${n} respondent${n !== 1 ? 's have' : ' has'} submitted — ${inProgress} response${inProgress !== 1 ? 's are' : ' is'} still in progress. Consider following up to ensure full participation before drawing final conclusions.`
+
+    // ── Strengths paragraph ──────────────────────────────────────────────────
+    let strengthsPara = ''
+    if (strengths.length > 0) {
+      const topList = strengths.map(q => `${q.question_text} (${q.avg.toFixed(1)}/5)`).join(' and ')
+      const strengthComment = overallAvg >= greenT
+        ? 'These are strong assets — build on them in your engagement and communication strategy.'
+        : 'These are relative strengths within an otherwise mixed picture — leverage them as anchors for your change narrative.'
+      strengthsPara = `Strengths: ${topList} are the highest-scoring areas. ${strengthComment}`
+    }
+
+    // ── Risk areas paragraph ─────────────────────────────────────────────────
+    let risksPara = ''
+    if (risks.length > 0 && risks[0].avg !== null) {
+      const riskList = risks
+        .filter(q => q.avg < amberT)
+        .map(q => `${q.question_text} (${q.avg.toFixed(1)}/5)`)
+      const allRisksOk = risks.every(q => q.avg >= amberT)
+
+      if (allRisksOk) {
+        risksPara = `Risk Areas: No questions scored in the Red zone. Monitor ${risks.map(q => q.question_text).join(' and ')} (${risks.map(q => q.avg.toFixed(1)).join('/')}/5) — these are the lowest-scoring areas and warrant close attention as the programme progresses.`
+      } else if (riskList.length > 0) {
+        risksPara = `Priority Risk Areas: ${riskList.join(' and ')} scored below the Amber threshold and require immediate attention. Low scores in these areas are a strong signal that stakeholder engagement and targeted interventions are needed before moving to the next phase.`
+      }
+    }
+
+    // ── Recommendations paragraph ────────────────────────────────────────────
+    const recLines = []
+    if (overallAvg < amberT) {
+      recLines.push('Schedule a sponsor alignment session to reinforce the case for change and re-baseline expectations.')
+    }
+    if (risks.some(q => q.avg !== null && q.avg < amberT)) {
+      recLines.push(`Address low-scoring areas with targeted interventions — workshops, one-to-one conversations, or additional communication before progressing.`)
+    }
+    if (inProgress > 0) {
+      recLines.push(`Follow up with the ${inProgress} respondent${inProgress !== 1 ? 's' : ''} who haven't yet submitted to get a complete picture.`)
+    }
+    if (overallAvg >= greenT) {
+      recLines.push('Use this strong readiness signal as evidence to maintain momentum and stakeholder confidence going into the next phase.')
+    }
+    if (recLines.length === 0) {
+      recLines.push('Continue monitoring readiness as the programme progresses and consider re-running this survey at the end of the phase to measure movement.')
+    }
+
+    const recsPara = `Recommendations: ${recLines.join(' ')}`
+
+    return [overallLine, participationLine, strengthsPara, risksPara, recsPara]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   // ── Results helpers ──────────────────────────────────────────────────────────
@@ -456,7 +480,7 @@ Be direct and specific to change management. Avoid generic advice. Reference the
           <div className="border border-[#1F4E79]/20 rounded-2xl p-5 bg-[#1F4E79]/3">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <p className="text-xs font-semibold text-[#1F4E79] uppercase tracking-widest mb-0.5">🤖 AI Insights</p>
+                <p className="text-xs font-semibold text-[#1F4E79] uppercase tracking-widest mb-0.5">📊 Survey Insights</p>
                 {resultsFor.ai_insight_generated_at ? (
                   <p className="text-[11px] text-slate-400">
                     Generated {new Date(resultsFor.ai_insight_generated_at).toLocaleDateString()} · based on {resultsFor.ai_insight_response_count} response{resultsFor.ai_insight_response_count !== 1 ? 's' : ''}
@@ -475,7 +499,7 @@ Be direct and specific to change management. Avoid generic advice. Reference the
                 disabled={generatingInsight || resultsResponses.length === 0}
                 className="shrink-0 ml-4 text-xs font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-50"
               >
-                {generatingInsight ? '⏳ Generating…' : resultsFor.ai_insight ? '↺ Regenerate' : '✦ Generate Insights'}
+                {generatingInsight ? '⏳ Generating…' : resultsFor.ai_insight ? '↺ Regenerate Summary' : '📊 Generate Summary'}
               </button>
             </div>
 
