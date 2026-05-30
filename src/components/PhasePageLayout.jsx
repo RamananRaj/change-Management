@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ExerciseDrawer from './ExerciseDrawer'
 import TemplateDrawer from './TemplateDrawer'
+import SurveyDrawer from './SurveyDrawer'
 
 
 const typeConfig = {
@@ -58,6 +59,9 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const [activeType,      setActiveType]      = useState('exercise')
   const [drawerItem,      setDrawerItem]      = useState(null)
   const [templateItem,    setTemplateItem]    = useState(null)
+  const [surveys,         setSurveys]         = useState([])
+  const [surveyResponses, setSurveyResponses] = useState([])
+  const [surveyItem,      setSurveyItem]      = useState(null)
   const [scopeFilter,     setScopeFilter]     = useState('all')
   // Live label lookups from Supabase (roles + industries)
   const [roleLabel,     setRoleLabel]     = useState(null)
@@ -114,6 +118,30 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
       .or(`role.is.null,role.eq.${profile.role ?? '__none__'}`)
       .order('sort_order', { ascending: true })
     setTemplates(tmplData ?? [])
+
+    // Fetch surveys visible to this user's role
+    const roleFilter = profile.role ? `target_role.eq.${profile.role}` : ''
+    const surveyFilter = roleFilter
+      ? `target_role.is.null,${roleFilter}`
+      : 'target_role.is.null'
+    const { data: surveyData } = await supabase
+      .from('surveys')
+      .select('*')
+      .eq('phase_number', phaseNum)
+      .eq('is_active', true)
+      .or(surveyFilter)
+      .order('sort_order', { ascending: true })
+    setSurveys(surveyData ?? [])
+
+    // Fetch this user's survey responses for this phase
+    if (surveyData && surveyData.length > 0) {
+      const { data: srData } = await supabase
+        .from('survey_responses')
+        .select('survey_id, score, submitted_at')
+        .eq('user_id', user.id)
+        .in('survey_id', surveyData.map(s => s.id))
+      setSurveyResponses(srData ?? [])
+    }
 
     // Fetch this user's activity records for this phase
     await fetchActivities()
@@ -256,6 +284,23 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                   }`}>{templates.length}</span>
                 </button>
               )}
+              {/* Surveys tab — only visible if user's role matches */}
+              {surveys.length > 0 && (
+                <button
+                  onClick={() => setActiveType('surveys')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    activeType === 'surveys'
+                      ? 'bg-white text-slate-800 shadow'
+                      : 'bg-white/15 text-white hover:bg-white/25'
+                  }`}
+                >
+                  <span>📊</span>
+                  Surveys
+                  <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
+                    activeType === 'surveys' ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
+                  }`}>{surveys.length}</span>
+                </button>
+              )}
             </div>
 
             {/* Scope filter — only show if there are multiple scopes */}
@@ -367,8 +412,57 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         ) : (
           /* ── UNLOCKED: full interactive content ── */
           <>
-            {/* Templates view */}
-            {activeType === 'templates' ? (
+            {/* Surveys view */}
+            {activeType === 'surveys' ? (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">📊</span>
+                  <h2 className="font-bold text-slate-800">Surveys</h2>
+                  <span className="text-xs text-slate-400">({surveys.length})</span>
+                </div>
+                <div className="space-y-3">
+                  {surveys.map(survey => {
+                    const resp = surveyResponses.find(r => r.survey_id === survey.id)
+                    const isSubmitted = !!resp?.submitted_at
+                    const inProgress = !!resp && !resp.submitted_at
+                    return (
+                      <div
+                        key={survey.id}
+                        className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+                        onClick={() => setSurveyItem(survey)}
+                      >
+                        <div className="flex items-start gap-4 p-5">
+                          <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 text-base">📊</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">survey</span>
+                              {isSubmitted && (
+                                <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">✓ Submitted</span>
+                              )}
+                              {inProgress && (
+                                <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">● In Progress</span>
+                              )}
+                            </div>
+                            <p className="font-semibold text-slate-800 text-sm">{survey.title}</p>
+                            {survey.description && (
+                              <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{survey.description}</p>
+                            )}
+                            {isSubmitted && resp?.score != null && (
+                              <p className="text-xs text-slate-500 mt-1">
+                                Your score: <span className="font-semibold text-[#1F4E79]">{Number(resp.score).toFixed(1)}/5</span>
+                              </p>
+                            )}
+                          </div>
+                          <button className="shrink-0 text-xs font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] transition-colors">
+                            {isSubmitted ? 'View' : inProgress ? 'Continue →' : 'Start →'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : activeType === 'templates' ? (
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-lg">📋</span>
@@ -441,6 +535,26 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         <TemplateDrawer
           template={templateItem}
           onClose={() => setTemplateItem(null)}
+        />
+      )}
+
+      {/* Survey drawer */}
+      {surveyItem && (
+        <SurveyDrawer
+          survey={surveyItem}
+          onClose={() => setSurveyItem(null)}
+          onComplete={() => {
+            setSurveyItem(null)
+            // Refresh survey responses after submission
+            if (surveys.length > 0) {
+              supabase
+                .from('survey_responses')
+                .select('survey_id, score, submitted_at')
+                .eq('user_id', user.id)
+                .in('survey_id', surveys.map(s => s.id))
+                .then(({ data }) => setSurveyResponses(data ?? []))
+            }
+          }}
         />
       )}
     </div>
