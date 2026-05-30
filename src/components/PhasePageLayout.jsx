@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ExerciseDrawer from './ExerciseDrawer'
+import TemplateDrawer from './TemplateDrawer'
 
 
 const typeConfig = {
@@ -49,13 +50,15 @@ const phaseNames = {
 
 export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const { profile, user } = useAuth()
-  const [items,         setItems]         = useState([])
-  const [allPhases,     setAllPhases]     = useState([])
-  const [activities,    setActivities]    = useState([])
-  const [loading,       setLoading]       = useState(true)
-  const [activeType,    setActiveType]    = useState('exercise')
-  const [drawerItem,    setDrawerItem]    = useState(null)
-  const [scopeFilter,   setScopeFilter]   = useState('all')
+  const [items,           setItems]           = useState([])
+  const [templates,       setTemplates]       = useState([])
+  const [allPhases,       setAllPhases]       = useState([])
+  const [activities,      setActivities]      = useState([])
+  const [loading,         setLoading]         = useState(true)
+  const [activeType,      setActiveType]      = useState('exercise')
+  const [drawerItem,      setDrawerItem]      = useState(null)
+  const [templateItem,    setTemplateItem]    = useState(null)
+  const [scopeFilter,     setScopeFilter]     = useState('all')
   // Live label lookups from Supabase (roles + industries)
   const [roleLabel,     setRoleLabel]     = useState(null)
   const [industryLabel, setIndustryLabel] = useState(null)
@@ -100,6 +103,17 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
       .order('sort_order', { ascending: true })
 
     setItems(data ?? [])
+
+    // Fetch templates for this phase filtered by industry + role
+    const { data: tmplData } = await supabase
+      .from('templates')
+      .select('*')
+      .eq('phase_number', phaseNum)
+      .eq('is_active', true)
+      .or(`industry.is.null,industry.eq.${profile.industry ?? '__none__'}`)
+      .or(`role.is.null,role.eq.${profile.role ?? '__none__'}`)
+      .order('sort_order', { ascending: true })
+    setTemplates(tmplData ?? [])
 
     // Fetch this user's activity records for this phase
     await fetchActivities()
@@ -225,6 +239,23 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                   }`}>{grouped[type].length}</span>
                 </button>
               ))}
+              {/* Templates tab */}
+              {templates.length > 0 && (
+                <button
+                  onClick={() => setActiveType('templates')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                    activeType === 'templates'
+                      ? 'bg-white text-slate-800 shadow'
+                      : 'bg-white/15 text-white hover:bg-white/25'
+                  }`}
+                >
+                  <span>📋</span>
+                  Templates
+                  <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
+                    activeType === 'templates' ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
+                  }`}>{templates.length}</span>
+                </button>
+              )}
             </div>
 
             {/* Scope filter — only show if there are multiple scopes */}
@@ -336,7 +367,28 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         ) : (
           /* ── UNLOCKED: full interactive content ── */
           <>
-            {tabs.length === 0 ? (
+            {/* Templates view */}
+            {activeType === 'templates' ? (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-lg">📋</span>
+                  <h2 className="font-bold text-slate-800">Templates</h2>
+                  <span className="text-xs text-slate-400">({templates.length})</span>
+                </div>
+                <div className="space-y-3">
+                  {templates.map(tmpl => (
+                    <TemplateCard
+                      key={tmpl.id}
+                      template={tmpl}
+                      industryLabel={industryLabel}
+                      industryIcon={industryIcon}
+                      roleLabel={roleLabel}
+                      onOpen={() => setTemplateItem(tmpl)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : tabs.length === 0 ? (
               <div className="text-center py-12 bg-white rounded-2xl border border-slate-100">
                 <p className="text-2xl mb-2">🔍</p>
                 <p className="text-slate-500 text-sm">No content in this filter.</p>
@@ -374,7 +426,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         )}
       </div>
 
-      {/* Exercise / Tool / Template drawer */}
+      {/* Exercise / Tool drawer */}
       {drawerItem && (
         <ExerciseDrawer
           item={drawerItem}
@@ -383,6 +435,62 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
           onActivityChange={fetchActivities}
         />
       )}
+
+      {/* Template drawer */}
+      {templateItem && (
+        <TemplateDrawer
+          template={templateItem}
+          onClose={() => setTemplateItem(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function TemplateCard({ template, industryLabel, industryIcon, roleLabel, onOpen }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-shadow">
+      <div className="flex items-start gap-4 p-5">
+        <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 text-base">📋</div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1">
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">template</span>
+            {template.industry && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+                {industryIcon} {industryLabel ?? template.industry}
+              </span>
+            )}
+            {template.role && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                {roleLabel ?? template.role}
+              </span>
+            )}
+          </div>
+          <p className="font-semibold text-slate-800 text-sm">{template.title}</p>
+          {template.description && (
+            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{template.description}</p>
+          )}
+          {/* Column preview */}
+          {(template.columns ?? []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {template.columns.slice(0, 5).map(col => (
+                <span key={col.key} className="text-[10px] bg-slate-50 border border-slate-200 text-slate-500 px-1.5 py-0.5 rounded">
+                  {col.label}
+                </span>
+              ))}
+              {template.columns.length > 5 && (
+                <span className="text-[10px] text-slate-400">+{template.columns.length - 5} more</span>
+              )}
+            </div>
+          )}
+        </div>
+        <button
+          onClick={onOpen}
+          className="shrink-0 bg-[#1F4E79] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#163a5c] transition-colors"
+        >
+          Open →
+        </button>
+      </div>
     </div>
   )
 }
