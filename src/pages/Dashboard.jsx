@@ -66,66 +66,72 @@ export default function Dashboard() {
   }, [user, profile])
 
   async function load() {
-    setLoading(true)
+    try {
+      setLoading(true)
 
-    // 1. Fetch project + phases
-    const { data: proj } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
+      // 1. Fetch project + phases
+      const { data: proj } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
 
-    if (!proj) { setLoading(false); return }
+      if (!proj) { setLoading(false); return }
 
-    const { data: phaseRows } = await supabase
-      .from('project_phases')
-      .select('*')
-      .eq('project_id', proj.id)
-      .order('phase_number', { ascending: true })
-    setPhases(phaseRows ?? [])
+      const [
+        { data: phaseRows },
+        { data: contentItems },
+        { data: completedActs },
+        { data: surveyResps },
+        { data: tmplResps },
+      ] = await Promise.all([
+        supabase.from('project_phases').select('*').eq('project_id', proj.id).order('phase_number'),
+        supabase.from('phase_content').select('id, phase_number')
+          .or(`industry.is.null,industry.eq.${profile.industry ?? '__none__'}`)
+          .or(`role.is.null,role.eq.${profile.role ?? '__none__'}`),
+        supabase.from('user_activities').select('content_id, phase_number')
+          .eq('user_id', user.id).eq('status', 'completed'),
+        supabase.from('survey_responses').select('survey_id, score, submitted_at')
+          .eq('user_id', user.id).not('submitted_at', 'is', null),
+        supabase.from('template_responses').select('id').eq('user_id', user.id),
+      ])
 
-    // 2. Fetch all available content for this user's role + industry
-    const { data: contentItems } = await supabase
-      .from('phase_content')
-      .select('id, phase_number')
-      .or(`industry.is.null,industry.eq.${profile.industry ?? '__none__'}`)
-      .or(`role.is.null,role.eq.${profile.role ?? '__none__'}`)
+      setPhases(phaseRows ?? [])
 
-    // 3. Fetch all completed activities for this user
-    const { data: completedActs } = await supabase
-      .from('user_activities')
-      .select('content_id, phase_number')
-      .eq('user_id', user.id)
-      .eq('status', 'completed')
+      // Per-phase content stats
+      const stats = {}
+      for (const cfg of phaseConfig) {
+        stats[cfg.num] = {
+          available: (contentItems ?? []).filter(c => c.phase_number === cfg.num).length,
+          completed: (completedActs ?? []).filter(a => a.phase_number === cfg.num).length,
+        }
+      }
+      setPhaseStats(stats)
 
-    // 4. Build per-phase stats
-    const stats = {}
-    for (const cfg of phaseConfig) {
-      const available = (contentItems ?? []).filter(c => c.phase_number === cfg.num).length
-      const completed = (completedActs ?? []).filter(a => a.phase_number === cfg.num).length
-      stats[cfg.num] = { available, completed }
+      // Fetch survey metadata separately (no join, avoids relational query issues)
+      const surveyIds = (surveyResps ?? []).map(r => r.survey_id).filter(Boolean)
+      let surveyMeta = []
+      if (surveyIds.length > 0) {
+        const { data: sm } = await supabase
+          .from('surveys')
+          .select('id, title, phase_number, rag_green_threshold, rag_amber_threshold')
+          .in('id', surveyIds)
+        surveyMeta = sm ?? []
+      }
+
+      const merged = (surveyResps ?? []).map(r => ({
+        ...r,
+        survey: surveyMeta.find(s => s.id === r.survey_id) ?? null,
+      }))
+      setSurveyResults(merged)
+      setTemplateCount((tmplResps ?? []).length)
+    } catch (err) {
+      console.error('Dashboard load error:', err)
+    } finally {
+      setLoading(false)
     }
-    setPhaseStats(stats)
-
-    // 5. Fetch submitted survey responses for this user (with survey metadata)
-    const { data: surveyResps } = await supabase
-      .from('survey_responses')
-      .select('score, submitted_at, surveys(id, title, phase_number, rag_green_threshold, rag_amber_threshold)')
-      .eq('user_id', user.id)
-      .not('submitted_at', 'is', null)
-      .order('submitted_at', { ascending: false })
-    setSurveyResults(surveyResps ?? [])
-
-    // 6. Fetch template responses started/saved by this user
-    const { data: tmplResps } = await supabase
-      .from('template_responses')
-      .select('id')
-      .eq('user_id', user.id)
-    setTemplateCount((tmplResps ?? []).length)
-
-    setLoading(false)
   }
 
   // Progress calculations
@@ -251,7 +257,7 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-3">
                   {surveyResults.map((r, i) => {
-                    const sv = r.surveys
+                    const sv = r.survey
                     if (!sv) return null
                     const score = r.score
                     const rag   = getRag(score, sv.rag_green_threshold, sv.rag_amber_threshold)
@@ -330,7 +336,7 @@ export default function Dashboard() {
               const phasePct    = ph.available > 0 ? Math.round((ph.completed / ph.available) * 100) : 0
 
               // Survey signal for this phase
-              const phaseSurveys = surveyResults.filter(r => r.surveys?.phase_number === ph.num)
+              const phaseSurveys = surveyResults.filter(r => r.survey?.phase_number === ph.num)
               const phaseAvgScore = phaseSurveys.length > 0
                 ? phaseSurveys.filter(r => r.score !== null).reduce((s, r) => s + r.score, 0) / phaseSurveys.filter(r => r.score !== null).length
                 : null
