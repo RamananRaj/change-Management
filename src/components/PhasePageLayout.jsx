@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -21,7 +21,7 @@ const typeConfig = {
     badge: 'bg-green-100 text-green-700',
   },
   template: {
-    label: 'Templates',
+    label: 'Resources',
     icon: '📄',
     color: 'bg-purple-50 border-purple-100',
     badge: 'bg-purple-100 text-purple-700',
@@ -63,6 +63,8 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const [surveyResponses, setSurveyResponses] = useState([])
   const [surveyItem,      setSurveyItem]      = useState(null)
   const [scopeFilter,     setScopeFilter]     = useState('all')
+  const [showTypeMenu,    setShowTypeMenu]    = useState(false)
+  const typeMenuRef = useRef(null)
   // Live label lookups from Supabase (roles + industries)
   const [roleLabel,     setRoleLabel]     = useState(null)
   const [industryLabel, setIndustryLabel] = useState(null)
@@ -75,6 +77,17 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
     loadAll()
     loadLabels()
   }, [profile, user])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (typeMenuRef.current && !typeMenuRef.current.contains(e.target)) {
+        setShowTypeMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   async function loadAll() {
     setLoading(true)
@@ -245,65 +258,100 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
           <p className="text-white/60 text-sm">{subtitle}</p>
         </div>
 
-        {/* Tab pills + scope filter — only for unlocked phases */}
+        {/* Nav row — dropdown + scope filter — only for unlocked phases */}
         {!loading && !isLocked && (
-          <div className="mt-5 space-y-2">
-            {/* Content type tabs */}
-            <div className="flex gap-2 flex-wrap">
-              {Object.entries(typeConfig).map(([type, cfg]) => grouped[type]?.length > 0 && (
-                <button
-                  key={type}
-                  onClick={() => setActiveType(type)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                    activeType === type
-                      ? 'bg-white text-slate-800 shadow'
-                      : 'bg-white/15 text-white hover:bg-white/25'
-                  }`}
-                >
-                  <span>{cfg.icon}</span>
-                  {cfg.label}
-                  <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
-                    activeType === type ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
-                  }`}>{grouped[type].length}</span>
-                </button>
-              ))}
-              {/* Templates tab */}
-              {templates.length > 0 && (
-                <button
-                  onClick={() => setActiveType('templates')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                    activeType === 'templates'
-                      ? 'bg-white text-slate-800 shadow'
-                      : 'bg-white/15 text-white hover:bg-white/25'
-                  }`}
-                >
-                  <span>📋</span>
-                  Templates
-                  <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
-                    activeType === 'templates' ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
-                  }`}>{templates.length}</span>
-                </button>
-              )}
-              {/* Surveys tab — only visible if user's role matches */}
-              {surveys.length > 0 && (
-                <button
-                  onClick={() => setActiveType('surveys')}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                    activeType === 'surveys'
-                      ? 'bg-white text-slate-800 shadow'
-                      : 'bg-white/15 text-white hover:bg-white/25'
-                  }`}
-                >
-                  <span>📊</span>
-                  Surveys
-                  <span className={`ml-1 rounded-full w-4 h-4 flex items-center justify-center text-[10px] font-bold ${
-                    activeType === 'surveys' ? 'bg-slate-200 text-slate-600' : 'bg-white/20 text-white'
-                  }`}>{surveys.length}</span>
-                </button>
+          <div className="mt-5 flex items-center gap-3 flex-wrap">
+
+            {/* ── Content type dropdown ── */}
+            <div className="relative" ref={typeMenuRef}>
+              <button
+                onClick={() => setShowTypeMenu(v => !v)}
+                className="flex items-center gap-2 bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-semibold px-3.5 py-2 rounded-xl transition-all"
+              >
+                <span>
+                  {activeType === 'templates' ? '📋' :
+                   activeType === 'surveys'   ? '📊' :
+                   typeConfig[activeType]?.icon ?? '📄'}
+                </span>
+                <span>
+                  {activeType === 'templates' ? 'Workbooks' :
+                   activeType === 'surveys'   ? 'Surveys' :
+                   typeConfig[activeType]?.label ?? 'Select'}
+                </span>
+                <span className="bg-white/20 text-white rounded-full px-1.5 py-0.5 text-[10px] font-bold">
+                  {activeType === 'templates' ? templates.length :
+                   activeType === 'surveys'   ? surveys.length :
+                   grouped[activeType]?.length ?? 0}
+                </span>
+                <svg className={`w-3 h-3 opacity-70 transition-transform ${showTypeMenu ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {showTypeMenu && (
+                <div className="absolute top-full left-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-50 min-w-[200px]">
+                  {/* Content types */}
+                  {Object.entries(typeConfig).map(([type, cfg]) => grouped[type]?.length > 0 && (
+                    <button
+                      key={type}
+                      onClick={() => { setActiveType(type); setShowTypeMenu(false) }}
+                      className={`flex items-center gap-2.5 w-full px-4 py-2.5 text-left text-sm transition-colors ${
+                        activeType === type
+                          ? 'bg-[#EFF6FF] text-[#1F4E79] font-semibold'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-base w-5 text-center">{cfg.icon}</span>
+                      <span className="flex-1">{cfg.label}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        activeType === type ? 'bg-[#DBEAFE] text-[#1F4E79]' : 'bg-slate-100 text-slate-500'
+                      }`}>{grouped[type].length}</span>
+                    </button>
+                  ))}
+
+                  {/* Divider before Workbooks + Surveys */}
+                  {(templates.length > 0 || surveys.length > 0) && (
+                    <div className="h-px bg-slate-100 my-1" />
+                  )}
+
+                  {templates.length > 0 && (
+                    <button
+                      onClick={() => { setActiveType('templates'); setShowTypeMenu(false) }}
+                      className={`flex items-center gap-2.5 w-full px-4 py-2.5 text-left text-sm transition-colors ${
+                        activeType === 'templates'
+                          ? 'bg-[#EFF6FF] text-[#1F4E79] font-semibold'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-base w-5 text-center">📋</span>
+                      <span className="flex-1">Workbooks</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        activeType === 'templates' ? 'bg-[#DBEAFE] text-[#1F4E79]' : 'bg-slate-100 text-slate-500'
+                      }`}>{templates.length}</span>
+                    </button>
+                  )}
+
+                  {surveys.length > 0 && (
+                    <button
+                      onClick={() => { setActiveType('surveys'); setShowTypeMenu(false) }}
+                      className={`flex items-center gap-2.5 w-full px-4 py-2.5 text-left text-sm transition-colors ${
+                        activeType === 'surveys'
+                          ? 'bg-[#EFF6FF] text-[#1F4E79] font-semibold'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="text-base w-5 text-center">📊</span>
+                      <span className="flex-1">Surveys</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        activeType === 'surveys' ? 'bg-[#DBEAFE] text-[#1F4E79]' : 'bg-slate-100 text-slate-500'
+                      }`}>{surveys.length}</span>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Scope filter — only show if there are multiple scopes */}
+            {/* ── Scope filter pills ── */}
             {scopePills.length > 1 && (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[10px] text-white/40 font-semibold uppercase tracking-widest">Show:</span>
@@ -466,7 +514,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
               <div>
                 <div className="flex items-center gap-2 mb-4">
                   <span className="text-lg">📋</span>
-                  <h2 className="font-bold text-slate-800">Templates</h2>
+                  <h2 className="font-bold text-slate-800">Workbooks</h2>
                   <span className="text-xs text-slate-400">({templates.length})</span>
                 </div>
                 <div className="space-y-3">
@@ -568,7 +616,7 @@ function TemplateCard({ template, industryLabel, industryIcon, roleLabel, onOpen
         <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 text-base">📋</div>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-1.5 mb-1">
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">template</span>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">workbook</span>
             {template.industry && (
               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
                 {industryIcon} {industryLabel ?? template.industry}
