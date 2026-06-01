@@ -34,7 +34,7 @@ const emptySurveyForm = {
 }
 
 function makeQuestion() {
-  return { _id: Math.random().toString(36).slice(2), question_text: '', question_type: 'rating', is_required: false, options: [] }
+  return { _id: Math.random().toString(36).slice(2), question_text: '', question_type: 'rating', is_required: false, is_active: true, options: [] }
 }
 
 function makeOption() {
@@ -122,6 +122,7 @@ export default function AdminSurveys({ roles }) {
       question_text: q.question_text,
       question_type: q.question_type,
       is_required:   q.is_required,
+      is_active:     q.is_active ?? true,
       options:       (q.options ?? []).map(o => ({ _optId: Math.random().toString(36).slice(2), ...o })),
     })))
     setEditId(s.id)
@@ -160,6 +161,7 @@ export default function AdminSurveys({ roles }) {
       question_text: q.question_text.trim(),
       question_type: q.question_type,
       is_required:   q.is_required,
+      is_active:     q.is_active ?? true,
       options:       q.question_type === 'single_choice'
         ? q.options.map(o => ({ label: o.label, score: Number(o.score) }))
         : [],
@@ -228,11 +230,10 @@ export default function AdminSurveys({ roles }) {
     ))
   }
 
-  // Rule-based insight generation — no API key required
+  // ── Insight generation — rule-based ──────────────────────────────────────
   async function generateInsight() {
     setGeneratingInsight(true)
 
-    // Aggregate scores per question
     const qAvgs = resultsQuestions.map(q => {
       const scores = resultsResponses
         .map(r => calcQuestionScore(q, r.answers?.[q.id]))
@@ -700,6 +701,14 @@ export default function AdminSurveys({ roles }) {
                               onChange={e => updateQuestion(q._id, 'is_required', e.target.checked)}
                               className="w-3 h-3 accent-[#1F4E79]" />
                             <span className="text-[10px] text-slate-500">Req</span>
+                          </label>
+
+                          {/* Active in pool */}
+                          <label className="flex items-center gap-1 shrink-0 cursor-pointer pt-1.5" title={q.is_active ? 'Active — shown to users' : 'In pool — hidden from users'}>
+                            <input type="checkbox" checked={q.is_active ?? true}
+                              onChange={e => updateQuestion(q._id, 'is_active', e.target.checked)}
+                              className="w-3 h-3 accent-[#E8913A]" />
+                            <span className={`text-[10px] font-semibold ${q.is_active ? 'text-[#E8913A]' : 'text-slate-300'}`}>Active</span>
                           </label>
 
                           {/* Delete */}

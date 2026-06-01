@@ -58,6 +58,8 @@ const emptyContentForm = {
   is_common: true,
   sort_order: 0,
   template_id: '',
+  pathway_step: '',
+  is_featured: false,
 }
 
 const emptyRoleForm = {
@@ -189,6 +191,8 @@ export default function Admin() {
       is_common:    item.is_common,
       sort_order:   item.sort_order ?? 0,
       template_id:  item.template_id ?? '',
+      pathway_step: item.pathway_step ?? '',
+      is_featured:  item.is_featured ?? false,
     })
     setEditId(item.id)
     setFormError(null)
@@ -204,7 +208,9 @@ export default function Admin() {
       role:        form.role        || null,
       body:        form.body        || null,
       file_url:    form.file_url    || null,
-      template_id: form.template_id || null,
+      template_id:  form.template_id  || null,
+      pathway_step: form.pathway_step !== '' ? Number(form.pathway_step) : null,
+      is_featured:  form.is_featured  ?? false,
     }
     let error
     if (editId) {
@@ -1056,16 +1062,55 @@ export default function Admin() {
                 </>
               )}
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={form.is_common} onChange={e => setForm({...form, is_common: e.target.checked})}
-                    className="w-4 h-4 accent-[#1F4E79]" />
-                  <span className="text-sm text-slate-700">Common <span className="text-slate-400 text-xs">(shown to all)</span></span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-slate-500">Order</label>
-                  <input type="number" value={form.sort_order} onChange={e => setForm({...form, sort_order: Number(e.target.value)})}
-                    className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79]" />
+              {/* Phase Pathway + Featured */}
+              <div className="bg-slate-50 rounded-xl p-4 space-y-3 border border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Visibility &amp; Pathway</p>
+
+                {/* Pathway step */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Phase Pathway Step</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Pin this item as a numbered step in the user's guided path</p>
+                  </div>
+                  <select
+                    value={form.pathway_step}
+                    onChange={e => setForm({...form, pathway_step: e.target.value})}
+                    className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79] bg-white"
+                  >
+                    <option value="">Not in pathway</option>
+                    <option value="1">Step 1</option>
+                    <option value="2">Step 2</option>
+                    <option value="3">Step 3</option>
+                    <option value="4">Step 4</option>
+                    <option value="5">Step 5</option>
+                  </select>
+                </div>
+
+                {/* Featured */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Featured</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Highlight this item at the top of its content tab</p>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.is_featured} onChange={e => setForm({...form, is_featured: e.target.checked})}
+                      className="w-4 h-4 accent-[#E8913A]" />
+                    <span className="text-sm text-slate-600">{form.is_featured ? 'Yes' : 'No'}</span>
+                  </label>
+                </div>
+
+                {/* Common + Sort order */}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={form.is_common} onChange={e => setForm({...form, is_common: e.target.checked})}
+                      className="w-4 h-4 accent-[#1F4E79]" />
+                    <span className="text-sm text-slate-700">Common <span className="text-slate-400 text-xs">(shown to all roles)</span></span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-500">Order</label>
+                    <input type="number" value={form.sort_order} onChange={e => setForm({...form, sort_order: Number(e.target.value)})}
+                      className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79] bg-white" />
+                  </div>
                 </div>
               </div>
               {formError && <p className="text-sm text-red-500">{formError}</p>}

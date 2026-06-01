@@ -115,7 +115,7 @@ export default function SurveyDrawer({ survey, onClose, onComplete }) {
   async function loadSurvey() {
     setLoading(true)
     const [{ data: qs }, { data: resp }] = await Promise.all([
-      supabase.from('survey_questions').select('*').eq('survey_id', survey.id).order('sort_order'),
+      supabase.from('survey_questions').select('*').eq('survey_id', survey.id).neq('is_active', false).order('sort_order'),
       supabase.from('survey_responses').select('*').eq('survey_id', survey.id).eq('user_id', user.id).single(),
     ])
     setQuestions(qs ?? [])

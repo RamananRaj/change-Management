@@ -206,6 +206,11 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
     ? items.filter(i => i.role === profile?.role && !i.industry)
     : items  // 'all'
 
+  // Pathway steps (sorted by step number, across all content types)
+  const pathwayItems = items
+    .filter(i => i.pathway_step != null)
+    .sort((a, b) => a.pathway_step - b.pathway_step)
+
   const grouped = {
     exercise: scopedItems.filter(i => i.content_type === 'exercise'),
     tool:     scopedItems.filter(i => i.content_type === 'tool'),
@@ -460,6 +465,51 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         ) : (
           /* ── UNLOCKED: full interactive content ── */
           <>
+            {/* ── PHASE PATHWAY ── */}
+            {pathwayItems.length > 0 && (
+              <div className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-base">🗺️</span>
+                  <h2 className="font-bold text-slate-800 text-sm">Your Path</h2>
+                  <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Admin curated</span>
+                </div>
+                <div className="space-y-3">
+                  {pathwayItems.map(item => {
+                    const activity = activities.find(a => a.content_id === item.id)
+                    const isComplete = activity?.status === 'completed'
+                    const cfg = typeConfig[item.content_type] ?? typeConfig.exercise
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => setDrawerItem(item)}
+                        className="flex items-center gap-4 bg-white border-2 border-[#1F4E79]/10 hover:border-[#1F4E79]/30 rounded-2xl p-4 cursor-pointer transition-all hover:shadow-md group"
+                      >
+                        {/* Step number */}
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-bold text-sm ${
+                          isComplete ? 'bg-green-500 text-white' : 'bg-[#1F4E79] text-white'
+                        }`}>
+                          {isComplete ? '✓' : item.pathway_step}
+                        </div>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label.slice(0,-1)}</span>
+                            {isComplete && <span className="text-[10px] font-semibold bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Done ✓</span>}
+                          </div>
+                          <p className="font-semibold text-slate-800 text-sm">{item.title}</p>
+                          {item.description && <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{item.description}</p>}
+                        </div>
+                        <svg className="w-4 h-4 text-slate-300 group-hover:text-[#1F4E79] transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="h-px bg-slate-100 mt-6 mb-1" />
+              </div>
+            )}
+
             {/* Surveys view */}
             {activeType === 'surveys' ? (
               <div>
@@ -545,8 +595,37 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                   <h2 className="font-bold text-slate-800">{typeConfig[displayType].label}</h2>
                   <span className="text-xs text-slate-400">({grouped[displayType].length})</span>
                 </div>
+                {/* Featured items first */}
+                {grouped[displayType].some(i => i.is_featured) && (
+                  <div className="space-y-2 mb-4">
+                    <p className="text-[10px] font-semibold text-[#E8913A] uppercase tracking-widest flex items-center gap-1">
+                      ★ Featured
+                    </p>
+                    {grouped[displayType].filter(i => i.is_featured).map(item => {
+                      const activity = activities.find(a => a.content_id === item.id)
+                      return (
+                        <ContentCard
+                          key={item.id}
+                          item={item}
+                          typeCfg={typeConfig[displayType]}
+                          activity={activity}
+                          industryLabel={industryLabel}
+                          industryIcon={industryIcon}
+                          roleLabel={roleLabel}
+                          featured
+                          onStart={() => setDrawerItem(item)}
+                        />
+                      )
+                    })}
+                    {grouped[displayType].some(i => !i.is_featured) && (
+                      <div className="h-px bg-slate-100 my-3" />
+                    )}
+                  </div>
+                )}
+
+                {/* Remaining items */}
                 <div className="space-y-3">
-                  {grouped[displayType].map(item => {
+                  {grouped[displayType].filter(i => !i.is_featured).map(item => {
                     const activity = activities.find(a => a.content_id === item.id)
                     return (
                       <ContentCard
@@ -657,7 +736,7 @@ function TemplateCard({ template, industryLabel, industryIcon, roleLabel, onOpen
   )
 }
 
-function ContentCard({ item, typeCfg, activity, industryLabel, industryIcon, roleLabel, onStart }) {
+function ContentCard({ item, typeCfg, activity, industryLabel, industryIcon, roleLabel, onStart, featured }) {
   const [expanded, setExpanded] = useState(false)
 
   const isCompleted  = activity?.status === 'completed'
@@ -665,6 +744,7 @@ function ContentCard({ item, typeCfg, activity, industryLabel, industryIcon, rol
 
   return (
     <div className={`bg-white border rounded-2xl overflow-hidden transition-shadow hover:shadow-md ${
+      featured ? 'border-[#E8913A]/40 ring-1 ring-[#E8913A]/20' :
       isCompleted ? 'border-green-200' : item.industry || item.role ? 'border-slate-200' : 'border-slate-100'
     }`}>
       <div className="flex items-start gap-4 p-5 cursor-pointer" onClick={() => setExpanded(!expanded)}>
