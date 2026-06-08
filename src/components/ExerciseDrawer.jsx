@@ -81,6 +81,7 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
   const [saving,  setSaving]  = useState(false)
   const [status,  setStatus]  = useState(activity?.status ?? 'in_progress')
   const [saved,   setSaved]   = useState(false)
+  const [editing, setEditing] = useState(false)  // re-open a completed exercise for editing
 
   // Linked template state
   const [linkedTemplate,  setLinkedTemplate]  = useState(null)
@@ -198,7 +199,32 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
     onClose()
   }
 
+  // Save edits to a completed exercise without changing its completed status.
+  async function saveChanges() {
+    await saveNotes()
+    setEditing(false)
+  }
+
+  // Re-open a completed exercise back to in-progress (e.g. long-running work).
+  async function reopen() {
+    setSaving(true)
+    await supabase.from('user_activities').upsert({
+      user_id:      user.id,
+      content_id:   item.id,
+      phase_number: item.phase_number,
+      status:       'in_progress',
+      notes,
+      updated_at:   new Date().toISOString(),
+    }, { onConflict: 'user_id,content_id' })
+    setStatus('in_progress')
+    setEditing(false)
+    setSaving(false)
+    onActivityChange?.()
+  }
+
   const isCompleted = status === 'completed'
+  // Inputs are locked only when completed AND not currently being edited.
+  const readOnly = isCompleted && !editing
   const cols = linkedTemplate?.columns ?? []
 
   return (
@@ -285,14 +311,14 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
                               {col.required && <span className="text-[#E8913A] ml-0.5">*</span>}
                             </th>
                           ))}
-                          {!isCompleted && <th className="px-2 py-2.5 w-8" />}
+                          {!readOnly && <th className="px-2 py-2.5 w-8" />}
                         </tr>
                       </thead>
                       <tbody>
                         {templateRows.map((row, rowIdx) => (
                           <tr
                             key={rowIdx}
-                            className={`border-b border-slate-100 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} ${!isCompleted ? 'hover:bg-blue-50/30' : ''}`}
+                            className={`border-b border-slate-100 ${rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} ${!readOnly ? 'hover:bg-blue-50/30' : ''}`}
                           >
                             {cols.map(col => (
                               <td key={col.key} className="px-3 py-2 min-w-[120px]">
@@ -300,11 +326,11 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
                                   col={col}
                                   value={row[col.key]}
                                   onChange={val => updateTemplateCell(rowIdx, col.key, val)}
-                                  disabled={isCompleted}
+                                  disabled={readOnly}
                                 />
                               </td>
                             ))}
-                            {!isCompleted && (
+                            {!readOnly && (
                               <td className="px-2 py-2 text-center">
                                 <button
                                   onClick={() => deleteTemplateRow(rowIdx)}
@@ -319,7 +345,7 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
                     </table>
                   </div>
 
-                  {!isCompleted && (
+                  {!readOnly && (
                     <div className="flex items-center justify-between mt-2">
                       <button
                         onClick={addTemplateRow}
@@ -388,7 +414,7 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
               onChange={e => setNotes(e.target.value)}
               placeholder={getPlaceholder(item.content_type)}
               rows={linkedTemplate ? 5 : 10}
-              disabled={isCompleted}
+              disabled={readOnly}
               className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-700 leading-relaxed resize-none focus:outline-none focus:border-[#1F4E79] placeholder:text-slate-300 disabled:bg-slate-50 disabled:text-slate-400"
             />
             <p className="text-[11px] text-slate-400 mt-1.5">
@@ -405,11 +431,35 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
 
         {/* Footer actions */}
         <div className="px-6 py-4 border-t border-slate-100 bg-white shrink-0">
-          {isCompleted ? (
+          {readOnly ? (
+            // Completed, not editing — offer Edit so long-running work can be updated.
             <div className="flex items-center justify-between">
               <p className="text-sm text-green-600 font-medium">✓ This {item.content_type} is complete</p>
-              <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700 border border-slate-200 px-4 py-2 rounded-lg">
-                Close
+              <div className="flex gap-2">
+                <button onClick={() => setEditing(true)} className="text-sm font-semibold text-[#1F4E79] border border-[#1F4E79]/30 px-4 py-2 rounded-lg hover:bg-[#1F4E79]/5 transition-colors">
+                  Edit
+                </button>
+                <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700 border border-slate-200 px-4 py-2 rounded-lg">
+                  Close
+                </button>
+              </div>
+            </div>
+          ) : isCompleted ? (
+            // Editing a completed exercise — save changes (stays complete) or reopen.
+            <div className="flex gap-3">
+              <button
+                onClick={reopen}
+                disabled={saving}
+                className="flex-1 text-sm font-semibold text-slate-600 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Reopen as in-progress'}
+              </button>
+              <button
+                onClick={saveChanges}
+                disabled={saving}
+                className="flex-1 text-sm font-bold text-white bg-[#1F4E79] px-4 py-2.5 rounded-xl hover:bg-[#163a5c] transition-colors disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save changes'}
               </button>
             </div>
           ) : (
