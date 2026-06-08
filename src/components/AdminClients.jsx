@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -30,6 +31,7 @@ function StatusDot({ status }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AdminClients() {
+  const { user } = useAuth()
   const [clients,        setClients]        = useState([])
   const [allUsers,       setAllUsers]       = useState([])
   const [industries,     setIndustries]     = useState([])
@@ -53,6 +55,7 @@ export default function AdminClients() {
   const [projectForm,    setProjectForm]    = useState(emptyProjectForm)
   const [projectEditId,  setProjectEditId]  = useState(null)
   const [projectSaving,  setProjectSaving]  = useState(false)
+  const [projectError,   setProjectError]   = useState(null)
 
   // Pathway state
   const [pathwayPhase,   setPathwayPhase]   = useState(1)
@@ -166,15 +169,18 @@ export default function AdminClients() {
 
   // ── Project CRUD ─────────────────────────────────────────────────────────────
   async function saveProject() {
-    if (!projectForm.name.trim()) return
+    if (!projectForm.name.trim()) { setProjectError('Project name is required'); return }
     setProjectSaving(true)
+    setProjectError(null)
+    let error
     if (projectEditId) {
-      await supabase.from('projects').update({ ...projectForm }).eq('id', projectEditId)
+      ;({ error } = await supabase.from('projects').update({ ...projectForm }).eq('id', projectEditId))
     } else {
-      const { data: newProj } = await supabase
+      const { data: newProj, error: insErr } = await supabase
         .from('projects')
-        .insert({ ...projectForm, client_id: selectedClient.id, user_id: '00000000-0000-0000-0000-000000000000' })
+        .insert({ ...projectForm, client_id: selectedClient.id, user_id: user.id })
         .select().single()
+      error = insErr
       // Initialise all phases as locked
       if (newProj) {
         await supabase.from('project_phases').insert(
@@ -183,6 +189,7 @@ export default function AdminClients() {
       }
     }
     setProjectSaving(false)
+    if (error) { setProjectError(error.message); return }
     setShowProjectForm(false)
     setProjectForm(emptyProjectForm)
     setProjectEditId(null)
@@ -743,6 +750,7 @@ export default function AdminClients() {
                     {PROJECT_STATUS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('_',' ')}</option>)}
                   </select>
                 </div>
+                {projectError && <p className="text-sm text-red-500">{projectError}</p>}
               </div>
               <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                 <button onClick={() => setShowProjectForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
