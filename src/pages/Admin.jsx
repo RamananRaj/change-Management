@@ -90,6 +90,7 @@ export default function Admin() {
   const [filterPhase,    setFilterPhase]    = useState(1)
   const [filterIndustry, setFilterIndustry] = useState('')
   const [filterRole,     setFilterRole]     = useState('')
+  const [contentSearch,  setContentSearch]  = useState('')
   const [items,          setItems]          = useState([])
   const [contentLoading, setContentLoading] = useState(false)
   const [showForm,       setShowForm]       = useState(false)
@@ -608,6 +609,12 @@ export default function Admin() {
                 {roles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
               </select>
             </div>
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Search</label>
+              <input value={contentSearch} onChange={e => setContentSearch(e.target.value)}
+                placeholder="Search title or description…"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1F4E79]" />
+            </div>
             <div className="flex items-end">
               <button onClick={openNewContent}
                 className="bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#d07e2e] transition-colors">
@@ -616,16 +623,25 @@ export default function Admin() {
             </div>
           </div>
 
-          {contentLoading ? (
+          {(() => {
+          const q = contentSearch.trim().toLowerCase()
+          const visibleItems = q
+            ? items.filter(i => `${i.title ?? ''} ${i.description ?? ''}`.toLowerCase().includes(q))
+            : items
+          return contentLoading ? (
             <p className="text-sm text-slate-400">Loading…</p>
           ) : items.length === 0 ? (
             <div className="text-center py-16 bg-slate-50 rounded-xl border border-slate-200">
               <p className="text-slate-400 text-sm mb-3">No content yet for this selection.</p>
               <button onClick={openNewContent} className="text-[#1F4E79] text-sm font-semibold hover:underline">+ Add the first item</button>
             </div>
+          ) : visibleItems.length === 0 ? (
+            <div className="text-center py-16 bg-slate-50 rounded-xl border border-slate-200">
+              <p className="text-slate-400 text-sm">No items match “{contentSearch}”.</p>
+            </div>
           ) : (
             <div className="space-y-2">
-              {items.map(item => (
+              {visibleItems.map(item => (
                 <div key={item.id} className="flex items-start gap-4 bg-white border border-slate-200 rounded-xl p-4">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
@@ -648,7 +664,8 @@ export default function Admin() {
                 </div>
               ))}
             </div>
-          )}
+          )
+          })()}
         </div>
       )}
 
