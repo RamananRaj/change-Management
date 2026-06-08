@@ -32,6 +32,7 @@ function StatusDot({ status }) {
 export default function AdminClients() {
   const [clients,        setClients]        = useState([])
   const [allUsers,       setAllUsers]       = useState([])
+  const [industries,     setIndustries]     = useState([])
   const [loading,        setLoading]        = useState(false)
   const [selectedClient, setSelectedClient] = useState(null)
   const [clientTab,      setClientTab]      = useState('projects')
@@ -62,13 +63,24 @@ export default function AdminClients() {
   // Progress state
   const [progressData,   setProgressData]   = useState({ users: [], items: [], activities: [] })
 
-  useEffect(() => { fetchClients(); fetchAllUsers() }, [])
+  useEffect(() => { fetchClients(); fetchAllUsers(); fetchIndustries() }, [])
 
   async function fetchClients() {
     setLoading(true)
     const { data } = await supabase.from('clients').select('*').order('name')
     setClients(data ?? [])
     setLoading(false)
+  }
+
+  async function fetchIndustries() {
+    const { data } = await supabase.from('industries').select('code, label, icon').eq('is_active', true).order('sort_order')
+    setIndustries(data ?? [])
+  }
+
+  // Map a stored industry code to a display label (with icon). Falls back to the raw value.
+  function industryLabel(code) {
+    const ind = industries.find(i => i.code === code)
+    return ind ? `${ind.icon ?? ''} ${ind.label}`.trim() : code
   }
 
   async function fetchAllUsers() {
@@ -291,7 +303,7 @@ export default function AdminClients() {
           </div>
           <div>
             <h2 className="font-bold text-slate-800 leading-tight">{selectedClient.name}</h2>
-            {selectedClient.industry && <p className="text-xs text-slate-400">{selectedClient.industry}</p>}
+            {selectedClient.industry && <p className="text-xs text-slate-400">{industryLabel(selectedClient.industry)}</p>}
           </div>
           {selectedClient.contact_name && (
             <span className="text-xs text-slate-400 ml-2">Contact: {selectedClient.contact_name}{selectedClient.contact_email ? ` · ${selectedClient.contact_email}` : ''}</span>
@@ -617,7 +629,7 @@ export default function AdminClients() {
                     {!client.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>}
                   </div>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    {client.industry ? `${client.industry} · ` : ''}{userCount} user{userCount !== 1 ? 's' : ''}
+                    {client.industry ? `${industryLabel(client.industry)} · ` : ''}{userCount} user{userCount !== 1 ? 's' : ''}
                     {client.contact_name ? ` · ${client.contact_name}` : ''}
                   </p>
                 </div>
@@ -654,9 +666,14 @@ export default function AdminClients() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Industry</label>
-                  <input value={clientForm.industry} onChange={e => setClientForm({...clientForm, industry: e.target.value})}
-                    placeholder="e.g. Utilities & Energy"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                  <select value={clientForm.industry} onChange={e => setClientForm({...clientForm, industry: e.target.value})}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
+                    <option value="">Select an industry…</option>
+                    {industries.map(ind => (
+                      <option key={ind.code} value={ind.code}>{ind.icon} {ind.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">Managed in Admin → Industry Manager. Links clients to the right pathways and reporting.</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
