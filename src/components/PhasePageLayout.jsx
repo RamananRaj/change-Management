@@ -65,6 +65,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const [scopeFilter,     setScopeFilter]     = useState('all')
   const [showTypeMenu,    setShowTypeMenu]    = useState(false)
   const [showAllResources, setShowAllResources] = useState(false)
+  const [pathwayItems,    setPathwayItems]    = useState([])
   const typeMenuRef = useRef(null)
   // Live label lookups from Supabase (roles + industries)
   const [roleLabel,     setRoleLabel]     = useState(null)
@@ -93,20 +94,36 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   async function loadAll() {
     setLoading(true)
 
-    // Fetch all phases for this user's project
-    const { data: proj } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
+    // Phase access: check client project membership first, fall back to personal project
+    let projectId = null
 
-    if (proj) {
+    if (profile?.client_id) {
+      // Look up user's project via project_members
+      const { data: membership } = await supabase
+        .from('project_members')
+        .select('project_id')
+        .eq('user_id', user.id)
+        .single()
+      if (membership) projectId = membership.project_id
+    }
+
+    if (!projectId) {
+      // Fall back to personal project created at onboarding
+      const { data: proj } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+      if (proj) projectId = proj.id
+    }
+
+    if (projectId) {
       const { data: phaseRows } = await supabase
         .from('project_phases')
         .select('*')
-        .eq('project_id', proj.id)
+        .eq('project_id', projectId)
         .order('phase_number', { ascending: true })
       setAllPhases(phaseRows ?? [])
     }
@@ -121,6 +138,25 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
       .order('sort_order', { ascending: true })
 
     setItems(data ?? [])
+
+    // Fetch pathway — per-client if client_id set, else fall back to global pathway_step
+    if (profile?.client_id) {
+      const { data: cpRows } = await supabase
+        .from('client_pathways')
+        .select('pathway_step, phase_content(*)')
+        .eq('client_id', profile.client_id)
+        .eq('phase_number', phaseNum)
+        .order('pathway_step')
+      setPathwayItems(
+        (cpRows ?? []).map(cp => ({ ...cp.phase_content, pathway_step: cp.pathway_step }))
+      )
+    } else {
+      // Global pathway: items with pathway_step set
+      const global = (data ?? [])
+        .filter(i => i.pathway_step != null)
+        .sort((a, b) => a.pathway_step - b.pathway_step)
+      setPathwayItems(global)
+    }
 
     // Fetch templates for this phase filtered by industry + role
     const { data: tmplData } = await supabase
@@ -206,11 +242,6 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
     : scopeFilter === 'role'
     ? items.filter(i => i.role === profile?.role && !i.industry)
     : items  // 'all'
-
-  // Pathway steps (sorted by step number, across all content types)
-  const pathwayItems = items
-    .filter(i => i.pathway_step != null)
-    .sort((a, b) => a.pathway_step - b.pathway_step)
 
   const grouped = {
     exercise: scopedItems.filter(i => i.content_type === 'exercise'),

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AdminSurveys from '../components/AdminSurveys'
+import AdminClients from '../components/AdminClients'
 
 const PHASES = [
   { num: 1, label: '01 Diagnose' },
@@ -17,7 +18,7 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Content Manager', 'Phase Manager', 'Role Manager', 'Industry Manager', 'Templates', 'Surveys']
+const SECTIONS = ['Content Manager', 'Phase Manager', 'Role Manager', 'Industry Manager', 'Templates', 'Surveys', 'Clients']
 
 const COLUMN_TYPES = [
   { value: 'text',     label: 'Text' },
@@ -952,6 +953,11 @@ export default function Admin() {
       {/* ── SURVEYS ── */}
       {section === 'Surveys' && (
         <AdminSurveys roles={roles} />
+      )}
+
+      {/* ── CLIENTS ── */}
+      {section === 'Clients' && (
+        <AdminClients allRoles={roles} />
       )}
 
       {/* ── CONTENT FORM MODAL ── */}
