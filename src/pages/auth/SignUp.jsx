@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 
 export default function SignUp() {
   const navigate = useNavigate()
+  const { user, signOut } = useAuth()
   const [searchParams] = useSearchParams()
   const inviteToken = searchParams.get('invite')
   const [form, setForm]     = useState({ fullName: '', email: '', password: '' })
@@ -11,19 +13,37 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
   const [invite, setInvite] = useState(null) // { client_name, project_name, ... }
+  const [wrongUser, setWrongUser] = useState(null) // email of a different already-signed-in user
 
   // If arriving from an invite link, look up its details and prefill the form.
   useEffect(() => {
     if (!inviteToken) return
     localStorage.setItem('cf_pending_invite', inviteToken)
-    supabase.rpc('invite_details', { p_token: inviteToken }).then(({ data }) => {
+    supabase.rpc('invite_details', { p_token: inviteToken }).then(async ({ data }) => {
       const inv = Array.isArray(data) ? data[0] : data
-      if (inv && inv.status === 'pending') {
-        setInvite(inv)
-        setForm(f => ({ ...f, email: inv.email ?? '', fullName: inv.full_name ?? f.fullName }))
+      if (!inv || inv.status !== 'pending') return
+      setInvite(inv)
+      setForm(f => ({ ...f, email: inv.email ?? '', fullName: inv.full_name ?? f.fullName }))
+
+      // Already signed in? Decide what to do based on whose account it is.
+      if (user?.email) {
+        if (user.email.toLowerCase() === (inv.email ?? '').toLowerCase()) {
+          // Right person, existing account — accept and go straight in.
+          await supabase.rpc('accept_invite', { p_token: inviteToken })
+          localStorage.removeItem('cf_pending_invite')
+          navigate('/dashboard')
+        } else {
+          // Different account is signed in — block and prompt to sign out.
+          setWrongUser(user.email)
+        }
       }
     })
-  }, [inviteToken])
+  }, [inviteToken, user, navigate])
+
+  async function handleSignOutToAccept() {
+    await signOut()
+    setWrongUser(null)
+  }
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -73,6 +93,30 @@ export default function SignUp() {
     }
 
     setLoading(false)
+  }
+
+  if (wrongUser) {
+    return (
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center px-4">
+        <p className="text-[#1F4E79] font-bold tracking-widest text-sm mb-8">CHANGEFLOW</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center max-w-md">
+          <div className="text-3xl mb-3">🔒</div>
+          <h2 className="font-bold text-slate-800 mb-2">You're signed in as someone else</h2>
+          <p className="text-slate-600 text-sm mb-1">
+            This invitation is for <strong>{invite?.email}</strong>
+            {invite?.client_name ? <> at <strong>{invite.client_name}</strong></> : null}, but you're currently
+            signed in as <strong>{wrongUser}</strong>.
+          </p>
+          <p className="text-slate-500 text-sm mb-6">
+            Sign out and accept the invite, or open the link in a private/incognito window.
+          </p>
+          <button onClick={handleSignOutToAccept}
+            className="w-full bg-[#1F4E79] text-white font-semibold py-2.5 rounded-lg hover:bg-[#163a5c] transition-colors text-sm">
+            Sign out and accept invite
+          </button>
+        </div>
+      </div>
+    )
   }
 
   if (success) {
