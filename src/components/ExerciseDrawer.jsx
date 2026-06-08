@@ -81,7 +81,6 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
   const [saving,  setSaving]  = useState(false)
   const [status,  setStatus]  = useState(activity?.status ?? 'in_progress')
   const [saved,   setSaved]   = useState(false)
-  const [editing, setEditing] = useState(false)  // re-open a completed exercise for editing
 
   // Linked template state
   const [linkedTemplate,  setLinkedTemplate]  = useState(null)
@@ -199,13 +198,8 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
     onClose()
   }
 
-  // Save edits to a completed exercise without changing its completed status.
-  async function saveChanges() {
-    await saveNotes()
-    setEditing(false)
-  }
-
-  // Re-open a completed exercise back to in-progress (e.g. long-running work).
+  // Re-open a completed exercise for editing. It drops back to in-progress, so the
+  // user must click "Mark as complete" again once they're done (no silent re-complete).
   async function reopen() {
     setSaving(true)
     await supabase.from('user_activities').upsert({
@@ -217,14 +211,12 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
       updated_at:   new Date().toISOString(),
     }, { onConflict: 'user_id,content_id' })
     setStatus('in_progress')
-    setEditing(false)
     setSaving(false)
     onActivityChange?.()
   }
 
   const isCompleted = status === 'completed'
-  // Inputs are locked only when completed AND not currently being edited.
-  const readOnly = isCompleted && !editing
+  const readOnly = isCompleted
   const cols = linkedTemplate?.columns ?? []
 
   return (
@@ -431,36 +423,18 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
 
         {/* Footer actions */}
         <div className="px-6 py-4 border-t border-slate-100 bg-white shrink-0">
-          {readOnly ? (
-            // Completed, not editing — offer Edit so long-running work can be updated.
+          {isCompleted ? (
+            // Completed — read-only. "Edit" reopens it to in-progress so it must be re-completed.
             <div className="flex items-center justify-between">
               <p className="text-sm text-green-600 font-medium">✓ This {item.content_type} is complete</p>
               <div className="flex gap-2">
-                <button onClick={() => setEditing(true)} className="text-sm font-semibold text-[#1F4E79] border border-[#1F4E79]/30 px-4 py-2 rounded-lg hover:bg-[#1F4E79]/5 transition-colors">
-                  Edit
+                <button onClick={reopen} disabled={saving} className="text-sm font-semibold text-[#1F4E79] border border-[#1F4E79]/30 px-4 py-2 rounded-lg hover:bg-[#1F4E79]/5 transition-colors disabled:opacity-50">
+                  {saving ? 'Reopening…' : 'Edit'}
                 </button>
                 <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700 border border-slate-200 px-4 py-2 rounded-lg">
                   Close
                 </button>
               </div>
-            </div>
-          ) : isCompleted ? (
-            // Editing a completed exercise — save changes (stays complete) or reopen.
-            <div className="flex gap-3">
-              <button
-                onClick={reopen}
-                disabled={saving}
-                className="flex-1 text-sm font-semibold text-slate-600 border border-slate-200 px-4 py-2.5 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Reopen as in-progress'}
-              </button>
-              <button
-                onClick={saveChanges}
-                disabled={saving}
-                className="flex-1 text-sm font-bold text-white bg-[#1F4E79] px-4 py-2.5 rounded-xl hover:bg-[#163a5c] transition-colors disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save changes'}
-              </button>
             </div>
           ) : (
             <div className="flex gap-3">
