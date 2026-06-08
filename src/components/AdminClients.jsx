@@ -180,11 +180,19 @@ export default function AdminClients({ allRoles = [] }) {
   }
 
   async function loadProjectMembers(projectId) {
-    const { data } = await supabase
+    // Two-step: project_members.user_id FKs to auth.users, not profiles, so a
+    // PostgREST embed can't resolve. Fetch member ids, then their profiles.
+    const { data: rows } = await supabase
       .from('project_members')
-      .select('user_id, profiles(id, full_name, role)')
+      .select('user_id')
       .eq('project_id', projectId)
-    setProjectMembers(prev => ({ ...prev, [projectId]: (data ?? []).map(m => m.profiles).filter(Boolean) }))
+    const ids = (rows ?? []).map(r => r.user_id)
+    if (ids.length === 0) { setProjectMembers(prev => ({ ...prev, [projectId]: [] })); return }
+    const { data: profs } = await supabase
+      .from('profiles')
+      .select('id, full_name, role')
+      .in('id', ids)
+    setProjectMembers(prev => ({ ...prev, [projectId]: profs ?? [] }))
   }
 
   // ── Phase access toggle ──────────────────────────────────────────────────────
@@ -206,9 +214,12 @@ export default function AdminClients({ allRoles = [] }) {
 
   // ── Member management ────────────────────────────────────────────────────────
   async function assignMember(projectId, userId) {
-    // Add to project_members
-    await supabase.from('project_members').upsert({ project_id: projectId, user_id: userId }, { onConflict: 'project_id,user_id' })
-    // Sync client_id on profile
+    // Add to project_members (surface any failure instead of silently doing nothing)
+    const { error } = await supabase
+      .from('project_members')
+      .upsert({ project_id: projectId, user_id: userId }, { onConflict: 'project_id,user_id' })
+    if (error) { window.alert('Could not assign member: ' + error.message); return }
+    // Sync client_id on profile (best-effort)
     await supabase.from('profiles').update({ client_id: selectedClient.id }).eq('id', userId)
     await Promise.all([loadProjectMembers(projectId), fetchAllUsers()])
   }
@@ -315,18 +326,25 @@ export default function AdminClients({ allRoles = [] }) {
 
   // ── Progress ─────────────────────────────────────────────────────────────────
   async function loadProgress() {
-    // All users in all projects under this client
+    // All users in all projects under this client (two-step: no profiles embed).
     const { data: memberships } = await supabase
       .from('project_members')
-      .select('user_id, project_id, profiles(id, full_name, role)')
+      .select('user_id, project_id')
       .in('project_id', projects.map(p => p.id))
+
+    const memberIds = [...new Set((memberships ?? []).map(m => m.user_id))]
+    const { data: memberProfiles } = memberIds.length
+      ? await supabase.from('profiles').select('id, full_name, role').in('id', memberIds)
+      : { data: [] }
+    const profileById = new Map((memberProfiles ?? []).map(p => [p.id, p]))
 
     const uniqueUsers = []
     const seen = new Set()
     for (const m of memberships ?? []) {
-      if (m.profiles && !seen.has(m.profiles.id)) {
-        seen.add(m.profiles.id)
-        uniqueUsers.push(m.profiles)
+      const prof = profileById.get(m.user_id)
+      if (prof && !seen.has(prof.id)) {
+        seen.add(prof.id)
+        uniqueUsers.push(prof)
       }
     }
 
