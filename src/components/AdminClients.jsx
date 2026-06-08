@@ -293,6 +293,122 @@ export default function AdminClients() {
 
   // ── RENDER ────────────────────────────────────────────────────────────────────
 
+  // Modals are shared across both the client-list and client-detail views so they
+  // render no matter which branch is active.
+  const modals = (
+    <>
+      {/* ── Client form modal ── */}
+      {showClientForm && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowClientForm(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-md">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-bold text-slate-800">{clientEditId ? 'Edit Client' : 'New Client'}</h3>
+                <button onClick={() => setShowClientForm(false)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 text-xs">✕</button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Organisation Name *</label>
+                  <input value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})}
+                    placeholder="e.g. Acme Energy Co."
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Industry</label>
+                  <select value={clientForm.industry} onChange={e => setClientForm({...clientForm, industry: e.target.value})}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
+                    <option value="">Select an industry…</option>
+                    {industries.map(ind => (
+                      <option key={ind.code} value={ind.code}>{ind.icon} {ind.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">Managed in Admin → Industry Manager. Links clients to the right pathways and reporting.</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Name</label>
+                    <input value={clientForm.contact_name} onChange={e => setClientForm({...clientForm, contact_name: e.target.value})}
+                      placeholder="Jane Smith"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Email</label>
+                    <input value={clientForm.contact_email} onChange={e => setClientForm({...clientForm, contact_email: e.target.value})}
+                      placeholder="jane@acme.com" type="email"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
+                  <textarea value={clientForm.notes} onChange={e => setClientForm({...clientForm, notes: e.target.value})}
+                    rows={2} placeholder="Any notes…"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={clientForm.is_active} onChange={e => setClientForm({...clientForm, is_active: e.target.checked})} className="w-4 h-4 accent-[#1F4E79]" />
+                  <span className="text-sm text-slate-700">Active</span>
+                </label>
+                {clientError && <p className="text-sm text-red-500">{clientError}</p>}
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button onClick={() => setShowClientForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
+                <button onClick={saveClient} disabled={clientSaving}
+                  className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+                  {clientSaving ? 'Saving…' : clientEditId ? 'Save Changes' : 'Create Client'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Project form modal ── */}
+      {showProjectForm && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowProjectForm(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-sm">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-bold text-slate-800">{projectEditId ? 'Edit Project' : 'New Project'}</h3>
+                <button onClick={() => setShowProjectForm(false)} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">✕</button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Project Name *</label>
+                  <input value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}
+                    placeholder="e.g. Q1 ERP Rollout"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+                  <textarea value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}
+                    rows={2} placeholder="Brief description…"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+                  <select value={projectForm.status} onChange={e => setProjectForm({...projectForm, status: e.target.value})}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
+                    {PROJECT_STATUS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('_',' ')}</option>)}
+                  </select>
+                </div>
+                {projectError && <p className="text-sm text-red-500">{projectError}</p>}
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button onClick={() => setShowProjectForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
+                <button onClick={saveProject} disabled={projectSaving}
+                  className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+                  {projectSaving ? 'Saving…' : projectEditId ? 'Save' : 'Create Project'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  )
+
   // ── Client Detail ────────────────────────────────────────────────────────────
   if (selectedClient) {
     const phaseGroups = PHASES.map(ph => ({
@@ -593,6 +709,7 @@ export default function AdminClients() {
             )}
           </div>
         )}
+        {modals}
       </div>
     )
   }
@@ -654,115 +771,7 @@ export default function AdminClients() {
         </div>
       )}
 
-      {/* ── Client form modal ── */}
-      {showClientForm && (
-        <>
-          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowClientForm(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-md">
-              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-slate-800">{clientEditId ? 'Edit Client' : 'New Client'}</h3>
-                <button onClick={() => setShowClientForm(false)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 text-xs">✕</button>
-              </div>
-              <div className="px-6 py-5 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Organisation Name *</label>
-                  <input value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})}
-                    placeholder="e.g. Acme Energy Co."
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Industry</label>
-                  <select value={clientForm.industry} onChange={e => setClientForm({...clientForm, industry: e.target.value})}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
-                    <option value="">Select an industry…</option>
-                    {industries.map(ind => (
-                      <option key={ind.code} value={ind.code}>{ind.icon} {ind.label}</option>
-                    ))}
-                  </select>
-                  <p className="text-[10px] text-slate-400 mt-1">Managed in Admin → Industry Manager. Links clients to the right pathways and reporting.</p>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Name</label>
-                    <input value={clientForm.contact_name} onChange={e => setClientForm({...clientForm, contact_name: e.target.value})}
-                      placeholder="Jane Smith"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Contact Email</label>
-                    <input value={clientForm.contact_email} onChange={e => setClientForm({...clientForm, contact_email: e.target.value})}
-                      placeholder="jane@acme.com" type="email"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Notes</label>
-                  <textarea value={clientForm.notes} onChange={e => setClientForm({...clientForm, notes: e.target.value})}
-                    rows={2} placeholder="Any notes…"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={clientForm.is_active} onChange={e => setClientForm({...clientForm, is_active: e.target.checked})} className="w-4 h-4 accent-[#1F4E79]" />
-                  <span className="text-sm text-slate-700">Active</span>
-                </label>
-                {clientError && <p className="text-sm text-red-500">{clientError}</p>}
-              </div>
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                <button onClick={() => setShowClientForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
-                <button onClick={saveClient} disabled={clientSaving}
-                  className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
-                  {clientSaving ? 'Saving…' : clientEditId ? 'Save Changes' : 'Create Client'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* ── Project form modal ── */}
-      {showProjectForm && (
-        <>
-          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowProjectForm(false)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-sm">
-              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-slate-800">{projectEditId ? 'Edit Project' : 'New Project'}</h3>
-                <button onClick={() => setShowProjectForm(false)} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">✕</button>
-              </div>
-              <div className="px-6 py-5 space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Project Name *</label>
-                  <input value={projectForm.name} onChange={e => setProjectForm({...projectForm, name: e.target.value})}
-                    placeholder="e.g. Q1 ERP Rollout"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
-                  <textarea value={projectForm.description} onChange={e => setProjectForm({...projectForm, description: e.target.value})}
-                    rows={2} placeholder="Brief description…"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
-                  <select value={projectForm.status} onChange={e => setProjectForm({...projectForm, status: e.target.value})}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
-                    {PROJECT_STATUS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('_',' ')}</option>)}
-                  </select>
-                </div>
-                {projectError && <p className="text-sm text-red-500">{projectError}</p>}
-              </div>
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-                <button onClick={() => setShowProjectForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
-                <button onClick={saveProject} disabled={projectSaving}
-                  className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
-                  {projectSaving ? 'Saving…' : projectEditId ? 'Save' : 'Create Project'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+      {modals}
     </div>
   )
 }
