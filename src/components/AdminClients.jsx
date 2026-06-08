@@ -134,7 +134,7 @@ export default function AdminClients({ allRoles = [] }) {
   }
 
   function inviteLink(token) {
-    return `${window.location.origin}/signup?invite=${token}`
+    return `${window.location.origin}/auth/signup?invite=${token}`
   }
 
   async function createInvite(projectId) {
