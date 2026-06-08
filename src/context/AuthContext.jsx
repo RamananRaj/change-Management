@@ -10,9 +10,9 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) fetchProfile(session.user.id)
+      if (session?.user) { await consumePendingInvite(); fetchProfile(session.user.id) }
       else setLoading(false)
     })
 
@@ -20,7 +20,7 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setUser(session?.user ?? null)
-        if (session?.user) fetchProfile(session.user.id)
+        if (session?.user) { await consumePendingInvite(); fetchProfile(session.user.id) }
         else {
           setProfile(null)
           setLoading(false)
@@ -30,6 +30,17 @@ export function AuthProvider({ children }) {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // If the user signed up via an invite link, link them to the client/project now
+  // that they're authenticated. Safe to call repeatedly — accept_invite is idempotent.
+  async function consumePendingInvite() {
+    const token = localStorage.getItem('cf_pending_invite')
+    if (!token) return
+    try {
+      await supabase.rpc('accept_invite', { p_token: token })
+    } catch { /* ignore — will retry on next auth event */ }
+    localStorage.removeItem('cf_pending_invite')
+  }
 
   async function fetchProfile(userId) {
     const { data } = await supabase

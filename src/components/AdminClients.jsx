@@ -30,7 +30,7 @@ function StatusDot({ status }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function AdminClients() {
+export default function AdminClients({ allRoles = [] }) {
   const { user } = useAuth()
   const [clients,        setClients]        = useState([])
   const [allUsers,       setAllUsers]       = useState([])
@@ -51,6 +51,10 @@ export default function AdminClients() {
   const [expandedProject, setExpandedProject] = useState(null)
   const [projectPhases,  setProjectPhases]  = useState({}) // { project_id: [phases] }
   const [projectMembers, setProjectMembers] = useState({}) // { project_id: [users] }
+  const [projectInvites, setProjectInvites] = useState({}) // { project_id: [pending invites] }
+  const [inviteForm,     setInviteForm]     = useState({}) // { project_id: { email, full_name, role } }
+  const [inviteBusy,     setInviteBusy]     = useState(null) // project_id currently saving
+  const [copiedToken,    setCopiedToken]    = useState(null)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [projectForm,    setProjectForm]    = useState(emptyProjectForm)
   const [projectEditId,  setProjectEditId]  = useState(null)
@@ -115,7 +119,55 @@ export default function AdminClients() {
     await Promise.all([
       loadProjectPhases(project.id),
       loadProjectMembers(project.id),
+      loadProjectInvites(project.id),
     ])
+  }
+
+  async function loadProjectInvites(projectId) {
+    const { data } = await supabase
+      .from('project_invites')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+    setProjectInvites(prev => ({ ...prev, [projectId]: data ?? [] }))
+  }
+
+  function inviteLink(token) {
+    return `${window.location.origin}/signup?invite=${token}`
+  }
+
+  async function createInvite(projectId) {
+    const f = inviteForm[projectId] ?? {}
+    const email = (f.email ?? '').trim()
+    if (!email) return
+    setInviteBusy(projectId)
+    const { error } = await supabase.from('project_invites').insert({
+      project_id: projectId,
+      client_id:  selectedClient.id,
+      email,
+      full_name:  (f.full_name ?? '').trim() || null,
+      role:       f.role || null,
+      invited_by: user.id,
+    })
+    setInviteBusy(null)
+    if (error) { window.alert('Could not create invite: ' + error.message); return }
+    setInviteForm(prev => ({ ...prev, [projectId]: { email: '', full_name: '', role: '' } }))
+    await loadProjectInvites(projectId)
+  }
+
+  async function copyInvite(token) {
+    try {
+      await navigator.clipboard.writeText(inviteLink(token))
+      setCopiedToken(token)
+      setTimeout(() => setCopiedToken(null), 1800)
+    } catch { /* clipboard blocked — user can still select the text */ }
+  }
+
+  async function revokeInvite(projectId, inviteId) {
+    if (!window.confirm('Revoke this invite? The link will stop working.')) return
+    await supabase.from('project_invites').update({ status: 'revoked' }).eq('id', inviteId)
+    await loadProjectInvites(projectId)
   }
 
   async function loadProjectPhases(projectId) {
@@ -571,6 +623,52 @@ export default function AdminClients() {
                               className="bg-[#1F4E79] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#163a5c] transition-colors">
                               Assign
                             </button>
+                          </div>
+
+                          {/* Invite a new person by email (creates a shareable signup link) */}
+                          <div className="mt-4 pt-4 border-t border-slate-200/70">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Invite someone new</p>
+
+                            {/* Pending invites */}
+                            {(projectInvites[project.id] ?? []).length > 0 && (
+                              <div className="space-y-2 mb-3">
+                                {(projectInvites[project.id] ?? []).map(inv => (
+                                  <div key={inv.id} className="flex items-center gap-2 bg-amber-50/70 border border-amber-100 rounded-lg px-3 py-2">
+                                    <span className="text-[10px] font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Pending</span>
+                                    <span className="text-xs text-slate-700 font-medium truncate">{inv.email}</span>
+                                    {inv.role && <span className="text-[10px] text-slate-400">{(allRoles.find(r => r.code === inv.role)?.label) ?? inv.role}</span>}
+                                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                                      <button onClick={() => copyInvite(inv.token)}
+                                        className="text-[11px] font-semibold text-[#1F4E79] border border-[#1F4E79]/30 px-2 py-1 rounded-md hover:bg-[#1F4E79]/5">
+                                        {copiedToken === inv.token ? '✓ Copied' : 'Copy link'}
+                                      </button>
+                                      <button onClick={() => revokeInvite(project.id, inv.id)}
+                                        className="text-[11px] text-red-400 hover:text-red-600">Revoke</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* New invite form */}
+                            <div className="flex gap-2 flex-wrap items-center">
+                              <input type="email" placeholder="person@company.com"
+                                value={inviteForm[project.id]?.email ?? ''}
+                                onChange={e => setInviteForm(prev => ({ ...prev, [project.id]: { ...prev[project.id], email: e.target.value } }))}
+                                className="flex-1 min-w-[180px] border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#1F4E79] bg-white" />
+                              <select
+                                value={inviteForm[project.id]?.role ?? ''}
+                                onChange={e => setInviteForm(prev => ({ ...prev, [project.id]: { ...prev[project.id], role: e.target.value } }))}
+                                className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-[#1F4E79] bg-white">
+                                <option value="">Role (optional)</option>
+                                {allRoles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                              </select>
+                              <button onClick={() => createInvite(project.id)} disabled={inviteBusy === project.id}
+                                className="bg-[#E8913A] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#d07e2e] transition-colors disabled:opacity-60">
+                                {inviteBusy === project.id ? 'Creating…' : '+ Invite link'}
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1.5">Creates a signup link you can share. They join this project automatically when they register. Re-copy any time to resend.</p>
                           </div>
                         </div>
 

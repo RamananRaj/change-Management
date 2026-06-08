@@ -1,13 +1,29 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 
 export default function SignUp() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('invite')
   const [form, setForm]     = useState({ fullName: '', email: '', password: '' })
   const [error, setError]   = useState(null)
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [invite, setInvite] = useState(null) // { client_name, project_name, ... }
+
+  // If arriving from an invite link, look up its details and prefill the form.
+  useEffect(() => {
+    if (!inviteToken) return
+    localStorage.setItem('cf_pending_invite', inviteToken)
+    supabase.rpc('invite_details', { p_token: inviteToken }).then(({ data }) => {
+      const inv = Array.isArray(data) ? data[0] : data
+      if (inv && inv.status === 'pending') {
+        setInvite(inv)
+        setForm(f => ({ ...f, email: inv.email ?? '', fullName: inv.full_name ?? f.fullName }))
+      }
+    })
+  }, [inviteToken])
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -41,9 +57,17 @@ export default function SignUp() {
         .eq('id', data.user.id)
     }
 
-    // If email confirmation is disabled, go straight to onboarding
+    // If email confirmation is disabled, we have a session immediately.
     if (data.session) {
-      navigate('/onboarding/role')
+      // Invited users are linked + onboarded by accept_invite (run in AuthContext),
+      // so send them to the dashboard; everyone else goes through onboarding.
+      if (inviteToken) {
+        await supabase.rpc('accept_invite', { p_token: inviteToken })
+        localStorage.removeItem('cf_pending_invite')
+        navigate('/dashboard')
+      } else {
+        navigate('/onboarding/role')
+      }
     } else {
       setSuccess(true)
     }
@@ -76,6 +100,13 @@ export default function SignUp() {
           Start your change management journey
         </p>
 
+        {invite && (
+          <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/20 rounded-lg px-4 py-3 mb-6 text-sm text-slate-600">
+            You've been invited to join <strong className="text-[#1F4E79]">{invite.client_name}</strong>
+            {invite.project_name ? <> — <strong>{invite.project_name}</strong></> : null}. Set a password to accept.
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">Full name</label>
@@ -98,7 +129,8 @@ export default function SignUp() {
               onChange={handleChange}
               placeholder="you@example.com"
               required
-              className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-[#1F4E79] focus:ring-1 focus:ring-[#1F4E79]"
+              readOnly={!!invite}
+              className={`w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-[#1F4E79] focus:ring-1 focus:ring-[#1F4E79] ${invite ? 'bg-slate-50 text-slate-500' : ''}`}
             />
           </div>
           <div>
