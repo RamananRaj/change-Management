@@ -1389,7 +1389,7 @@ export default function Admin() {
                 ) : (
                   <div className="space-y-2">
                     {templateCols.map((col, idx) => (
-                      <div key={col._id} className="flex items-start gap-2 bg-slate-50 rounded-xl p-3 border border-slate-200">
+                      <div key={col._id} className="flex flex-wrap items-start gap-2 bg-slate-50 rounded-xl p-3 border border-slate-200">
                         {/* Reorder */}
                         <div className="flex flex-col gap-0.5 pt-1 shrink-0">
                           <button onClick={() => moveCol(col._id, -1)} disabled={idx === 0}
