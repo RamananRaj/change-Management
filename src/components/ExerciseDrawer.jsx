@@ -65,7 +65,7 @@ function CellInput({ col, value, onChange, disabled }) {
       value={value ?? ''}
       onChange={e => onChange(e.target.value)}
       disabled={disabled}
-      placeholder={col.required ? '(required)' : ''}
+      placeholder={col.example || (col.required ? '(required)' : '')}
       className={`${base} border-0 bg-transparent px-1 py-0.5 placeholder:text-slate-300 disabled:text-slate-400`}
     />
   )
@@ -298,9 +298,9 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
                       <thead>
                         <tr className="bg-[#1F4E79]">
                           {cols.map(col => (
-                            <th key={col.key} className="px-3 py-2.5 text-xs font-semibold text-white whitespace-nowrap">
-                              {col.label}
-                              {col.required && <span className="text-[#E8913A] ml-0.5">*</span>}
+                            <th key={col.key} className="px-3 py-2.5 text-xs font-semibold text-white whitespace-nowrap align-top">
+                              <span>{col.label}{col.required && <span className="text-[#E8913A] ml-0.5">*</span>}</span>
+                              {col.example && <span className="block font-normal text-white/60 text-[10px] normal-case mt-0.5">e.g. {col.example}</span>}
                             </th>
                           ))}
                           {!readOnly && <th className="px-2 py-2.5 w-8" />}

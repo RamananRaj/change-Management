@@ -41,7 +41,7 @@ const emptyTemplateForm = {
 }
 
 function makeCol() {
-  return { _id: Math.random().toString(36).slice(2), label: '', type: 'text', required: false, options: '' }
+  return { _id: Math.random().toString(36).slice(2), label: '', type: 'text', required: false, options: '', example: '' }
 }
 
 const ROLE_ICON_OPTIONS     = ['🔷', '🔶', '🟩', '🟧', '🟪', '🔵', '🟡', '🔴', '⭐', '🏅']
@@ -423,6 +423,7 @@ export default function Admin() {
       type:     c.type,
       required: c.required ?? false,
       options:  (c.options ?? []).join(', '),
+      example:  c.example ?? '',
     })))
     setTemplateEditId(t.id)
     setTemplateFormError(null)
@@ -440,6 +441,7 @@ export default function Admin() {
       label:    c.label.trim(),
       type:     c.type,
       required: c.required,
+      ...(c.example?.trim() ? { example: c.example.trim() } : {}),
       ...(c.type === 'select' ? { options: c.options.split(',').map(o => o.trim()).filter(Boolean) } : {}),
     }))
 
@@ -1433,6 +1435,16 @@ export default function Admin() {
                             />
                           </div>
                         )}
+
+                        {/* Example — shown to users as a hint so they know what to enter */}
+                        <div className="w-full mt-1.5 ml-6 col-span-full">
+                          <input
+                            value={col.example ?? ''}
+                            onChange={e => updateCol(col._id, 'example', e.target.value)}
+                            placeholder="Example for users (e.g. “Manual approvals via email”)"
+                            className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-[#1F4E79] bg-white placeholder:text-slate-300"
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
