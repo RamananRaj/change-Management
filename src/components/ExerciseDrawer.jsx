@@ -60,10 +60,11 @@ function StakeholderCell({ value, onChange, disabled, options }) {
   )
 }
 
-function CellInput({ col, value, onChange, disabled, stakeholders }) {
+function CellInput({ col, value, onChange, disabled, stakeholders, roleMaps }) {
   const base = 'w-full text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]/30 rounded'
 
   if (col.type === 'stakeholder') return <StakeholderCell value={value} onChange={onChange} disabled={disabled} options={stakeholders ?? []} />
+  if (col.type === 'role_map')    return <StakeholderCell value={value} onChange={onChange} disabled={disabled} options={roleMaps ?? []} />
 
   if (col.type === 'select') return (
     <select
@@ -112,8 +113,9 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
   const [status,  setStatus]  = useState(activity?.status ?? 'in_progress')
   const [saved,   setSaved]   = useState(false)
 
-  // Stakeholders (for stakeholder-type columns)
+  // Stakeholders + role mappings (for picker-type columns)
   const [stakeholders, setStakeholders] = useState([])
+  const [roleMaps, setRoleMaps] = useState([])
 
   // Linked template state
   const [linkedTemplate,  setLinkedTemplate]  = useState(null)
@@ -133,10 +135,12 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
     if (item.template_id) loadLinkedTemplate()
   }, [item.template_id])
 
-  // Load the shared stakeholder list (for any stakeholder-type columns)
+  // Load the shared stakeholder + role-mapping lists (for picker columns)
   useEffect(() => {
     supabase.from('stakeholders').select('id, name').eq('is_active', true).order('sort_order').order('name')
       .then(({ data }) => setStakeholders(data ?? []))
+    supabase.from('role_mappings').select('id, name').eq('is_active', true).order('sort_order').order('name')
+      .then(({ data }) => setRoleMaps(data ?? []))
   }, [])
 
   async function loadLinkedTemplate() {
@@ -359,6 +363,7 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
                                   onChange={val => updateTemplateCell(rowIdx, col.key, val)}
                                   disabled={readOnly}
                                   stakeholders={stakeholders}
+                                  roleMaps={roleMaps}
                                 />
                               </td>
                             ))}

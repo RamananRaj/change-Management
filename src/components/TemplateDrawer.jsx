@@ -53,10 +53,11 @@ function StakeholderCell({ value, onChange, disabled, options }) {
   )
 }
 
-function CellInput({ col, value, onChange, disabled, stakeholders }) {
+function CellInput({ col, value, onChange, disabled, stakeholders, roleMaps }) {
   const base = 'w-full text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]/30 rounded'
 
   if (col.type === 'stakeholder') return <StakeholderCell value={value} onChange={onChange} disabled={disabled} options={stakeholders ?? []} />
+  if (col.type === 'role_map')    return <StakeholderCell value={value} onChange={onChange} disabled={disabled} options={roleMaps ?? []} />
 
   if (col.type === 'select') {
     return (
@@ -108,6 +109,7 @@ export default function TemplateDrawer({ template, onClose }) {
   const [saved,     setSaved]     = useState(false)
   const [loading,   setLoading]   = useState(true)
   const [stakeholders, setStakeholders] = useState([])
+  const [roleMaps, setRoleMaps] = useState([])
 
   const columns  = template.columns ?? []
   const isCompleted = status === 'completed'
@@ -118,10 +120,12 @@ export default function TemplateDrawer({ template, onClose }) {
     return () => { document.body.style.overflow = '' }
   }, [])
 
-  // Load the shared stakeholder list (for any stakeholder-type columns)
+  // Load the shared stakeholder + role-mapping lists (for picker columns)
   useEffect(() => {
     supabase.from('stakeholders').select('id, name').eq('is_active', true).order('sort_order').order('name')
       .then(({ data }) => setStakeholders(data ?? []))
+    supabase.from('role_mappings').select('id, name').eq('is_active', true).order('sort_order').order('name')
+      .then(({ data }) => setRoleMaps(data ?? []))
   }, [])
 
   // Load existing response
@@ -266,6 +270,7 @@ export default function TemplateDrawer({ template, onClose }) {
                             onChange={val => updateCell(rowIdx, col.key, val)}
                             disabled={isCompleted}
                             stakeholders={stakeholders}
+                            roleMaps={roleMaps}
                           />
                         </td>
                       ))}
