@@ -18,15 +18,16 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Role Manager', 'Industry Manager', 'Templates', 'Surveys']
+const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Role Manager', 'Industry Manager', 'Stakeholders', 'Templates', 'Surveys']
 
 const COLUMN_TYPES = [
-  { value: 'text',     label: 'Text' },
-  { value: 'number',   label: 'Number' },
-  { value: 'date',     label: 'Date' },
-  { value: 'select',   label: 'Select (dropdown)' },
-  { value: 'rating',   label: 'Rating (1–5)' },
-  { value: 'checkbox', label: 'Checkbox' },
+  { value: 'text',        label: 'Text' },
+  { value: 'number',      label: 'Number' },
+  { value: 'date',        label: 'Date' },
+  { value: 'select',      label: 'Select (dropdown)' },
+  { value: 'rating',      label: 'Rating (1–5)' },
+  { value: 'checkbox',    label: 'Checkbox' },
+  { value: 'stakeholder', label: 'Stakeholder picker' },
 ]
 
 const emptyTemplateForm = {
@@ -39,6 +40,8 @@ const emptyTemplateForm = {
   sort_order:   0,
   is_active:    true,
 }
+
+const emptyStakeholderForm = { name: '', detail: '', is_active: true }
 
 function makeCol() {
   return { _id: Math.random().toString(36).slice(2), label: '', type: 'text', required: false, options: '', example: '' }
@@ -133,6 +136,15 @@ export default function Admin() {
   const [templateSaving,     setTemplateSaving]     = useState(false)
   const [templateFormError,  setTemplateFormError]  = useState(null)
 
+  // ── Stakeholders state ──
+  const [stakeholders,       setStakeholders]       = useState([])
+  const [stakeholdersLoading, setStakeholdersLoading] = useState(false)
+  const [showStakeholderForm, setShowStakeholderForm] = useState(false)
+  const [stakeholderForm,    setStakeholderForm]    = useState(emptyStakeholderForm)
+  const [stakeholderEditId,  setStakeholderEditId]  = useState(null)
+  const [stakeholderSaving,  setStakeholderSaving]  = useState(false)
+  const [stakeholderError,   setStakeholderError]   = useState(null)
+
   if (!profile?.is_admin) {
     return (
       <div className="p-8 text-center text-slate-500">
@@ -155,8 +167,40 @@ export default function Admin() {
     if (section === 'Phase Manager')   fetchProjects()
     if (section === 'Role Manager')    fetchRoles()
     if (section === 'Industry Manager') fetchIndustries()
+    if (section === 'Stakeholders')     fetchStakeholders()
     if (section === 'Templates')        fetchTemplates()
   }, [section, filterPhase, filterIndustry, filterRole])
+
+  // ── Stakeholders ──
+  async function fetchStakeholders() {
+    setStakeholdersLoading(true)
+    const { data } = await supabase.from('stakeholders').select('*').order('sort_order').order('name')
+    setStakeholders(data ?? [])
+    setStakeholdersLoading(false)
+  }
+
+  async function saveStakeholder() {
+    if (!stakeholderForm.name.trim()) { setStakeholderError('Name is required'); return }
+    setStakeholderSaving(true)
+    const payload = { name: stakeholderForm.name.trim(), detail: stakeholderForm.detail?.trim() || null, is_active: stakeholderForm.is_active }
+    let error
+    if (stakeholderEditId) {
+      ;({ error } = await supabase.from('stakeholders').update(payload).eq('id', stakeholderEditId))
+    } else {
+      ;({ error } = await supabase.from('stakeholders').insert(payload))
+    }
+    setStakeholderSaving(false)
+    if (error) { setStakeholderError(error.message); return }
+    setShowStakeholderForm(false)
+    setStakeholderError(null)
+    fetchStakeholders()
+  }
+
+  async function deleteStakeholder(id) {
+    if (!window.confirm('Delete this stakeholder?')) return
+    await supabase.from('stakeholders').delete().eq('id', id)
+    fetchStakeholders()
+  }
 
   // ── Content Manager ──
   async function fetchItems() {
@@ -888,6 +932,94 @@ export default function Admin() {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── STAKEHOLDERS ── */}
+      {section === 'Stakeholders' && (
+        <div>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Stakeholders</h2>
+              <p className="text-xs text-slate-400 mt-0.5">The shared list users pick from in "Stakeholder" template columns.</p>
+            </div>
+            <button onClick={() => { setStakeholderForm(emptyStakeholderForm); setStakeholderEditId(null); setStakeholderError(null); setShowStakeholderForm(true) }}
+              className="bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#d07e2e] transition-colors">
+              + New Stakeholder
+            </button>
+          </div>
+
+          {stakeholdersLoading ? (
+            <div className="space-y-3">{[1,2,3].map(n => <div key={n} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div>
+          ) : stakeholders.length === 0 ? (
+            <div className="text-center py-16 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-3xl mb-2">👥</p>
+              <p className="text-slate-500 text-sm font-semibold">No stakeholders yet</p>
+              <p className="text-slate-400 text-xs mt-1">Add stakeholders so users can pick who's impacted.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {stakeholders.map(s => (
+                <div key={s.id} className="bg-white border border-slate-100 rounded-xl px-4 py-3 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-xs font-bold text-[#1F4E79] shrink-0">
+                    {(s.name ?? '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-slate-800 text-sm">{s.name}</p>
+                      {!s.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                    </div>
+                    {s.detail && <p className="text-xs text-slate-400">{s.detail}</p>}
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button onClick={() => { setStakeholderForm({ name: s.name, detail: s.detail ?? '', is_active: s.is_active }); setStakeholderEditId(s.id); setStakeholderError(null); setShowStakeholderForm(true) }}
+                      className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                    <button onClick={() => deleteStakeholder(s.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showStakeholderForm && (
+            <>
+              <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowStakeholderForm(false)} />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+                <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-md">
+                  <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="font-bold text-slate-800">{stakeholderEditId ? 'Edit Stakeholder' : 'New Stakeholder'}</h3>
+                    <button onClick={() => setShowStakeholderForm(false)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 text-xs">✕</button>
+                  </div>
+                  <div className="px-6 py-5 space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Name *</label>
+                      <input value={stakeholderForm.name} onChange={e => setStakeholderForm({...stakeholderForm, name: e.target.value})}
+                        placeholder="e.g. Call Centre Team" autoFocus
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Detail (optional)</label>
+                      <input value={stakeholderForm.detail} onChange={e => setStakeholderForm({...stakeholderForm, detail: e.target.value})}
+                        placeholder="Role, department or note"
+                        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={stakeholderForm.is_active} onChange={e => setStakeholderForm({...stakeholderForm, is_active: e.target.checked})} className="w-4 h-4 accent-[#1F4E79]" />
+                      <span className="text-sm text-slate-700">Active (available to pick)</span>
+                    </label>
+                    {stakeholderError && <p className="text-sm text-red-500">{stakeholderError}</p>}
+                  </div>
+                  <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                    <button onClick={() => setShowStakeholderForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
+                    <button onClick={saveStakeholder} disabled={stakeholderSaving}
+                      className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+                      {stakeholderSaving ? 'Saving…' : stakeholderEditId ? 'Save Changes' : 'Create Stakeholder'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}

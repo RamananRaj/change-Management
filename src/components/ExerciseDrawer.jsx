@@ -32,8 +32,38 @@ function RatingInput({ value, onChange, disabled }) {
   )
 }
 
-function CellInput({ col, value, onChange, disabled }) {
+function StakeholderCell({ value, onChange, disabled, options }) {
+  const [open, setOpen] = useState(false)
+  const selected = Array.isArray(value) ? value : (value ? [value] : [])
+  function toggle(name) {
+    onChange(selected.includes(name) ? selected.filter(n => n !== name) : [...selected, name])
+  }
+  return (
+    <div className="min-w-[150px]">
+      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
+        className={`w-full text-left text-xs rounded px-1.5 py-1 border ${disabled ? 'border-transparent text-slate-400' : 'border-slate-200 hover:border-[#1F4E79]'}`}>
+        {selected.length ? selected.join(', ') : <span className="text-slate-300">Select…</span>}
+      </button>
+      {open && !disabled && (
+        <div className="mt-1 border border-slate-200 rounded-lg bg-white p-2 max-h-44 overflow-y-auto space-y-0.5 shadow-sm">
+          {options.length === 0 ? (
+            <p className="text-[11px] text-slate-400 px-1">No stakeholders defined yet.</p>
+          ) : options.map(o => (
+            <label key={o.id} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer px-1 py-0.5 hover:bg-slate-50 rounded">
+              <input type="checkbox" checked={selected.includes(o.name)} onChange={() => toggle(o.name)} className="w-3.5 h-3.5 accent-[#1F4E79]" />
+              {o.name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CellInput({ col, value, onChange, disabled, stakeholders }) {
   const base = 'w-full text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#1F4E79]/30 rounded'
+
+  if (col.type === 'stakeholder') return <StakeholderCell value={value} onChange={onChange} disabled={disabled} options={stakeholders ?? []} />
 
   if (col.type === 'select') return (
     <select
@@ -82,6 +112,9 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
   const [status,  setStatus]  = useState(activity?.status ?? 'in_progress')
   const [saved,   setSaved]   = useState(false)
 
+  // Stakeholders (for stakeholder-type columns)
+  const [stakeholders, setStakeholders] = useState([])
+
   // Linked template state
   const [linkedTemplate,  setLinkedTemplate]  = useState(null)
   const [templateRows,    setTemplateRows]    = useState([])
@@ -99,6 +132,12 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
   useEffect(() => {
     if (item.template_id) loadLinkedTemplate()
   }, [item.template_id])
+
+  // Load the shared stakeholder list (for any stakeholder-type columns)
+  useEffect(() => {
+    supabase.from('stakeholders').select('id, name').eq('is_active', true).order('sort_order').order('name')
+      .then(({ data }) => setStakeholders(data ?? []))
+  }, [])
 
   async function loadLinkedTemplate() {
     setTemplateLoading(true)
@@ -319,6 +358,7 @@ export default function ExerciseDrawer({ item, activity, onClose, onActivityChan
                                   value={row[col.key]}
                                   onChange={val => updateTemplateCell(rowIdx, col.key, val)}
                                   disabled={readOnly}
+                                  stakeholders={stakeholders}
                                 />
                               </td>
                             ))}
