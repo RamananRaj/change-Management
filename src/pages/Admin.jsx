@@ -18,7 +18,7 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Role Manager', 'Stakeholders', 'User Roles']
+const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Access Personas', 'Stakeholders', 'Impacted Roles']
 
 const COLUMN_TYPES = [
   { value: 'text',        label: 'Text' },
@@ -28,7 +28,7 @@ const COLUMN_TYPES = [
   { value: 'rating',      label: 'Rating (1–5)' },
   { value: 'checkbox',    label: 'Checkbox' },
   { value: 'stakeholder', label: 'Stakeholder picker' },
-  { value: 'role_map',    label: 'User Role picker' },
+  { value: 'role_map',    label: 'Impacted Role picker' },
 ]
 
 const emptyTemplateForm = {
@@ -176,10 +176,10 @@ export default function Admin() {
   useEffect(() => {
     if (section === 'Content Manager') fetchItems()
     if (section === 'Phase Manager')   fetchProjects()
-    if (section === 'Role Manager')    fetchRoles()
+    if (section === 'Access Personas') fetchRoles()
     if (section === 'Industry Manager') fetchIndustries()
     if (section === 'Stakeholders')     fetchStakeholders()
-    if (section === 'User Roles')       fetchRoleMaps()
+    if (section === 'Impacted Roles')   fetchRoleMaps()
     if (section === 'Templates')        fetchTemplates()
   }, [section, filterPhase, filterIndustry, filterRole])
 
@@ -872,15 +872,15 @@ export default function Admin() {
       )}
 
       {/* ── ROLE MANAGER ── */}
-      {section === 'Role Manager' && (
+      {section === 'Access Personas' && (
         <div>
           <div className="flex items-center justify-between mb-5">
             <p className="text-sm text-slate-500">
-              Roles appear in onboarding and control which content users see. Adding a new role here makes it available immediately.
+              <span className="font-semibold text-slate-700">Access Personas</span> are the roles a user is assigned (at invite or onboarding). They control which content a user sees. Each user has one.
             </p>
             <button onClick={openNewRole}
               className="shrink-0 ml-4 bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#d07e2e] transition-colors">
-              + Add Role
+              + Add Persona
             </button>
           </div>
 
@@ -1068,17 +1068,24 @@ export default function Admin() {
       )}
 
       {/* ── USER ROLES ── */}
-      {section === 'User Roles' && (
+      {section === 'Impacted Roles' && (
         <div>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">User Roles</h2>
-              <p className="text-xs text-slate-400 mt-0.5">The shared list of roles users pick from in "User Role picker" template columns.</p>
+              <h2 className="text-lg font-bold text-slate-800">Impacted Roles</h2>
+              <p className="text-xs text-slate-400 mt-0.5">A shared pick-list of job roles that a change can affect — not access control.</p>
             </div>
             <button onClick={() => { setRoleMapForm(emptyRoleMapForm); setRoleMapEditId(null); setRoleMapError(null); setShowRoleMapForm(true) }}
               className="bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#d07e2e] transition-colors">
               + New Role
             </button>
+          </div>
+
+          {/* Example hint */}
+          <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
+            <span className="font-semibold text-[#1F4E79]">Example:</span> add roles like <em>Call Centre Agent</em>, <em>Field Technician</em>, <em>Team Leader</em>.
+            Then in a template, add an <strong>“Impacted Role picker”</strong> column — users tick which of these roles a change affects (e.g. in an impact assessment).
+            This is <strong>not</strong> about login access; that's <strong>Access Personas</strong>.
           </div>
 
           {roleMapsLoading ? (

@@ -54,6 +54,7 @@ export default function AdminClients({ allRoles = [] }) {
   const [projectInvites, setProjectInvites] = useState({}) // { project_id: [pending invites] }
   const [inviteForm,     setInviteForm]     = useState({}) // { project_id: { email, full_name, role } }
   const [inviteBusy,     setInviteBusy]     = useState(null) // project_id currently saving
+  const [inviteError,    setInviteError]    = useState({})   // { project_id: message }
   const [copiedToken,    setCopiedToken]    = useState(null)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [projectForm,    setProjectForm]    = useState(emptyProjectForm)
@@ -140,18 +141,20 @@ export default function AdminClients({ allRoles = [] }) {
   async function createInvite(projectId) {
     const f = inviteForm[projectId] ?? {}
     const email = (f.email ?? '').trim()
-    if (!email) return
+    if (!email)   { setInviteError(prev => ({ ...prev, [projectId]: 'Enter an email address.' })); return }
+    if (!f.role)  { setInviteError(prev => ({ ...prev, [projectId]: 'Select an Access Persona before creating the link.' })); return }
+    setInviteError(prev => ({ ...prev, [projectId]: null }))
     setInviteBusy(projectId)
     const { error } = await supabase.from('project_invites').insert({
       project_id: projectId,
       client_id:  selectedClient.id,
       email,
       full_name:  (f.full_name ?? '').trim() || null,
-      role:       f.role || null,
+      role:       f.role,
       invited_by: user.id,
     })
     setInviteBusy(null)
-    if (error) { window.alert('Could not create invite: ' + error.message); return }
+    if (error) { setInviteError(prev => ({ ...prev, [projectId]: error.message })); return }
     setInviteForm(prev => ({ ...prev, [projectId]: { email: '', full_name: '', role: '' } }))
     await loadProjectInvites(projectId)
   }
@@ -685,7 +688,7 @@ export default function AdminClients({ allRoles = [] }) {
                                 value={inviteForm[project.id]?.role ?? ''}
                                 onChange={e => setInviteForm(prev => ({ ...prev, [project.id]: { ...prev[project.id], role: e.target.value } }))}
                                 className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-[#1F4E79] bg-white">
-                                <option value="">Role (optional)</option>
+                                <option value="">Access Persona * …</option>
                                 {allRoles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
                               </select>
                               <button onClick={() => createInvite(project.id)} disabled={inviteBusy === project.id}
@@ -693,7 +696,10 @@ export default function AdminClients({ allRoles = [] }) {
                                 {inviteBusy === project.id ? 'Creating…' : '+ Invite link'}
                               </button>
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-1.5">Creates a signup link you can share. They join this project automatically when they register. Re-copy any time to resend.</p>
+                            {inviteError[project.id] && (
+                              <p className="text-[11px] text-red-500 mt-1.5 font-medium">⚠ {inviteError[project.id]}</p>
+                            )}
+                            <p className="text-[10px] text-slate-400 mt-1.5">Creates a signup link you can share. They join this project when they register. An <strong>Access Persona</strong> is required so they get the right content (onboarding is skipped for invited users). Re-copy any time to resend.</p>
                           </div>
                         </div>
 
