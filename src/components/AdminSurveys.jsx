@@ -82,6 +82,7 @@ export default function AdminSurveys({ roles }) {
   const [resultsQuestions, setResultsQuestions] = useState([])
   const [resultsResponses, setResultsResponses] = useState([])
   const [resultsLoading,   setResultsLoading]   = useState(false)
+  const [resultsClientFilter, setResultsClientFilter] = useState('')  // '' = all clients
   const [generatingInsight,setGeneratingInsight]= useState(false)
 
   useEffect(() => { fetchSurveys() }, [])
@@ -188,12 +189,33 @@ export default function AdminSurveys({ roles }) {
   async function viewResults(s) {
     setResultsFor(s)
     setResultsLoading(true)
+    setResultsClientFilter('')
     const [{ data: qs }, { data: rs }] = await Promise.all([
       supabase.from('survey_questions').select('*').eq('survey_id', s.id).order('sort_order'),
-      supabase.from('survey_responses').select('*, profiles(full_name, role)').eq('survey_id', s.id),
+      supabase.from('survey_responses').select('*').eq('survey_id', s.id),
     ])
+    // Enrich each response with respondent name/role/client (two-step: no ambiguous embed)
+    const userIds = [...new Set((rs ?? []).map(r => r.user_id))]
+    const { data: profs } = userIds.length
+      ? await supabase.from('profiles').select('id, full_name, role, client_id').in('id', userIds)
+      : { data: [] }
+    const clientIds = [...new Set((profs ?? []).map(p => p.client_id).filter(Boolean))]
+    const { data: cls } = clientIds.length
+      ? await supabase.from('clients').select('id, name').in('id', clientIds)
+      : { data: [] }
+    const profById   = new Map((profs ?? []).map(p => [p.id, p]))
+    const clientById = new Map((cls ?? []).map(c => [c.id, c.name]))
+    const enriched = (rs ?? []).map(r => {
+      const p = profById.get(r.user_id)
+      return {
+        ...r,
+        profiles:    p ? { full_name: p.full_name, role: p.role } : null,
+        client_id:   p?.client_id ?? null,
+        client_name: p?.client_id ? (clientById.get(p.client_id) ?? '—') : null,
+      }
+    })
     setResultsQuestions(qs ?? [])
-    setResultsResponses(rs ?? [])
+    setResultsResponses(enriched)
     setResultsLoading(false)
   }
 
@@ -344,12 +366,22 @@ export default function AdminSurveys({ roles }) {
   }
 
   // ── Results helpers ──────────────────────────────────────────────────────────
+  // Distinct clients present in the responses (for the filter dropdown)
+  const resultsClients = [...new Map(
+    resultsResponses.filter(r => r.client_id).map(r => [r.client_id, r.client_name])
+  ).entries()].map(([id, name]) => ({ id, name }))
+
+  // Responses shown given the current client filter
+  const visibleResponses = resultsClientFilter
+    ? resultsResponses.filter(r => r.client_id === resultsClientFilter)
+    : resultsResponses
+
   const newResponsesSinceInsight = resultsFor
     ? resultsResponses.length - (resultsFor.ai_insight_response_count ?? 0)
     : 0
 
-  const avgScore = resultsResponses.length > 0
-    ? (resultsResponses.reduce((s, r) => s + (r.score ?? 0), 0) / resultsResponses.length).toFixed(1)
+  const avgScore = visibleResponses.length > 0
+    ? (visibleResponses.reduce((s, r) => s + (r.score ?? 0), 0) / visibleResponses.length).toFixed(1)
     : null
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -373,16 +405,30 @@ export default function AdminSurveys({ roles }) {
           <div className="text-right">
             <p className="text-3xl font-bold text-[#1F4E79]">{avgScore}<span className="text-base text-slate-400">/5</span></p>
             <RagBadge score={Number(avgScore)} survey={resultsFor} />
-            <p className="text-xs text-slate-400 mt-1">{resultsResponses.length} respondent{resultsResponses.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-slate-400 mt-1">{visibleResponses.length} respondent{visibleResponses.length !== 1 ? 's' : ''}</p>
           </div>
         )}
       </div>
 
+      {/* Client filter — segment the pooled results by company */}
+      {resultsClients.length > 0 && (
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-xs font-semibold text-slate-500">Filter by client:</span>
+          <select value={resultsClientFilter} onChange={e => setResultsClientFilter(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 bg-white focus:outline-none focus:border-[#1F4E79]">
+            <option value="">All clients ({resultsResponses.length})</option>
+            {resultsClients.map(c => (
+              <option key={c.id} value={c.id}>{c.name} ({resultsResponses.filter(r => r.client_id === c.id).length})</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {resultsLoading ? (
         <p className="text-sm text-slate-400">Loading responses…</p>
-      ) : resultsResponses.length === 0 ? (
+      ) : visibleResponses.length === 0 ? (
         <div className="text-center py-12 bg-slate-50 rounded-xl border border-slate-200">
-          <p className="text-slate-400 text-sm">No responses yet.</p>
+          <p className="text-slate-400 text-sm">{resultsClientFilter ? 'No responses from this client yet.' : 'No responses yet.'}</p>
         </div>
       ) : (
         <>
@@ -392,6 +438,7 @@ export default function AdminSurveys({ roles }) {
               <thead>
                 <tr className="bg-[#1F4E79]">
                   <th className="px-4 py-3 text-xs font-semibold text-white">Respondent</th>
+                  <th className="px-4 py-3 text-xs font-semibold text-white">Client</th>
                   <th className="px-4 py-3 text-xs font-semibold text-white">Score</th>
                   <th className="px-4 py-3 text-xs font-semibold text-white">RAG</th>
                   <th className="px-4 py-3 text-xs font-semibold text-white">Status</th>
@@ -403,12 +450,13 @@ export default function AdminSurveys({ roles }) {
                 </tr>
               </thead>
               <tbody>
-                {resultsResponses.map((r, idx) => (
+                {visibleResponses.map((r, idx) => (
                   <tr key={r.id} className={`border-b border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}>
                     <td className="px-4 py-3 text-sm text-slate-800 font-medium">
                       {r.profiles?.full_name ?? 'Unknown'}
                       <span className="text-xs text-slate-400 ml-1">({r.profiles?.role ?? '—'})</span>
                     </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{r.client_name ?? '—'}</td>
                     <td className="px-4 py-3 text-sm font-bold text-[#1F4E79]">
                       {r.score != null ? `${Number(r.score).toFixed(1)}/5` : '—'}
                     </td>
@@ -451,7 +499,7 @@ export default function AdminSurveys({ roles }) {
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Question Averages</p>
             <div className="space-y-2">
               {resultsQuestions.map(q => {
-                const scores = resultsResponses
+                const scores = visibleResponses
                   .map(r => calcQuestionScore(q, r.answers?.[q.id]))
                   .filter(s => s !== null)
                 const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null
@@ -481,7 +529,7 @@ export default function AdminSurveys({ roles }) {
           <div className="border border-[#1F4E79]/20 rounded-2xl p-5 bg-[#1F4E79]/3">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <p className="text-xs font-semibold text-[#1F4E79] uppercase tracking-widest mb-0.5">📊 Survey Insights</p>
+                <p className="text-xs font-semibold text-[#1F4E79] uppercase tracking-widest mb-0.5">📊 Survey Insights {resultsClientFilter && <span className="normal-case text-[10px] text-slate-400 font-normal">(across all clients)</span>}</p>
                 {resultsFor.ai_insight_generated_at ? (
                   <p className="text-[11px] text-slate-400">
                     Generated {new Date(resultsFor.ai_insight_generated_at).toLocaleDateString()} · based on {resultsFor.ai_insight_response_count} response{resultsFor.ai_insight_response_count !== 1 ? 's' : ''}
@@ -530,6 +578,13 @@ export default function AdminSurveys({ roles }) {
           className="shrink-0 ml-4 bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#d07e2e] transition-colors">
           + New Survey
         </button>
+      </div>
+
+      {/* Scope hint */}
+      <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
+        <span className="font-semibold text-[#1F4E79]">Scope:</span> a survey is <strong>global</strong> — it targets a <strong>Phase</strong> and an
+        <strong> Access Persona</strong>, and appears to everyone matching, across <strong>all clients and projects</strong> (not per-client).
+        Responses are collected per user; <strong>View Results pools all respondents together</strong> and doesn't yet break them down by client.
       </div>
 
       {loading ? (
