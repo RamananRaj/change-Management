@@ -66,6 +66,8 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const [showTypeMenu,    setShowTypeMenu]    = useState(false)
   const [showAllResources, setShowAllResources] = useState(false)
   const [pathwayItems,    setPathwayItems]    = useState([])
+  const [projectsList,    setProjectsList]    = useState([])   // projects the user belongs to
+  const [activeProjectId, setActiveProjectId] = useState('')
   const typeMenuRef = useRef(null)
   // Live label lookups from Supabase (roles + industries)
   const [roleLabel,     setRoleLabel]     = useState(null)
@@ -94,36 +96,50 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   async function loadAll() {
     setLoading(true)
 
-    // Phase access: check client project membership first, fall back to personal project
-    let projectId = null
+    // ── Determine the user's projects + active project ──
+    const { data: memberships } = await supabase
+      .from('project_members')
+      .select('project_id')
+      .eq('user_id', user.id)
+    const memberProjectIds = [...new Set((memberships ?? []).map(m => m.project_id))]
 
-    if (profile?.client_id) {
-      // Look up user's project via project_members
-      const { data: membership } = await supabase
-        .from('project_members')
-        .select('project_id')
-        .eq('user_id', user.id)
-        .single()
-      if (membership) projectId = membership.project_id
+    let projList = []
+    if (memberProjectIds.length) {
+      const { data: projRows } = await supabase
+        .from('projects')
+        .select('id, name')
+        .in('id', memberProjectIds)
+      projList = projRows ?? []
+    }
+    setProjectsList(projList)
+
+    let activeProjectId = ''
+    if (projList.length) {
+      const stored = localStorage.getItem('cf_active_project')
+      activeProjectId = projList.some(p => p.id === stored) ? stored : projList[0].id
+      setActiveProjectId(activeProjectId)
+      localStorage.setItem('cf_active_project', activeProjectId)
+    } else {
+      setActiveProjectId('')
     }
 
-    if (!projectId) {
-      // Fall back to personal project created at onboarding
+    // Phase access: use active project, else fall back to personal project (onboarding)
+    let phaseProjectId = activeProjectId
+    if (!phaseProjectId) {
       const { data: proj } = await supabase
         .from('projects')
         .select('id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single()
-      if (proj) projectId = proj.id
+        .maybeSingle()
+      if (proj) phaseProjectId = proj.id
     }
-
-    if (projectId) {
+    if (phaseProjectId) {
       const { data: phaseRows } = await supabase
         .from('project_phases')
         .select('*')
-        .eq('project_id', projectId)
+        .eq('project_id', phaseProjectId)
         .order('phase_number', { ascending: true })
       setAllPhases(phaseRows ?? [])
     }
@@ -139,16 +155,16 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
 
     setItems(data ?? [])
 
-    // Fetch pathway — per-client if client_id set, else fall back to global pathway_step
-    if (profile?.client_id) {
-      const { data: cpRows } = await supabase
-        .from('client_pathways')
+    // Fetch pathway — per active project, else fall back to global pathway_step
+    if (activeProjectId) {
+      const { data: ppRows } = await supabase
+        .from('project_pathways')
         .select('pathway_step, phase_content(*)')
-        .eq('client_id', profile.client_id)
+        .eq('project_id', activeProjectId)
         .eq('phase_number', phaseNum)
         .order('pathway_step')
       setPathwayItems(
-        (cpRows ?? []).map(cp => ({ ...cp.phase_content, pathway_step: cp.pathway_step }))
+        (ppRows ?? []).map(pp => ({ ...pp.phase_content, pathway_step: pp.pathway_step }))
       )
     } else {
       // Global pathway: items with pathway_step set
@@ -197,6 +213,18 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
     await fetchActivities()
 
     setLoading(false)
+  }
+
+  // Switch the active project — reloads just phase access + pathway (content is project-independent)
+  async function switchProject(pid) {
+    setActiveProjectId(pid)
+    localStorage.setItem('cf_active_project', pid)
+    const [{ data: phaseRows }, { data: ppRows }] = await Promise.all([
+      supabase.from('project_phases').select('*').eq('project_id', pid).order('phase_number', { ascending: true }),
+      supabase.from('project_pathways').select('pathway_step, phase_content(*)').eq('project_id', pid).eq('phase_number', phaseNum).order('pathway_step'),
+    ])
+    setAllPhases(phaseRows ?? [])
+    setPathwayItems((ppRows ?? []).map(pp => ({ ...pp.phase_content, pathway_step: pp.pathway_step })))
   }
 
   async function loadLabels() {
@@ -293,6 +321,16 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
           </div>
           <h1 className="text-3xl font-bold text-white mb-1">{title}</h1>
           <p className="text-white/60 text-sm">{subtitle}</p>
+
+          {projectsList.length > 1 && (
+            <div className="mt-4 flex items-center gap-2">
+              <span className="text-xs text-white/60">Project:</span>
+              <select value={activeProjectId} onChange={e => switchProject(e.target.value)}
+                className="text-xs bg-white/15 text-white border border-white/25 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-white/60 [&>option]:text-slate-800">
+                {projectsList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Nav row — dropdown + scope filter — only when no pathway (or all resources expanded) */}

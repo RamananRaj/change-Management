@@ -64,6 +64,7 @@ export default function AdminClients({ allRoles = [] }) {
 
   // Pathway state
   const [pathwayPhase,   setPathwayPhase]   = useState(1)
+  const [pathwayProject, setPathwayProject] = useState('')  // which project's pathway we're editing
   const [phaseContent,   setPhaseContent]   = useState([])
   const [clientPathway,  setClientPathway]  = useState([])
   const [pathwaySaving,  setPathwaySaving]  = useState(false)
@@ -295,12 +296,13 @@ export default function AdminClients({ allRoles = [] }) {
     if (selectedClient?.id === id) setSelectedClient(null)
   }
 
-  // ── Pathway ──────────────────────────────────────────────────────────────────
-  async function loadPathway(phase) {
+  // ── Pathway (per project) ────────────────────────────────────────────────────
+  async function loadPathway(phase, projectId = pathwayProject) {
     setPathwayPhase(phase)
+    if (!projectId) { setPhaseContent([]); setClientPathway([]); return }
     const [{ data: content }, { data: pathway }] = await Promise.all([
       supabase.from('phase_content').select('id, title, content_type, role, industry').eq('phase_number', phase).order('sort_order'),
-      supabase.from('client_pathways').select('*').eq('client_id', selectedClient.id).eq('phase_number', phase).order('pathway_step'),
+      supabase.from('project_pathways').select('*').eq('project_id', projectId).eq('phase_number', phase).order('pathway_step'),
     ])
     setPhaseContent(content ?? [])
     setClientPathway(pathway ?? [])
@@ -317,11 +319,12 @@ export default function AdminClients({ allRoles = [] }) {
   }
 
   async function savePathway() {
+    if (!pathwayProject) return
     setPathwaySaving(true)
-    await supabase.from('client_pathways').delete().eq('client_id', selectedClient.id).eq('phase_number', pathwayPhase)
+    await supabase.from('project_pathways').delete().eq('project_id', pathwayProject).eq('phase_number', pathwayPhase)
     if (clientPathway.length > 0) {
-      await supabase.from('client_pathways').insert(
-        clientPathway.map(p => ({ client_id: selectedClient.id, phase_number: pathwayPhase, content_id: p.content_id, pathway_step: p.pathway_step }))
+      await supabase.from('project_pathways').insert(
+        clientPathway.map(p => ({ project_id: pathwayProject, phase_number: pathwayPhase, content_id: p.content_id, pathway_step: p.pathway_step }))
       )
     }
     setPathwaySaving(false)
@@ -518,7 +521,11 @@ export default function AdminClients({ allRoles = [] }) {
             <button key={key}
               onClick={() => {
                 setClientTab(key)
-                if (key === 'pathway' && phaseContent.length === 0) loadPathway(1)
+                if (key === 'pathway' && !pathwayProject) {
+                  const pid = projects[0]?.id ?? ''
+                  setPathwayProject(pid)
+                  loadPathway(1, pid)
+                }
                 if (key === 'progress') loadProgress()
               }}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px ${
@@ -718,10 +725,26 @@ export default function AdminClients({ allRoles = [] }) {
 
         {/* ── PATHWAY TAB ── */}
         {clientTab === 'pathway' && (
+          projects.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-slate-400 text-sm">No projects yet.</p>
+              <p className="text-slate-300 text-xs mt-1">Create a project in the Projects tab first — pathways are configured per project.</p>
+            </div>
+          ) : (
           <div>
             <p className="text-xs text-slate-500 mb-4">
-              Configure the guided pathway for each phase. The steps you set here will appear as the primary journey for all users under <strong>{selectedClient.name}</strong>.
+              Configure the guided pathway for each phase <strong>of this project</strong>. The steps you set appear as the primary journey for its members.
             </p>
+
+            {/* Project selector */}
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project</label>
+              <select value={pathwayProject}
+                onChange={e => { setPathwayProject(e.target.value); loadPathway(pathwayPhase, e.target.value) }}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[220px]">
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
 
             {/* Phase selector */}
             <div className="flex gap-2 mb-5 flex-wrap">
@@ -776,6 +799,7 @@ export default function AdminClients({ allRoles = [] }) {
               {pathwaySaving ? 'Saving…' : '✓ Save Phase ' + pathwayPhase + ' Pathway'}
             </button>
           </div>
+          )
         )}
 
         {/* ── PROGRESS TAB ── */}
