@@ -582,9 +582,9 @@ export default function AdminSurveys({ roles }) {
 
       {/* Scope hint */}
       <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
-        <span className="font-semibold text-[#1F4E79]">Scope:</span> a survey is <strong>global</strong> — it targets a <strong>Phase</strong> and an
-        <strong> Access Persona</strong>, and appears to everyone matching, across <strong>all clients and projects</strong> (not per-client).
-        Responses are collected per user; <strong>View Results pools all respondents together</strong> and doesn't yet break them down by client.
+        <span className="font-semibold text-[#1F4E79]">Scope:</span> you author a survey <strong>once</strong> — it targets a <strong>Phase</strong> and an
+        <strong> Access Persona</strong> and reaches everyone matching, across all clients. Responses are collected per user, and
+        <strong> View Results lets you filter and score them by client</strong> — so you get per-client readiness without rebuilding the survey each time.
       </div>
 
       {loading ? (
