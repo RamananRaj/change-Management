@@ -18,7 +18,7 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Role Manager', 'Industry Manager', 'Stakeholders', 'User Roles', 'Templates', 'Surveys']
+const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Role Manager', 'Stakeholders', 'User Roles']
 
 const COLUMN_TYPES = [
   { value: 'text',        label: 'Text' },

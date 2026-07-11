@@ -529,6 +529,13 @@ export default function AdminClients({ allRoles = [] }) {
         {/* ── PROJECTS TAB ── */}
         {clientTab === 'projects' && (
           <div className="space-y-4">
+            {/* How-to hint: a client alone doesn't onboard users */}
+            <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed">
+              <span className="font-semibold text-[#1F4E79]">Adding users — 3 steps:</span> ① this client is the company.
+              ② Create a <strong>project</strong> below and unlock its phases. ③ In a project, open <strong>Members</strong> →
+              <strong> Invite someone new</strong> to generate a signup link to share (or <strong>Assign</strong> an existing user).
+              People get access only after they register through the invite link.
+            </div>
             <div className="flex items-center justify-between">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Projects ({projects.length})</p>
               <button
