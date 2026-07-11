@@ -55,6 +55,8 @@ export default function Dashboard() {
   const [surveyResults,  setSurveyResults]  = useState([])   // submitted survey responses
   const [templateCount,  setTemplateCount]  = useState(0)    // templates started by user
   const [loading,        setLoading]        = useState(true)
+  const [projectsList,   setProjectsList]   = useState([])   // projects the user belongs to
+  const [activeProjectId, setActiveProjectId] = useState('')
 
   const firstName = profile?.full_name ? profile.full_name.split(' ')[0] : 'back'
   const hour      = new Date().getHours()
@@ -69,16 +71,34 @@ export default function Dashboard() {
     try {
       setLoading(true)
 
-      // 1. Fetch project + phases
-      const { data: proj } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
+      // 1. Fetch the user's assigned project(s) + active project
+      const { data: memberships } = await supabase
+        .from('project_members').select('project_id').eq('user_id', user.id)
+      const memberProjectIds = [...new Set((memberships ?? []).map(m => m.project_id))]
+      let projList = []
+      if (memberProjectIds.length) {
+        const { data: projRows } = await supabase.from('projects').select('id, name').in('id', memberProjectIds)
+        projList = projRows ?? []
+      }
+      setProjectsList(projList)
 
-      if (!proj) { setLoading(false); return }
+      let activeId = ''
+      if (projList.length) {
+        const stored = localStorage.getItem('cf_active_project')
+        activeId = projList.some(p => p.id === stored) ? stored : projList[0].id
+        setActiveProjectId(activeId)
+        localStorage.setItem('cf_active_project', activeId)
+      }
+
+      // Phase access: active assigned project, else fall back to personal onboarding project
+      let phaseProjectId = activeId
+      if (!phaseProjectId) {
+        const { data: proj } = await supabase
+          .from('projects').select('id').eq('user_id', user.id)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        phaseProjectId = proj?.id ?? null
+      }
+      if (!phaseProjectId) { setLoading(false); return }
 
       const [
         { data: phaseRows },
@@ -87,7 +107,7 @@ export default function Dashboard() {
         { data: surveyResps },
         { data: tmplResps },
       ] = await Promise.all([
-        supabase.from('project_phases').select('*').eq('project_id', proj.id).order('phase_number'),
+        supabase.from('project_phases').select('*').eq('project_id', phaseProjectId).order('phase_number'),
         supabase.from('phase_content').select('id, phase_number')
           .or(`industry.is.null,industry.eq.${profile.industry ?? '__none__'}`)
           .or(`role.is.null,role.eq.${profile.role ?? '__none__'}`),
@@ -134,6 +154,15 @@ export default function Dashboard() {
     }
   }
 
+  // Switch active project — reloads phase access (phase progress is project-independent)
+  async function switchProject(pid) {
+    setActiveProjectId(pid)
+    localStorage.setItem('cf_active_project', pid)
+    const { data: phaseRows } = await supabase
+      .from('project_phases').select('*').eq('project_id', pid).order('phase_number')
+    setPhases(phaseRows ?? [])
+  }
+
   // Progress calculations
   const totalAvailable = Object.values(phaseStats).reduce((s, p) => s + p.available, 0)
   const totalCompleted = Object.values(phaseStats).reduce((s, p) => s + p.completed, 0)
@@ -165,6 +194,16 @@ export default function Dashboard() {
               {roleLabels[profile.role] ?? profile.role}
               {profile.industry ? ` · ${industryLabels[profile.industry] ?? profile.industry}` : ''}
             </p>
+          )}
+
+          {projectsList.length > 1 && (
+            <div className="mt-4 flex items-center gap-2">
+              <span className="text-xs text-white/60">Project:</span>
+              <select value={activeProjectId} onChange={e => switchProject(e.target.value)}
+                className="text-xs bg-white/15 text-white border border-white/25 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-white/60 [&>option]:text-slate-800">
+                {projectsList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
           )}
         </div>
 
