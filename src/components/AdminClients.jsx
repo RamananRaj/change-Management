@@ -31,7 +31,7 @@ function StatusDot({ status }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function AdminClients({ allRoles = [] }) {
+export default function AdminClients({ allRoles = [], lockedClientId = null }) {
   const { user } = useAuth()
   const [clients,        setClients]        = useState([])
   const [allUsers,       setAllUsers]       = useState([])
@@ -75,6 +75,14 @@ export default function AdminClients({ allRoles = [] }) {
   const [progressData,   setProgressData]   = useState({ users: [], items: [], activities: [] })
 
   useEffect(() => { fetchClients(); fetchAllUsers(); fetchIndustries() }, [])
+
+  // Scoped (Client Admin) mode: auto-open the one client and never show the list
+  useEffect(() => {
+    if (!lockedClientId) return
+    supabase.from('clients').select('*').eq('id', lockedClientId).single()
+      .then(({ data }) => { if (data) openClient(data) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedClientId])
 
   async function fetchClients() {
     setLoading(true)
@@ -497,8 +505,10 @@ export default function AdminClients({ allRoles = [] }) {
       <div>
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
-          <button onClick={() => setSelectedClient(null)} className="text-sm text-slate-500 hover:text-slate-700">← All Clients</button>
-          <span className="text-slate-300">/</span>
+          {!lockedClientId && <>
+            <button onClick={() => setSelectedClient(null)} className="text-sm text-slate-500 hover:text-slate-700">← All Clients</button>
+            <span className="text-slate-300">/</span>
+          </>}
           <div className="w-8 h-8 rounded-lg bg-[#1F4E79]/10 flex items-center justify-center font-bold text-[#1F4E79] text-sm shrink-0">
             {selectedClient.name.charAt(0).toUpperCase()}
           </div>
@@ -509,17 +519,19 @@ export default function AdminClients({ allRoles = [] }) {
           {selectedClient.contact_name && (
             <span className="text-xs text-slate-400 ml-2">Contact: {selectedClient.contact_name}{selectedClient.contact_email ? ` · ${selectedClient.contact_email}` : ''}</span>
           )}
-          <div className="ml-auto flex gap-2">
-            <button onClick={() => { setClientForm({ name: selectedClient.name, industry: selectedClient.industry ?? '', contact_name: selectedClient.contact_name ?? '', contact_email: selectedClient.contact_email ?? '', notes: selectedClient.notes ?? '', is_active: selectedClient.is_active }); setClientEditId(selectedClient.id); setShowClientForm(true) }}
-              className="text-xs text-[#1F4E79] border border-[#1F4E79]/30 px-3 py-1.5 rounded-lg hover:bg-[#1F4E79]/5 transition-colors">
-              Edit Client
-            </button>
-          </div>
+          {!lockedClientId && (
+            <div className="ml-auto flex gap-2">
+              <button onClick={() => { setClientForm({ name: selectedClient.name, industry: selectedClient.industry ?? '', contact_name: selectedClient.contact_name ?? '', contact_email: selectedClient.contact_email ?? '', notes: selectedClient.notes ?? '', is_active: selectedClient.is_active }); setClientEditId(selectedClient.id); setShowClientForm(true) }}
+                className="text-xs text-[#1F4E79] border border-[#1F4E79]/30 px-3 py-1.5 rounded-lg hover:bg-[#1F4E79]/5 transition-colors">
+                Edit Client
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ['pathway', '🗺️ Pathway'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
+          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway']]), ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setClientTab(key)
@@ -891,6 +903,11 @@ export default function AdminClients({ allRoles = [] }) {
         {modals}
       </div>
     )
+  }
+
+  // Scoped mode never shows the all-clients list — just wait for the client to open.
+  if (lockedClientId) {
+    return <div className="space-y-3">{[1,2,3].map(n => <div key={n} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div>
   }
 
   // ── CLIENT LIST ────────────────────────────────────────────────────────────
