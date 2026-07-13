@@ -39,16 +39,24 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     setPhases(PHASES.map(n => byNum.get(n) ?? { phase_number: n, status: 'locked', planned_start: null, planned_end: null }))
     setMilestones(ms ?? [])
 
-    // Team-aggregate progress: completed activities ÷ (content items × members)
+    // Team-aggregate progress, scoped to THIS project's pathway items only
+    // (not the whole content library): completed pathway activities ÷ (pathway items × members).
     const { data: members } = await supabase.from('project_members').select('user_id').eq('project_id', project.id)
     const memberIds = (members ?? []).map(m => m.user_id)
-    const { data: content } = await supabase.from('phase_content').select('phase_number')
-    const cCount = {}
-    ;(content ?? []).forEach(c => { cCount[c.phase_number] = (cCount[c.phase_number] || 0) + 1 })
+    const { data: pathway } = await supabase.from('project_pathways')
+      .select('phase_number, content_id').eq('project_id', project.id)
+    const cCount = {}                        // pathway items per phase
+    const pathIds = new Set()                // content_ids that are in the pathway
+    ;(pathway ?? []).forEach(p => {
+      cCount[p.phase_number] = (cCount[p.phase_number] || 0) + 1
+      pathIds.add(p.content_id)
+    })
     let acts = []
-    if (memberIds.length) {
-      const { data } = await supabase.from('user_activities').select('phase_number, status').in('user_id', memberIds).eq('status', 'completed')
-      acts = data ?? []
+    if (memberIds.length && pathIds.size) {
+      const { data } = await supabase.from('user_activities')
+        .select('phase_number, content_id, status')
+        .in('user_id', memberIds).eq('status', 'completed')
+      acts = (data ?? []).filter(a => pathIds.has(a.content_id))  // only pathway items count
     }
     const dCount = {}
     acts.forEach(a => { dCount[a.phase_number] = (dCount[a.phase_number] || 0) + 1 })
