@@ -108,9 +108,8 @@ export default function Dashboard() {
         { data: tmplResps },
       ] = await Promise.all([
         supabase.from('project_phases').select('*').eq('project_id', phaseProjectId).order('phase_number'),
-        supabase.from('phase_content').select('id, phase_number')
-          .or(`industry.is.null,industry.eq.${profile.industry ?? '__none__'}`)
-          .or(`role.is.null,role.eq.${profile.role ?? '__none__'}`),
+        // Scope "items" to THIS project's pathway steps, not the whole content library.
+        supabase.from('project_pathways').select('content_id, phase_number').eq('project_id', phaseProjectId),
         supabase.from('user_activities').select('content_id, phase_number')
           .eq('user_id', user.id).eq('status', 'completed'),
         supabase.from('survey_responses').select('survey_id, score, submitted_at')
@@ -120,12 +119,13 @@ export default function Dashboard() {
 
       setPhases(phaseRows ?? [])
 
-      // Per-phase content stats
+      // Per-phase content stats, scoped to the project's pathway items only
+      const pathIds = new Set((contentItems ?? []).map(c => c.content_id))
       const stats = {}
       for (const cfg of phaseConfig) {
         stats[cfg.num] = {
           available: (contentItems ?? []).filter(c => c.phase_number === cfg.num).length,
-          completed: (completedActs ?? []).filter(a => a.phase_number === cfg.num).length,
+          completed: (completedActs ?? []).filter(a => a.phase_number === cfg.num && pathIds.has(a.content_id)).length,
         }
       }
       setPhaseStats(stats)
