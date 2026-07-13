@@ -114,18 +114,10 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const today  = new Date()
   const todayIn = hasDomain && today >= domainStart && today <= domainEnd
   const todayX = todayIn ? posOf(today) : null
+  const estTextW = t => (t?.length ?? 0) * 6.3 + 12  // rough px width for a 10px label
 
   const deliveryItems = milestones.filter(m => m.lane === 'delivery')
   const changeItems   = milestones.filter(m => m.lane === 'change')
-
-  function Bar({ startX, width, style, label, sub }) {
-    return (
-      <div className="absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden" style={{ left: startX, width: Math.max(width, 6), ...style }}>
-        {label && <span className="text-[10px] font-semibold whitespace-nowrap truncate">{label}</span>}
-        {sub}
-      </div>
-    )
-  }
 
   const LabelCol = ({ name, dates, accent }) => (
     <div className="w-[190px] shrink-0 pr-3">
@@ -187,12 +179,35 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   <LabelCol name={m.name} dates={isBand ? `${fmtShort(toDate(m.starts_on))} – ${fmtShort(toDate(m.ends_on))}` : (m.milestone_date ? fmtShort(toDate(m.milestone_date)) : '—')} accent="text-[#1F4E79]" />
                   <div className="relative flex-1 h-8" style={{ width: trackW }}>
                     <TodayLine />
-                    {isBand
-                      ? <Bar startX={posOf(m.starts_on)} width={posOf(m.ends_on) - posOf(m.starts_on)} style={{ background: '#e2e8f0', border: '1px solid #cbd5e1', color: '#475569' }} label={m.name} />
-                      : m.milestone_date && <div className="absolute z-[5]" style={{ left: posOf(m.milestone_date) - 7, top: 6 }}>
-                          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={m.color || '#1F4E79'} /></svg>
-                        </div>
-                    }
+                    {isBand ? (() => {
+                      const bx = posOf(m.starts_on)
+                      const bw = Math.max(posOf(m.ends_on) - bx, 8)
+                      const inside = bw >= estTextW(m.name)
+                      const outRight = bx + bw + estTextW(m.name) <= trackW
+                      return (
+                        <>
+                          <div className="absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden" style={{ left: bx, width: bw, background: '#e2e8f0', border: '1px solid #cbd5e1' }}>
+                            {inside && <span className="text-[10px] font-semibold text-slate-600 whitespace-nowrap">{m.name}</span>}
+                          </div>
+                          {!inside && (
+                            <span className="absolute top-2 text-[10px] font-semibold text-slate-600 whitespace-nowrap"
+                              style={outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(m.name) - 4, 2) }}>{m.name}</span>
+                          )}
+                        </>
+                      )
+                    })() : m.milestone_date && (() => {
+                      const dx = posOf(m.milestone_date)
+                      const labelRight = dx + 12 + estTextW(m.name) <= trackW
+                      return (
+                        <>
+                          <div className="absolute z-[5]" style={{ left: dx - 7, top: 6 }}>
+                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={m.color || '#1F4E79'} /></svg>
+                          </div>
+                          <span className="absolute top-2 text-[10px] font-semibold text-[#1F4E79] whitespace-nowrap"
+                            style={labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(m.name) - 11, 2) }}>{m.name}</span>
+                        </>
+                      )
+                    })()}
                   </div>
                   {!readOnly && (
                     <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
@@ -219,12 +234,24 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                     dates={s || e ? `${s ? fmtShort(toDate(s)) : '?'} – ${e ? fmtShort(toDate(e)) : '?'} · ${pct}% (${pr.done}/${pr.total})` : `not scheduled · ${pct}%`} />
                   <div className="relative flex-1 h-8" style={{ width: trackW }}>
                     <TodayLine />
-                    {startX != null && (
-                      <div className="absolute top-1.5 h-5 rounded overflow-hidden" style={{ left: startX, width: Math.max(endX - startX, 8), background: cfg.track }}>
-                        {p.status !== 'locked' && <div className="h-full rounded" style={{ width: `${pct}%`, background: cfg.fill }} />}
-                        <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-semibold whitespace-nowrap" style={{ color: cfg.text }}>{PHASE_NAMES[p.phase_number]}</span>
-                      </div>
-                    )}
+                    {startX != null && (() => {
+                      const barW = Math.max((endX ?? startX) - startX, 8)
+                      const label = PHASE_NAMES[p.phase_number]
+                      const inside = barW >= estTextW(label)
+                      const outRight = startX + barW + estTextW(label) <= trackW
+                      return (
+                        <>
+                          <div className="absolute top-1.5 h-5 rounded overflow-hidden" style={{ left: startX, width: barW, background: cfg.track }}>
+                            {p.status !== 'locked' && <div className="h-full rounded" style={{ width: `${pct}%`, background: cfg.fill }} />}
+                            {inside && <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-semibold whitespace-nowrap" style={{ color: cfg.text }}>{label}</span>}
+                          </div>
+                          {!inside && (
+                            <span className="absolute top-2 text-[10px] font-semibold text-slate-600 whitespace-nowrap"
+                              style={outRight ? { left: startX + barW + 4 } : { left: Math.max(startX - estTextW(label) - 4, 2) }}>{label}</span>
+                          )}
+                        </>
+                      )
+                    })()}
                   </div>
                   <div className="w-16 shrink-0" />
                 </div>
