@@ -71,6 +71,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
   const [phaseContent,   setPhaseContent]   = useState([])
   const [clientPathway,  setClientPathway]  = useState([])
   const [pathwaySaving,  setPathwaySaving]  = useState(false)
+  const [showNotInPath,  setShowNotInPath]  = useState(false) // collapse the long "not in path" list
 
   // Progress state
   const [progressData,   setProgressData]   = useState({ users: [], items: [], activities: [] })
@@ -323,6 +324,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
   // ── Pathway (per project) ────────────────────────────────────────────────────
   async function loadPathway(phase, projectId = pathwayProject) {
     setPathwayPhase(phase)
+    setShowNotInPath(false) // always start minimized
     if (!projectId) { setPhaseContent([]); setClientPathway([]); return }
     const [{ data: content }, { data: pathway }] = await Promise.all([
       supabase.from('phase_content').select('id, title, content_type, role, industry').eq('phase_number', phase).order('sort_order'),
@@ -824,9 +826,10 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
               </div>
             )}
 
-            {/* Content list */}
-            <div className="space-y-2 mb-4">
-              {phaseContent.map(item => (
+            {/* Content list — split so the curated pathway stays front-and-centre and
+                everything else is tucked into a collapsed "Not in path" group. */}
+            {(() => {
+              const rowFor = item => (
                 <div key={item.id} className="flex items-center gap-3 bg-white border border-slate-100 rounded-xl px-4 py-2.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">{item.title}</p>
@@ -842,8 +845,38 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
                     {[1,2,3,4,5].map(s => <option key={s} value={s}>Step {s}</option>)}
                   </select>
                 </div>
-              ))}
-            </div>
+              )
+              const inPath    = phaseContent.filter(i => getStep(i.id) !== '')
+                                            .sort((a, b) => Number(getStep(a.id)) - Number(getStep(b.id)))
+              const notInPath = phaseContent.filter(i => getStep(i.id) === '')
+              return (
+                <div className="mb-4">
+                  {/* In-path items (the curated journey) */}
+                  {inPath.length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">In path · {inPath.length}</p>
+                      {inPath.map(rowFor)}
+                    </div>
+                  )}
+
+                  {/* Collapsed "not in path" group — click to expand and add more */}
+                  <button type="button" onClick={() => setShowNotInPath(v => !v)}
+                    className="w-full flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 hover:bg-slate-100 transition-colors">
+                    <span className="text-sm font-semibold text-slate-600">
+                      {showNotInPath ? '▾' : '▸'} Not in path · {notInPath.length}
+                    </span>
+                    <span className="text-[11px] text-slate-400">{showNotInPath ? 'Hide' : 'Add content to path'}</span>
+                  </button>
+                  {showNotInPath && (
+                    <div className="space-y-2 mt-2">
+                      {notInPath.length === 0
+                        ? <p className="text-xs text-slate-400 px-1 py-2">Everything in this phase is already in the path.</p>
+                        : notInPath.map(rowFor)}
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
 
             <button onClick={savePathway} disabled={pathwaySaving}
               className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-[#163a5c] transition-colors disabled:opacity-60">
