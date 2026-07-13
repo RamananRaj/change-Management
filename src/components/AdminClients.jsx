@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import ProjectTimeline from './ProjectTimeline'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -65,6 +66,7 @@ export default function AdminClients({ allRoles = [] }) {
   // Pathway state
   const [pathwayPhase,   setPathwayPhase]   = useState(1)
   const [pathwayProject, setPathwayProject] = useState('')  // which project's pathway we're editing
+  const [timelineProject, setTimelineProject] = useState('') // which project's timeline we're viewing
   const [phaseContent,   setPhaseContent]   = useState([])
   const [clientPathway,  setClientPathway]  = useState([])
   const [pathwaySaving,  setPathwaySaving]  = useState(false)
@@ -517,7 +519,7 @@ export default function AdminClients({ allRoles = [] }) {
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ['pathway', '🗺️ Pathway'], ['progress', '📊 Progress']].map(([key, label]) => (
+          {[['projects', '📁 Projects'], ['pathway', '🗺️ Pathway'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setClientTab(key)
@@ -526,6 +528,7 @@ export default function AdminClients({ allRoles = [] }) {
                   setPathwayProject(pid)
                   loadPathway(1, pid)
                 }
+                if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
                 if (key === 'progress') loadProgress()
               }}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px ${
@@ -798,6 +801,29 @@ export default function AdminClients({ allRoles = [] }) {
               className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2.5 rounded-xl hover:bg-[#163a5c] transition-colors disabled:opacity-60">
               {pathwaySaving ? 'Saving…' : '✓ Save Phase ' + pathwayPhase + ' Pathway'}
             </button>
+          </div>
+          )
+        )}
+
+        {/* ── TIMELINE TAB ── */}
+        {clientTab === 'timeline' && (
+          projects.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-slate-400 text-sm">No projects yet.</p>
+              <p className="text-slate-300 text-xs mt-1">Create a project first — the timeline is per project.</p>
+            </div>
+          ) : (
+          <div>
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project</label>
+              <select value={timelineProject} onChange={e => setTimelineProject(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[220px]">
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            {timelineProject && (
+              <ProjectTimeline project={projects.find(p => p.id === timelineProject) ?? projects[0]} />
+            )}
           </div>
           )
         )}
