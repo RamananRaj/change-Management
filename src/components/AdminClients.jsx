@@ -158,16 +158,17 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
     setInviteError(prev => ({ ...prev, [projectId]: null }))
     setInviteBusy(projectId)
     const { error } = await supabase.from('project_invites').insert({
-      project_id: projectId,
-      client_id:  selectedClient.id,
+      project_id:      projectId,
+      client_id:       selectedClient.id,
       email,
-      full_name:  (f.full_name ?? '').trim() || null,
-      role:       f.role,
-      invited_by: user.id,
+      full_name:       (f.full_name ?? '').trim() || null,
+      role:            f.role,
+      as_client_admin: !!f.as_client_admin,
+      invited_by:      user.id,
     })
     setInviteBusy(null)
     if (error) { setInviteError(prev => ({ ...prev, [projectId]: error.message })); return }
-    setInviteForm(prev => ({ ...prev, [projectId]: { email: '', full_name: '', role: '' } }))
+    setInviteForm(prev => ({ ...prev, [projectId]: { email: '', full_name: '', role: '', as_client_admin: false } }))
     await loadProjectInvites(projectId)
   }
 
@@ -205,7 +206,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
     if (ids.length === 0) { setProjectMembers(prev => ({ ...prev, [projectId]: [] })); return }
     const { data: profs } = await supabase
       .from('profiles')
-      .select('id, full_name, role')
+      .select('id, full_name, role, is_client_admin')
       .in('id', ids)
     setProjectMembers(prev => ({ ...prev, [projectId]: profs ?? [] }))
   }
@@ -242,6 +243,18 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
   async function removeMember(projectId, userId) {
     if (!window.confirm('Remove this user from the project?')) return
     await supabase.from('project_members').delete().eq('project_id', projectId).eq('user_id', userId)
+    await Promise.all([loadProjectMembers(projectId), fetchAllUsers()])
+  }
+
+  // Master-Admin only: promote/demote a member to Client Admin for this client.
+  async function toggleClientAdmin(projectId, userId, makeAdmin) {
+    const verb = makeAdmin ? 'grant Client Admin to' : 'remove Client Admin from'
+    if (!window.confirm(`Are you sure you want to ${verb} this user? They'll ${makeAdmin ? 'be able to manage' : 'no longer manage'} their client's projects, users and invites.`)) return
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_client_admin: makeAdmin, client_id: selectedClient.id })
+      .eq('id', userId)
+    if (error) { window.alert('Could not update: ' + error.message); return }
     await Promise.all([loadProjectMembers(projectId), fetchAllUsers()])
   }
 
@@ -650,6 +663,18 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
                                   </div>
                                   <span className="text-xs font-medium text-slate-700">{u.full_name ?? '—'}</span>
                                   <span className="text-[10px] text-slate-400">{u.role ?? ''}</span>
+                                  {u.is_client_admin && (
+                                    <span className="text-[9px] font-bold bg-[#1F4E79]/10 text-[#1F4E79] px-1.5 py-0.5 rounded-full tracking-wide">CLIENT ADMIN</span>
+                                  )}
+                                  {/* Master-Admin only: promote / demote */}
+                                  {!lockedClientId && (
+                                    <button
+                                      onClick={() => toggleClientAdmin(project.id, u.id, !u.is_client_admin)}
+                                      title={u.is_client_admin ? 'Remove Client Admin' : 'Make Client Admin'}
+                                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md leading-none ${u.is_client_admin ? 'text-amber-500 hover:text-amber-700' : 'text-[#1F4E79]/60 hover:text-[#1F4E79]'}`}>
+                                      {u.is_client_admin ? '− Admin' : '+ Admin'}
+                                    </button>
+                                  )}
                                   <button onClick={() => removeMember(project.id, u.id)} className="text-slate-300 hover:text-red-400 ml-1 leading-none">✕</button>
                                 </div>
                               ))}
@@ -719,6 +744,16 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
                                 {inviteBusy === project.id ? 'Creating…' : '+ Invite link'}
                               </button>
                             </div>
+                            {/* Master-Admin only: invite straight in as a Client Admin */}
+                            {!lockedClientId && (
+                              <label className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-600 cursor-pointer select-none">
+                                <input type="checkbox"
+                                  checked={!!inviteForm[project.id]?.as_client_admin}
+                                  onChange={e => setInviteForm(prev => ({ ...prev, [project.id]: { ...prev[project.id], as_client_admin: e.target.checked } }))}
+                                  className="rounded border-slate-300" />
+                                Invite as <strong>Client Admin</strong> — they'll manage this client's projects, users &amp; invites once they accept.
+                              </label>
+                            )}
                             {inviteError[project.id] && (
                               <p className="text-[11px] text-red-500 mt-1.5 font-medium">⚠ {inviteError[project.id]}</p>
                             )}
