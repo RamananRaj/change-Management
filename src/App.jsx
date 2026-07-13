@@ -6,6 +6,7 @@ import ProtectedRoute         from './components/ProtectedRoute'
 import Landing        from './pages/Landing'
 import SignUp         from './pages/auth/SignUp'
 import SignIn         from './pages/auth/SignIn'
+import ResetPassword  from './pages/auth/ResetPassword'
 import RoleSelect     from './pages/onboarding/RoleSelect'
 import IndustrySelect from './pages/onboarding/IndustrySelect'
 import Confirm        from './pages/onboarding/Confirm'
@@ -29,6 +30,7 @@ export default function App() {
             <Route path="/"             element={<Landing />} />
             <Route path="/auth/signup"  element={<SignUp />} />
             <Route path="/auth/signin"  element={<SignIn />} />
+            <Route path="/auth/reset"   element={<ResetPassword />} />
 
             {/* Onboarding — requires auth */}
             <Route path="/onboarding/role"     element={<ProtectedRoute><RoleSelect /></ProtectedRoute>} />

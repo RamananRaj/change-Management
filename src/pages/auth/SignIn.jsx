@@ -69,7 +69,10 @@ export default function SignIn() {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Password</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-semibold text-slate-600">Password</label>
+              <Link to="/auth/reset" className="text-xs text-[#1F4E79] font-semibold hover:underline">Forgot password?</Link>
+            </div>
             <input
               type="password"
               name="password"
