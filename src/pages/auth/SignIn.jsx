@@ -18,31 +18,35 @@ export default function SignIn() {
     setLoading(true)
     setError(null)
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email:    form.email,
-      password: form.password,
-    })
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email:    form.email.trim(),
+        password: form.password,
+      })
 
-    if (error) {
-      setError(error.message)
+      if (error || !data?.user) {
+        // Supabase returns the same "Invalid login credentials" whether the password
+        // is wrong OR the account has no password (e.g. it was created via Google).
+        const msg = error?.message ?? 'Sign in failed.'
+        setError(/invalid login credentials/i.test(msg)
+          ? 'Wrong email or password. If you signed up with Google, use “Sign in with Google”. Otherwise use “Forgot password?” to set one.'
+          : msg)
+        return
+      }
+
+      // Check if user has completed onboarding (don't let this block sign-in if it errors)
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('onboarding_done')
+        .eq('id', data.user.id)
+        .maybeSingle()
+
+      navigate(profile?.onboarding_done ? '/dashboard' : '/onboarding/role')
+    } catch (err) {
+      setError(err?.message ?? 'Something went wrong. Please try again.')
+    } finally {
       setLoading(false)
-      return
     }
-
-    // Check if user has completed onboarding
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('onboarding_done')
-      .eq('id', data.user.id)
-      .single()
-
-    if (profile?.onboarding_done) {
-      navigate('/dashboard')
-    } else {
-      navigate('/onboarding/role')
-    }
-
-    setLoading(false)
   }
 
   return (
