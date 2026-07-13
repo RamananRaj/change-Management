@@ -222,10 +222,23 @@ export default function ProjectTimeline({ project, readOnly = false }) {
             {/* CHANGEFLOW group */}
             <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-widest text-[#E8913A]">CHANGEFLOW PHASES</div>
             {phases.map(p => {
-              const cfg = STATUS[p.status] ?? STATUS.locked
               const pr = progress[p.phase_number] ?? { done: 0, total: 0 }
               const pct = pr.total > 0 ? Math.round((pr.done / pr.total) * 100) : 0
               const s = p.planned_start, e = p.planned_end
+              // Colour is driven by the schedule (today vs the phase dates), not just the
+              // manual status: a phase whose dates contain today shows as In progress.
+              const today = new Date()
+              const startD = s ? toDate(s) : null
+              const endD   = e ? toDate(e) : null
+              let effStatus = p.status ?? 'locked'
+              if (pct >= 100 || p.status === 'completed' || p.status === 'done') {
+                effStatus = 'completed'
+              } else if (startD && endD) {
+                if (today >= startD && today <= endD)      effStatus = 'active'   // in progress
+                else if (today > endD)                     effStatus = 'active'   // overdue, still underway
+                else                                       effStatus = 'locked'   // upcoming
+              }
+              const cfg = STATUS[effStatus] ?? STATUS.locked
               const startX = s ? posOf(s) : null
               const endX   = e ? posOf(e) : (s ? posOf(s) + 30 : null)
               return (
@@ -242,7 +255,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                       return (
                         <>
                           <div className="absolute top-1.5 h-5 rounded overflow-hidden" style={{ left: startX, width: barW, background: cfg.track }}>
-                            {p.status !== 'locked' && <div className="h-full rounded" style={{ width: `${pct}%`, background: cfg.fill }} />}
+                            {effStatus !== 'locked' && <div className="h-full rounded" style={{ width: `${pct}%`, background: cfg.fill }} />}
                             {inside && <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-semibold whitespace-nowrap" style={{ color: cfg.text }}>{label}</span>}
                           </div>
                           {!inside && (
