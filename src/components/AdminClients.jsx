@@ -940,49 +940,53 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
                       {PHASE_ICONS[phase]} Phase {String(phase).padStart(2,'0')} — {PHASE_NAMES[phase]}
                     </p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse min-w-[500px]">
-                        <thead>
-                          <tr className="bg-slate-50">
-                            <th className="text-left font-semibold text-slate-500 py-2 pr-4 pl-3 rounded-l-lg min-w-[140px]">User</th>
-                            {items.map(item => (
-                              <th key={item.id} className="font-medium text-slate-400 py-2 px-2 text-center max-w-[90px]">
-                                <span className="block truncate max-w-[90px] font-semibold text-slate-600" title={item.title}>{item.title}</span>
-                                <span className="font-normal text-slate-300 text-[10px]">{item.content_type}</span>
-                              </th>
-                            ))}
-                            <th className="text-right font-semibold text-slate-500 py-2 pl-4 pr-3 rounded-r-lg">Done</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {progressData.users.map((user, ri) => {
-                            const done = items.filter(i => getActivity(user.id, i.id) === 'completed').length
-                            return (
-                              <tr key={user.id} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
-                                <td className="py-2.5 pr-4 pl-3 font-medium text-slate-700">
-                                  {user.full_name ?? '—'}
-                                  {user.role && <span className="ml-1 text-[10px] text-slate-400">({user.role})</span>}
-                                </td>
-                                {items.map(item => (
-                                  <td key={item.id} className="py-2.5 px-2 text-center">
-                                    <StatusDot status={getActivity(user.id, item.id)} />
-                                  </td>
-                                ))}
-                                <td className="py-2.5 pl-4 pr-3 text-right font-bold text-[#1F4E79]">
-                                  {done}/{items.length}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+
+                    {/* Segment headers — one label per pathway item, aligned to the bars below */}
+                    <div className="flex items-end gap-3 mb-1.5">
+                      <div className="w-[150px] shrink-0 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">User</div>
+                      <div className="flex-1 flex gap-1">
+                        {items.map((item, i) => (
+                          <div key={item.id} className="flex-1 min-w-0 text-center" title={item.title}>
+                            <span className="block text-[10px] font-medium text-slate-500 truncate leading-tight">{i + 1}. {item.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="w-16 shrink-0 text-right text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Done</div>
+                    </div>
+
+                    {/* One segmented bar per member */}
+                    <div className="space-y-1">
+                      {progressData.users.map(user => {
+                        const done = items.filter(i => getActivity(user.id, i.id) === 'completed').length
+                        return (
+                          <div key={user.id} className="flex items-center gap-3 py-1">
+                            <div className="w-[150px] shrink-0 text-sm font-medium text-slate-700 truncate">
+                              {user.full_name ?? '—'}
+                              {user.role && <span className="ml-1 text-[10px] text-slate-400">({user.role})</span>}
+                            </div>
+                            <div className="flex-1 flex gap-1">
+                              {items.map(item => {
+                                const st = getActivity(user.id, item.id)
+                                const bg = st === 'completed' ? '#16a34a' : st === 'in_progress' ? '#378ADD' : ''
+                                const lbl = st === 'completed' ? 'Completed' : st === 'in_progress' ? 'In progress' : 'Not started'
+                                return (
+                                  <div key={item.id} title={`${item.title} — ${lbl}`}
+                                    className={`flex-1 h-4 rounded ${bg ? '' : 'bg-white border border-slate-200'}`}
+                                    style={bg ? { background: bg } : undefined} />
+                                )
+                              })}
+                            </div>
+                            <div className="w-16 shrink-0 text-right text-sm font-bold text-[#1F4E79]">{done}/{items.length}</div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
                 <div className="flex gap-4 text-xs text-slate-400 pt-2 border-t border-slate-100">
-                  <span><span className="text-green-500 mr-1">✓</span>Completed</span>
-                  <span><span className="text-blue-400 mr-1">●</span>In Progress</span>
-                  <span><span className="text-slate-200 mr-1">—</span>Not Started</span>
+                  <span><span className="inline-block w-3 h-3 rounded-sm align-middle mr-1" style={{ background: '#16a34a' }} />Completed</span>
+                  <span><span className="inline-block w-3 h-3 rounded-sm align-middle mr-1" style={{ background: '#378ADD' }} />In Progress</span>
+                  <span><span className="inline-block w-3 h-3 rounded-sm border border-slate-200 bg-white align-middle mr-1" />Not Started</span>
                 </div>
               </div>
             )}
