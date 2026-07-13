@@ -67,6 +67,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
   const [pathwayPhase,   setPathwayPhase]   = useState(1)
   const [pathwayProject, setPathwayProject] = useState('')  // which project's pathway we're editing
   const [timelineProject, setTimelineProject] = useState('') // which project's timeline we're viewing
+  const [progressProject, setProgressProject] = useState('') // which project's progress we're viewing
   const [phaseContent,   setPhaseContent]   = useState([])
   const [clientPathway,  setClientPathway]  = useState([])
   const [pathwaySaving,  setPathwaySaving]  = useState(false)
@@ -341,36 +342,32 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
   }
 
   // ── Progress ─────────────────────────────────────────────────────────────────
-  async function loadProgress() {
-    // All users in all projects under this client (two-step: no profiles embed).
-    const { data: memberships } = await supabase
-      .from('project_members')
-      .select('user_id, project_id')
-      .in('project_id', projects.map(p => p.id))
+  async function loadProgress(projectId = progressProject) {
+    if (!projectId) { setProgressData({ users: [], items: [], activities: [] }); return }
 
+    // Members of THIS project
+    const { data: memberships } = await supabase.from('project_members').select('user_id').eq('project_id', projectId)
     const memberIds = [...new Set((memberships ?? []).map(m => m.user_id))]
-    const { data: memberProfiles } = memberIds.length
-      ? await supabase.from('profiles').select('id, full_name, role').in('id', memberIds)
-      : { data: [] }
-    const profileById = new Map((memberProfiles ?? []).map(p => [p.id, p]))
+    if (memberIds.length === 0) { setProgressData({ users: [], items: [], activities: [] }); return }
+    const { data: memberProfiles } = await supabase.from('profiles').select('id, full_name, role').in('id', memberIds)
+    const uniqueUsers = memberProfiles ?? []
 
-    const uniqueUsers = []
-    const seen = new Set()
-    for (const m of memberships ?? []) {
-      const prof = profileById.get(m.user_id)
-      if (prof && !seen.has(prof.id)) {
-        seen.add(prof.id)
-        uniqueUsers.push(prof)
-      }
+    // Columns = this project's PATHWAY items only (the curated journey), per phase, in step order
+    const { data: pp } = await supabase
+      .from('project_pathways')
+      .select('phase_number, pathway_step, phase_content(id, title, content_type, phase_number)')
+      .eq('project_id', projectId)
+      .order('phase_number').order('pathway_step')
+    const items = (pp ?? []).map(r => ({ ...r.phase_content, pathway_step: r.pathway_step })).filter(i => i.id)
+
+    const contentIds = items.map(i => i.id)
+    let activities = []
+    if (contentIds.length) {
+      const { data } = await supabase.from('user_activities').select('user_id, content_id, status')
+        .in('user_id', uniqueUsers.map(u => u.id)).in('content_id', contentIds)
+      activities = data ?? []
     }
-
-    if (uniqueUsers.length === 0) { setProgressData({ users: [], items: [], activities: [] }); return }
-
-    const [{ data: items }, { data: activities }] = await Promise.all([
-      supabase.from('phase_content').select('id, title, content_type, phase_number').order('phase_number').order('sort_order'),
-      supabase.from('user_activities').select('user_id, content_id, status').in('user_id', uniqueUsers.map(u => u.id)),
-    ])
-    setProgressData({ users: uniqueUsers, items: items ?? [], activities: activities ?? [] })
+    setProgressData({ users: uniqueUsers, items, activities })
   }
 
   function getActivity(userId, contentId) {
@@ -541,7 +538,11 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
                   loadPathway(1, pid)
                 }
                 if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
-                if (key === 'progress') loadProgress()
+                if (key === 'progress') {
+                  const pid = progressProject || projects[0]?.id || ''
+                  setProgressProject(pid)
+                  loadProgress(pid)
+                }
               }}
               className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px ${
                 clientTab === key ? 'border-[#1F4E79] text-[#1F4E79]' : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -842,9 +843,28 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
 
         {/* ── PROGRESS TAB ── */}
         {clientTab === 'progress' && (
+          projects.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-slate-400 text-sm">No projects yet.</p>
+            </div>
+          ) : (
           <div>
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project</label>
+                <select value={progressProject} onChange={e => { setProgressProject(e.target.value); loadProgress(e.target.value) }}
+                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[220px]">
+                  {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <p className="text-[11px] text-slate-400 max-w-xs text-right">Shows each member's progress through this project's <strong>pathway</strong> steps.</p>
+            </div>
             {progressData.users.length === 0 ? (
-              <div className="text-center py-10 text-slate-400 text-sm">No members assigned to projects yet.</div>
+              <div className="text-center py-10 text-slate-400 text-sm">No members assigned to this project yet.</div>
+            ) : progressData.items.length === 0 ? (
+              <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100 text-slate-400 text-sm">
+                No pathway set for this project yet. Set the pathway steps (Pathway tab) to track progress here.
+              </div>
             ) : (
               <div className="space-y-8">
                 {phaseGroups.map(({ phase, items }) => (
@@ -899,6 +919,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
               </div>
             )}
           </div>
+          )
         )}
         {modals}
       </div>
