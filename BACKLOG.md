@@ -1,6 +1,6 @@
 # ChangeFlow — Backlog / Items to Address
 
-_Last updated: 11 Jul 2026_
+_Last updated: 14 Jul 2026_
 
 A running list of open work and considerations. Grouped by priority. Check off as done.
 
@@ -20,11 +20,22 @@ A running list of open work and considerations. Grouped by priority. Check off a
 - [ ] **Reporting / export** — a PDF or Excel of a project's progress + timeline for stakeholders who won't log in.
 - [ ] **Survey assignment** — surveys are global; tie them to a project/phase with a due date to close the loop with the readiness (RAG) shown on dashboards.
 - [ ] **Empty-state + mobile polish** — dashboards assume data exists; first-run states and small-screen layouts need a pass.
-- [ ] **Automated testing** — no test coverage yet; add at least smoke/unit tests around auth, RLS-sensitive queries, and the dashboards.
+- [~] **Automated testing** — Vitest suite live for pure logic + the admin authorization matrix (`src/lib/logic.test.js`). Still to add: component render tests (React Testing Library) and mocked-Supabase integration tests.
+
+## System Health / testing follow-ups
+
+- [ ] **Refactor dashboards to import `src/lib/logic.js`** — RAG, access level, at-risk, upcoming, phase status are now canonical + tested in `logic.js` but still inlined in Dashboard/Master/Client components. Point them at the module for a single source of truth.
+- [ ] **Component render tests** — React Testing Library tests for SystemAdmin table, dashboards, and the preview flow (needs jsdom env).
+- [ ] **Scheduled health auto-runs** — the System Health checks run on demand; add a scheduled run + history (needs a Supabase scheduled Edge Function / pg_cron).
+- [ ] **Lock/delete via backend confirmed** — done via `admin-user-actions`; consider soft-deactivate flag as a reversible alternative to hard delete.
 
 ---
 
 ## Recently shipped (context)
+
+- System Health sub-tab (DB ping, table/RPC/Edge-function live checks) + Vitest suite (17 tests, auth matrix).
+- Full user management (edit / reset link / lock / delete) via `admin-user-actions` Edge Function; Master Admin (System Admin tab) + Client Admin (Users tab, scoped).
+- System Admin hub: User Management by Client + Pending Invites.
 
 - Role-aware dashboards (member journey / client roll-up / platform overview).
 - Master Admin dashboard: needs-attention, upcoming milestones, RAG per client, per-project mini timeline; expand/collapse.
