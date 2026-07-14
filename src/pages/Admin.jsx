@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AdminSurveys from '../components/AdminSurveys'
 import AdminClients from '../components/AdminClients'
+import SystemAdmin from '../components/SystemAdmin'
 
 const PHASES = [
   { num: 1, label: '01 Diagnose' },
@@ -19,7 +20,7 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Clients', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Access Personas', 'Stakeholders', 'Impacted Roles']
+const SECTIONS = ['Clients', 'System Admin', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Access Personas', 'Stakeholders', 'Impacted Roles']
 
 const COLUMN_TYPES = [
   { value: 'text',        label: 'Text' },
@@ -1298,6 +1299,10 @@ export default function Admin() {
       {/* ── CLIENTS ── */}
       {section === 'Clients' && (
         <AdminClients allRoles={roles} initialClientId={searchParams.get('client')} />
+      )}
+
+      {section === 'System Admin' && (
+        <SystemAdmin allRoles={roles} />
       )}
 
       {/* ── CONTENT FORM MODAL ── */}
