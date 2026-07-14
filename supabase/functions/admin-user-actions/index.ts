@@ -38,7 +38,10 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, serviceKey)   // service role — full access
 
-    const { data: myProfile } = await admin.from('profiles')
+    // Check the CALLER's permissions using their own session (respects RLS: an admin can
+    // read their own profile). Using service role here can return null if the key isn't
+    // effective, which would wrongly 403 an admin.
+    const { data: myProfile } = await caller.from('profiles')
       .select('is_admin, is_client_admin, client_id').eq('id', me.id).single()
     if (!myProfile || (!myProfile.is_admin && !myProfile.is_client_admin)) return json({ error: 'forbidden' }, 403)
 

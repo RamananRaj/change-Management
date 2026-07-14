@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
       const caller = createClient(url, anonKey, { global: { headers: { Authorization: authHeader } } })
       const { data: { user } } = await caller.auth.getUser()
       if (user) {
-        const { data: p } = await admin.from('profiles').select('is_admin').eq('id', user.id).single()
+        const { data: p } = await caller.from('profiles').select('is_admin').eq('id', user.id).single()
         if (p?.is_admin) { authorized = true; source = 'manual' }
       }
     }
