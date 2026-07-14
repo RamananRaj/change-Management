@@ -99,6 +99,7 @@ export default function Admin() {
   const [filterIndustry, setFilterIndustry] = useState('')
   const [filterRole,     setFilterRole]     = useState('')
   const [contentSearch,  setContentSearch]  = useState('')
+  const [openGroups,     setOpenGroups]     = useState({})   // industry-group collapse when "All industries"
   const [items,          setItems]          = useState([])
   const [contentLoading, setContentLoading] = useState(false)
   const [showForm,       setShowForm]       = useState(false)
@@ -720,6 +721,48 @@ export default function Admin() {
           const visibleItems = q
             ? items.filter(i => `${i.title ?? ''} ${i.description ?? ''}`.toLowerCase().includes(q))
             : items
+
+          const renderRow = item => (
+            <div key={item.id} className="flex items-start gap-4 bg-white border border-slate-200 rounded-xl p-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeColor[item.content_type]}`}>{item.content_type}</span>
+                  {!item.is_common && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Add-on</span>}
+                  {item.industry && (
+                    <span className="text-[10px] text-slate-400">
+                      {industries.find(i => i.code === item.industry)?.icon ?? ''} {item.industry}
+                    </span>
+                  )}
+                  {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
+                </div>
+                <p className="font-medium text-slate-800 text-sm">{item.title}</p>
+                {item.description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{item.description}</p>}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => openEditContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                <button onClick={() => handleContentDelete(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+              </div>
+            </div>
+          )
+
+          // Group by industry only when "All industries" is selected and not searching —
+          // that's the long case. A specific industry (or a search) stays a flat list.
+          const grouped = !filterIndustry && !q
+          const groups = grouped ? (() => {
+            const g = [{ key: '__common', label: 'Common · all industries', icon: '🌐', items: [] }]
+            industries.forEach(ind => g.push({ key: ind.code, label: ind.label, icon: ind.icon ?? '', items: [] }))
+            const other = { key: '__other', label: 'Other', icon: '', items: [] }
+            visibleItems.forEach(it => {
+              if (!it.industry) g[0].items.push(it)
+              else {
+                const grp = g.find(x => x.key === it.industry)
+                ;(grp ?? other).items.push(it)
+              }
+            })
+            if (other.items.length) g.push(other)
+            return g.filter(x => x.items.length > 0)
+          })() : null
+
           return contentLoading ? (
             <p className="text-sm text-slate-400">Loading…</p>
           ) : items.length === 0 ? (
@@ -731,31 +774,36 @@ export default function Admin() {
             <div className="text-center py-16 bg-slate-50 rounded-xl border border-slate-200">
               <p className="text-slate-400 text-sm">No items match “{contentSearch}”.</p>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {visibleItems.map(item => (
-                <div key={item.id} className="flex items-start gap-4 bg-white border border-slate-200 rounded-xl p-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeColor[item.content_type]}`}>{item.content_type}</span>
-                      {!item.is_common && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Add-on</span>}
-                      {item.industry && (
-                        <span className="text-[10px] text-slate-400">
-                          {industries.find(i => i.code === item.industry)?.icon ?? ''} {item.industry}
+          ) : grouped ? (
+            <div>
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => setOpenGroups(Object.values(openGroups).some(Boolean) ? {} : Object.fromEntries(groups.map(g => [g.key, true])))}
+                  className="text-xs font-semibold text-slate-500 hover:text-[#1F4E79]">
+                  {Object.values(openGroups).some(Boolean) ? 'Collapse all' : 'Expand all'}
+                </button>
+              </div>
+              <div className="space-y-2">
+                {groups.map(g => {
+                  const open = !!openGroups[g.key]
+                  return (
+                    <div key={g.key} className="border border-slate-200 rounded-xl overflow-hidden">
+                      <button onClick={() => setOpenGroups(prev => ({ ...prev, [g.key]: !prev[g.key] }))}
+                        className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors">
+                        <span className="text-sm font-semibold text-slate-700">
+                          <span className="text-slate-400 mr-1.5">{open ? '▾' : '▸'}</span>
+                          {g.icon} {g.label}
                         </span>
-                      )}
-                      {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
+                        <span className="text-xs font-semibold text-slate-400">{g.items.length}</span>
+                      </button>
+                      {open && <div className="p-2 space-y-2 bg-white">{g.items.map(renderRow)}</div>}
                     </div>
-                    <p className="font-medium text-slate-800 text-sm">{item.title}</p>
-                    {item.description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{item.description}</p>}
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button onClick={() => openEditContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                    <button onClick={() => handleContentDelete(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
-                  </div>
-                </div>
-              ))}
+                  )
+                })}
+              </div>
             </div>
+          ) : (
+            <div className="space-y-2">{visibleItems.map(renderRow)}</div>
           )
           })()}
         </div>
