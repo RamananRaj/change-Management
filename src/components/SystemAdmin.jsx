@@ -221,7 +221,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
             <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
               <table className="w-full text-sm min-w-[860px]">
                 <thead>
-                  <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                  <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap [&>th]:align-middle [&>th]:font-semibold">
                     <th className="py-2.5 px-4">User</th><th className="py-2.5 px-4">Client</th>
                     <th className="py-2.5 px-4">Access</th><th className="py-2.5 px-4">Persona</th>
                     <th className="py-2.5 px-4">Projects</th><th className="py-2.5 px-4">Last sign-in</th>
