@@ -227,7 +227,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                 </thead>
                 <tbody>
                   {filtered.map(u => (
-                    <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                    <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50/60 [&>td]:align-middle">
                       <td className="py-2.5 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-7 h-7 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-[11px] font-bold text-[#1F4E79] shrink-0">
@@ -239,12 +239,12 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                           </div>
                         </div>
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600">{u.client_id ? clientName(u.client_id) : <span className="text-slate-300">—</span>}</td>
-                      <td className="py-2.5 px-4">
-                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${accessBadge(u.access)}`}>{u.access}</span>
-                        {u.locked && <span className="ml-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Locked</span>}
+                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">{u.client_id ? clientName(u.client_id) : <span className="text-slate-300">—</span>}</td>
+                      <td className="py-2.5 px-4 whitespace-nowrap">
+                        <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${accessBadge(u.access)}`}>{u.access}</span>
+                        {u.locked && <span className="ml-1 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 whitespace-nowrap">Locked</span>}
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600">{roleLabel(u.role)}</td>
+                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">{roleLabel(u.role)}</td>
                       <td className="py-2.5 px-4">
                         {u.projects.length === 0 ? <span className="text-slate-300">—</span> : (
                           <span className="text-slate-600 text-xs">{u.projects.slice(0, 2).join(', ')}{u.projects.length > 2 ? ` +${u.projects.length - 2}` : ''}</span>
