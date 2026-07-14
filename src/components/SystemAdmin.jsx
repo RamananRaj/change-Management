@@ -218,8 +218,8 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           ) : filtered.length === 0 ? (
             <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No users match.</div>
           ) : (
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+              <table className="w-full text-sm min-w-[860px]">
                 <thead>
                   <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                     <th className="py-2.5 px-4">User</th><th className="py-2.5 px-4">Client</th>
