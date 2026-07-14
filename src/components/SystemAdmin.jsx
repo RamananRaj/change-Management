@@ -67,7 +67,10 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     setEditing(u); setNote(null)
   }
   async function saveEdit() {
-    const ok = await runAction({ action: 'update', userId: editing.id, full_name: editForm.full_name, role: editForm.role || null, email: editForm.email || undefined })
+    // Only send email when it actually changed — avoids an unnecessary (and error-prone)
+    // auth-admin email update on a persona/name-only edit.
+    const emailChanged = editForm.email && editForm.email.trim() !== (editing.email ?? '')
+    const ok = await runAction({ action: 'update', userId: editing.id, full_name: editForm.full_name, role: editForm.role || null, email: emailChanged ? editForm.email.trim() : undefined })
     if (ok) setEditing(null)
   }
   const doReset  = u => runAction({ action: 'reset', userId: u.id, email: u.email, redirectTo: `${window.location.origin}/auth/reset` }, `Send a password reset link to ${u.email}?`)
