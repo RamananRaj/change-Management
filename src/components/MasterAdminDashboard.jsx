@@ -111,6 +111,7 @@ export default function MasterAdminDashboard() {
                 {anyOpen ? 'Collapse all' : 'Expand all'}
               </button>
             )}
+            <Link to="/admin/preview" className="text-sm font-semibold text-[#1F4E79] hover:underline">View as member →</Link>
             <Link to="/admin" className="text-sm font-semibold text-[#1F4E79] hover:underline">Open admin →</Link>
           </div>
         </div>

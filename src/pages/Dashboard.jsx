@@ -59,8 +59,19 @@ function RagPill({ score, green, amber }) {
   )
 }
 
-function MemberDashboard() {
-  const { profile, user } = useAuth()
+// Non-navigating stand-in for <Link> used in preview mode (Master Admin looking at
+// someone else's dashboard shouldn't be able to click through into live phase pages).
+function PreviewNav({ children, className }) { return <span className={className}>{children}</span> }
+
+// `preview` (optional): { userId, profile, projectId } — render this dashboard AS that
+// identity, read-only. userId null = persona preview (no real activities). When absent,
+// behaves as the signed-in member's own dashboard.
+export function MemberDashboard({ preview = null }) {
+  const auth = useAuth()
+  const profile = preview?.profile ?? auth.profile
+  const userId  = preview ? (preview.userId ?? null) : (auth.user?.id ?? null)
+  const Nav     = preview ? PreviewNav : Link
+
   const [phases,         setPhases]         = useState([])
   const [phaseStats,     setPhaseStats]     = useState({})
   const [surveyResults,  setSurveyResults]  = useState([])   // submitted survey responses
@@ -74,42 +85,58 @@ function MemberDashboard() {
   const greeting  = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   useEffect(() => {
-    if (!user || !profile) return
+    if (preview) { if (preview.projectId) load(); return }
+    if (!auth.user || !profile) return
     load()
-  }, [user, profile])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, profile, preview?.projectId])
 
   async function load() {
     try {
       setLoading(true)
 
-      // 1. Fetch the user's assigned project(s) + active project
-      const { data: memberships } = await supabase
-        .from('project_members').select('project_id').eq('user_id', user.id)
-      const memberProjectIds = [...new Set((memberships ?? []).map(m => m.project_id))]
-      let projList = []
-      if (memberProjectIds.length) {
-        const { data: projRows } = await supabase.from('projects').select('id, name').in('id', memberProjectIds)
-        projList = projRows ?? []
-      }
-      setProjectsList(projList)
+      let phaseProjectId = null
+      if (preview) {
+        // Locked to the previewed project
+        phaseProjectId = preview.projectId
+        const { data: pr } = await supabase.from('projects').select('id, name').eq('id', phaseProjectId).maybeSingle()
+        setProjectsList(pr ? [pr] : [])
+        setActiveProjectId(phaseProjectId ?? '')
+      } else {
+        // 1. Fetch the user's assigned project(s) + active project
+        const { data: memberships } = await supabase
+          .from('project_members').select('project_id').eq('user_id', userId)
+        const memberProjectIds = [...new Set((memberships ?? []).map(m => m.project_id))]
+        let projList = []
+        if (memberProjectIds.length) {
+          const { data: projRows } = await supabase.from('projects').select('id, name').in('id', memberProjectIds)
+          projList = projRows ?? []
+        }
+        setProjectsList(projList)
 
-      let activeId = ''
-      if (projList.length) {
-        const stored = localStorage.getItem('cf_active_project')
-        activeId = projList.some(p => p.id === stored) ? stored : projList[0].id
-        setActiveProjectId(activeId)
-        localStorage.setItem('cf_active_project', activeId)
-      }
+        let activeId = ''
+        if (projList.length) {
+          const stored = localStorage.getItem('cf_active_project')
+          activeId = projList.some(p => p.id === stored) ? stored : projList[0].id
+          setActiveProjectId(activeId)
+          localStorage.setItem('cf_active_project', activeId)
+        }
 
-      // Phase access: active assigned project, else fall back to personal onboarding project
-      let phaseProjectId = activeId
-      if (!phaseProjectId) {
-        const { data: proj } = await supabase
-          .from('projects').select('id').eq('user_id', user.id)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle()
-        phaseProjectId = proj?.id ?? null
+        // Phase access: active assigned project, else fall back to personal onboarding project
+        phaseProjectId = activeId
+        if (!phaseProjectId) {
+          const { data: proj } = await supabase
+            .from('projects').select('id').eq('user_id', userId)
+            .order('created_at', { ascending: false }).limit(1).maybeSingle()
+          phaseProjectId = proj?.id ?? null
+        }
       }
       if (!phaseProjectId) { setLoading(false); return }
+
+      // Persona preview (no real user) has no activities/responses — skip those queries.
+      const actsQ   = userId ? supabase.from('user_activities').select('content_id, phase_number').eq('user_id', userId).eq('status', 'completed') : Promise.resolve({ data: [] })
+      const surveyQ = userId ? supabase.from('survey_responses').select('survey_id, score, submitted_at').eq('user_id', userId).not('submitted_at', 'is', null) : Promise.resolve({ data: [] })
+      const tmplQ   = userId ? supabase.from('template_responses').select('id').eq('user_id', userId) : Promise.resolve({ data: [] })
 
       const [
         { data: phaseRows },
@@ -121,11 +148,9 @@ function MemberDashboard() {
         supabase.from('project_phases').select('*').eq('project_id', phaseProjectId).order('phase_number'),
         // Scope "items" to THIS project's pathway steps, not the whole content library.
         supabase.from('project_pathways').select('content_id, phase_number').eq('project_id', phaseProjectId),
-        supabase.from('user_activities').select('content_id, phase_number')
-          .eq('user_id', user.id).eq('status', 'completed'),
-        supabase.from('survey_responses').select('survey_id, score, submitted_at')
-          .eq('user_id', user.id).not('submitted_at', 'is', null),
-        supabase.from('template_responses').select('id').eq('user_id', user.id),
+        actsQ,
+        surveyQ,
+        tmplQ,
       ])
 
       setPhases(phaseRows ?? [])
@@ -269,13 +294,13 @@ function MemberDashboard() {
         {/* Continue button */}
         {!loading && activePhase && (
           <div className="max-w-4xl mt-4">
-            <Link
+            <Nav
               to={phaseConfig.find(p => p.num === activePhase.phase_number)?.path ?? '#'}
               className="inline-flex items-center gap-2 bg-[#E8913A] text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-[#d07e2e] transition-colors shadow-lg shadow-orange-900/20"
             >
               Continue Phase {activePhase.phase_number}: {phaseConfig.find(p => p.num === activePhase.phase_number)?.name}
               <span className="text-base">→</span>
-            </Link>
+            </Nav>
           </div>
         )}
       </div>
@@ -436,19 +461,19 @@ function MemberDashboard() {
                   {/* CTA */}
                   <div className="shrink-0">
                     {(isCompleted || (isActive && phasePct === 100)) && (
-                      <Link to={ph.path} className="text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 px-3 py-1.5 rounded-lg transition-colors">
+                      <Nav to={ph.path} className="text-xs font-medium text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 px-3 py-1.5 rounded-lg transition-colors">
                         Review
-                      </Link>
+                      </Nav>
                     )}
                     {isActive && phasePct < 100 && (
-                      <Link to={ph.path} className="bg-[#1F4E79] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#163a5c] transition-colors shadow-sm">
+                      <Nav to={ph.path} className="bg-[#1F4E79] text-white text-xs font-bold px-4 py-2 rounded-xl hover:bg-[#163a5c] transition-colors shadow-sm">
                         Continue →
-                      </Link>
+                      </Nav>
                     )}
                     {isLocked && (
-                      <Link to={ph.path} className="text-xs text-slate-400 border border-slate-200 px-3 py-1.5 rounded-lg hover:border-slate-300 transition-colors">
+                      <Nav to={ph.path} className="text-xs text-slate-400 border border-slate-200 px-3 py-1.5 rounded-lg hover:border-slate-300 transition-colors">
                         Preview →
-                      </Link>
+                      </Nav>
                     )}
                   </div>
                 </div>

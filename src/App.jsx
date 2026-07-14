@@ -13,6 +13,7 @@ import Confirm        from './pages/onboarding/Confirm'
 import Dashboard      from './pages/Dashboard'
 import Admin         from './pages/Admin'
 import ClientAdmin   from './pages/ClientAdmin'
+import AdminPreview  from './pages/AdminPreview'
 import Diagnose       from './pages/phases/Diagnose'
 import Design         from './pages/phases/Design'
 import Engage         from './pages/phases/Engage'
@@ -41,6 +42,7 @@ export default function App() {
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/dashboard"       element={<Dashboard />} />
               <Route path="/admin"           element={<Admin />} />
+              <Route path="/admin/preview"   element={<AdminPreview />} />
               <Route path="/client-admin"    element={<ClientAdmin />} />
               <Route path="/phases/diagnose" element={<Diagnose />} />
               <Route path="/phases/design"   element={<Design />} />
