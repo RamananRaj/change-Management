@@ -26,7 +26,7 @@ A running list of open work and considerations. Grouped by priority. Check off a
 
 - [ ] **Refactor dashboards to import `src/lib/logic.js`** — RAG, access level, at-risk, upcoming, phase status are now canonical + tested in `logic.js` but still inlined in Dashboard/Master/Client components. Point them at the module for a single source of truth.
 - [ ] **Component render tests** — React Testing Library tests for SystemAdmin table, dashboards, and the preview flow (needs jsdom env).
-- [ ] **Scheduled health auto-runs** — the System Health checks run on demand; add a scheduled run + history (needs a Supabase scheduled Edge Function / pg_cron).
+- [x] **Scheduled health auto-runs** — `health-check` Edge Function + pg_cron every 15 min + `health_runs` history, shown in the System Health tab (scheduled/manual, pass rates). Secret: `HEALTH_CRON_SECRET` (Supabase secrets). Cron job: `changeflow-health-check`.
 - [ ] **Lock/delete via backend confirmed** — done via `admin-user-actions`; consider soft-deactivate flag as a reversible alternative to hard delete.
 
 ---
