@@ -219,19 +219,19 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
             <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No users match.</div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-              <table className="w-full text-sm min-w-[860px]">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap [&>th]:align-middle [&>th]:font-semibold">
-                    <th className="py-2.5 px-4">User</th><th className="py-2.5 px-4">Client</th>
-                    <th className="py-2.5 px-4">Access</th><th className="py-2.5 px-4">Persona</th>
-                    <th className="py-2.5 px-4">Projects</th><th className="py-2.5 px-4">Last sign-in</th>
-                    <th className="py-2.5 px-4 text-right">Actions</th>
+                    <th className="py-2.5 px-3">User</th><th className="py-2.5 px-3">Client</th>
+                    <th className="py-2.5 px-3">Access</th><th className="py-2.5 px-3">Persona</th>
+                    <th className="py-2.5 px-3">Projects</th><th className="py-2.5 px-3">Last sign-in</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(u => (
                     <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50/60 [&>td]:align-middle">
-                      <td className="py-2.5 px-4">
+                      <td className="py-2.5 px-3">
                         <div className="flex items-center gap-2.5">
                           <div className="w-7 h-7 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-[11px] font-bold text-[#1F4E79] shrink-0">
                             {(u.name ?? '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
@@ -242,19 +242,19 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                           </div>
                         </div>
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">{u.client_id ? clientName(u.client_id) : <span className="text-slate-300">—</span>}</td>
-                      <td className="py-2.5 px-4 whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">{u.client_id ? clientName(u.client_id) : <span className="text-slate-300">—</span>}</td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">
                         <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${accessBadge(u.access)}`}>{u.access}</span>
                         {u.locked && <span className="ml-1 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 whitespace-nowrap">Locked</span>}
                       </td>
-                      <td className="py-2.5 px-4 text-slate-600 whitespace-nowrap">{roleLabel(u.role)}</td>
-                      <td className="py-2.5 px-4">
+                      <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">{roleLabel(u.role)}</td>
+                      <td className="py-2.5 px-3">
                         {u.projects.length === 0 ? <span className="text-slate-300">—</span> : (
                           <span className="text-slate-600 text-xs">{u.projects.slice(0, 2).join(', ')}{u.projects.length > 2 ? ` +${u.projects.length - 2}` : ''}</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-4 text-slate-500 text-xs whitespace-nowrap">{u.lastSignIn ? fmtDate(u.lastSignIn) : <span className="text-slate-300">never</span>}</td>
-                      <td className="py-2.5 px-4">
+                      <td className="py-2.5 px-3 text-slate-500 text-xs whitespace-nowrap">{u.lastSignIn ? fmtDate(u.lastSignIn) : <span className="text-slate-300">never</span>}</td>
+                      <td className="py-2.5 px-3">
                         <div className="flex items-center justify-end gap-1.5">
                           <button onClick={() => openEdit(u)} disabled={busy} title="Edit"
                             className="text-xs text-[#1F4E79] hover:underline disabled:opacity-40">Edit</button>
@@ -289,25 +289,25 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-                  <th className="py-2.5 px-4">Email</th><th className="py-2.5 px-4">Client</th>
-                  <th className="py-2.5 px-4">Project</th><th className="py-2.5 px-4">Persona</th>
-                  <th className="py-2.5 px-4">As admin</th><th className="py-2.5 px-4">Invited</th>
+                  <th className="py-2.5 px-3">Email</th><th className="py-2.5 px-3">Client</th>
+                  <th className="py-2.5 px-3">Project</th><th className="py-2.5 px-3">Persona</th>
+                  <th className="py-2.5 px-3">As admin</th><th className="py-2.5 px-3">Invited</th>
                 </tr>
               </thead>
               <tbody>
                 {invites.map(i => (
                   <tr key={i.id} className="border-t border-slate-100 hover:bg-slate-50/60">
-                    <td className="py-2.5 px-4">
+                    <td className="py-2.5 px-3">
                       <p className="font-medium text-slate-800">{i.email}</p>
                       {i.full_name && <p className="text-[11px] text-slate-400">{i.full_name}</p>}
                     </td>
-                    <td className="py-2.5 px-4 text-slate-600">{clientName(i.client_id)}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{i.projectName ?? '—'}</td>
-                    <td className="py-2.5 px-4 text-slate-600">{roleLabel(i.role)}</td>
-                    <td className="py-2.5 px-4">{i.as_client_admin
+                    <td className="py-2.5 px-3 text-slate-600">{clientName(i.client_id)}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{i.projectName ?? '—'}</td>
+                    <td className="py-2.5 px-3 text-slate-600">{roleLabel(i.role)}</td>
+                    <td className="py-2.5 px-3">{i.as_client_admin
                       ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">Client Admin</span>
                       : <span className="text-slate-300">—</span>}</td>
-                    <td className="py-2.5 px-4 text-slate-500 text-xs whitespace-nowrap">{fmtDate(i.created_at)}</td>
+                    <td className="py-2.5 px-3 text-slate-500 text-xs whitespace-nowrap">{fmtDate(i.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -388,20 +388,20 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-                        <th className="py-2 px-4">Time</th><th className="py-2 px-4">Source</th>
-                        <th className="py-2 px-4">Passed</th><th className="py-2 px-4">Failed</th><th className="py-2 px-4">Pass rate</th>
+                        <th className="py-2 px-3">Time</th><th className="py-2 px-3">Source</th>
+                        <th className="py-2 px-3">Passed</th><th className="py-2 px-3">Failed</th><th className="py-2 px-3">Pass rate</th>
                       </tr>
                     </thead>
                     <tbody>
                       {healthHistory.map(r => (
                         <tr key={r.id} className="border-t border-slate-100">
-                          <td className="py-2 px-4 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
-                          <td className="py-2 px-4">
+                          <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                          <td className="py-2 px-3">
                             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.source === 'scheduled' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{r.source}</span>
                           </td>
-                          <td className="py-2 px-4 text-green-600 font-medium">{r.passed}</td>
-                          <td className={`py-2 px-4 font-medium ${r.failed > 0 ? 'text-red-600' : 'text-slate-300'}`}>{r.failed}</td>
-                          <td className="py-2 px-4">
+                          <td className="py-2 px-3 text-green-600 font-medium">{r.passed}</td>
+                          <td className={`py-2 px-3 font-medium ${r.failed > 0 ? 'text-red-600' : 'text-slate-300'}`}>{r.failed}</td>
+                          <td className="py-2 px-3">
                             <span className={`text-xs font-semibold ${rate(r) === 100 ? 'text-green-600' : 'text-[#E8913A]'}`}>{rate(r)}%</span>
                           </td>
                         </tr>
