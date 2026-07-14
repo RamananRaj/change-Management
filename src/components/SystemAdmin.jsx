@@ -255,18 +255,23 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                       </td>
                       <td className="py-2.5 px-3 text-slate-500 text-xs whitespace-nowrap">{u.lastSignIn ? fmtDate(u.lastSignIn) : <span className="text-slate-300">never</span>}</td>
                       <td className="py-2.5 px-3">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => openEdit(u)} disabled={busy} title="Edit"
-                            className="text-xs text-[#1F4E79] hover:underline disabled:opacity-40">Edit</button>
-                          <span className="text-slate-200">·</span>
-                          <button onClick={() => doReset(u)} disabled={busy || !u.email} title="Send reset link"
-                            className="text-xs text-slate-500 hover:text-[#1F4E79] disabled:opacity-40">Reset</button>
-                          <span className="text-slate-200">·</span>
-                          <button onClick={() => doLock(u)} disabled={busy} title={u.locked ? 'Unlock' : 'Lock'}
-                            className="text-xs text-slate-500 hover:text-amber-600 disabled:opacity-40">{u.locked ? 'Unlock' : 'Lock'}</button>
-                          <span className="text-slate-200">·</span>
-                          <button onClick={() => doDelete(u)} disabled={busy} title="Delete"
-                            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40">Delete</button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(u)} disabled={busy} title="Edit" aria-label="Edit"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 disabled:opacity-40">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+                          </button>
+                          <button onClick={() => doReset(u)} disabled={busy || !u.email} title="Send reset link" aria-label="Send reset link"
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-[#1F4E79] hover:bg-slate-100 disabled:opacity-40">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 9-9m-3 0 3 3m-5 2 2 2"/></svg>
+                          </button>
+                          <button onClick={() => doLock(u)} disabled={busy} title={u.locked ? 'Unlock' : 'Lock'} aria-label={u.locked ? 'Unlock' : 'Lock'}
+                            className={`p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-40 ${u.locked ? 'text-amber-500 hover:text-amber-600' : 'text-slate-500 hover:text-slate-700'}`}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/>{u.locked ? <path d="M8 11V7a4 4 0 0 1 7.5-2"/> : <path d="M8 11V7a4 4 0 0 1 8 0v4"/>}</svg>
+                          </button>
+                          <button onClick={() => doDelete(u)} disabled={busy} title="Delete" aria-label="Delete"
+                            className="p-1.5 rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 disabled:opacity-40">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                          </button>
                         </div>
                       </td>
                     </tr>
