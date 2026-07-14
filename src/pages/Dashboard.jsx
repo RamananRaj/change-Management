@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import ClientAdminDashboard from '../components/ClientAdminDashboard'
 import MasterAdminDashboard from '../components/MasterAdminDashboard'
+import MiniTimeline from '../components/MiniTimeline'
 
 // Role-aware dashboard: Master Admin → platform overview, Client Admin → client roll-up,
 // everyone else → their personal journey.
@@ -79,6 +80,7 @@ export function MemberDashboard({ preview = null }) {
   const [loading,        setLoading]        = useState(true)
   const [projectsList,   setProjectsList]   = useState([])   // projects the user belongs to
   const [activeProjectId, setActiveProjectId] = useState('')
+  const [milestones,     setMilestones]     = useState([])   // project_milestones for the active project
 
   const firstName = profile?.full_name ? profile.full_name.split(' ')[0] : 'back'
   const hour      = new Date().getHours()
@@ -144,6 +146,7 @@ export function MemberDashboard({ preview = null }) {
         { data: completedActs },
         { data: surveyResps },
         { data: tmplResps },
+        { data: msRows },
       ] = await Promise.all([
         supabase.from('project_phases').select('*').eq('project_id', phaseProjectId).order('phase_number'),
         // Scope "items" to THIS project's pathway steps, not the whole content library.
@@ -151,9 +154,11 @@ export function MemberDashboard({ preview = null }) {
         actsQ,
         surveyQ,
         tmplQ,
+        supabase.from('project_milestones').select('name, milestone_date, color, lane').eq('project_id', phaseProjectId),
       ])
 
       setPhases(phaseRows ?? [])
+      setMilestones(msRows ?? [])
 
       // Per-phase content stats, scoped to the project's pathway items only
       const pathIds = new Set((contentItems ?? []).map(c => c.content_id))
@@ -217,6 +222,27 @@ export function MemberDashboard({ preview = null }) {
   const overallReadiness = scoredSurveys.length > 0
     ? scoredSurveys.reduce((s, r) => s + r.score, 0) / scoredSurveys.length
     : null
+
+  // Timeline + insights
+  const today = new Date()
+  const timelinePhases = phaseConfig.map(cfg => {
+    const row = phases.find(p => p.phase_number === cfg.num)
+    const st  = phaseStats[cfg.num] ?? { available: 0, completed: 0 }
+    const pct = st.available > 0 ? Math.round((st.completed / st.available) * 100) : 0
+    return { phase_number: cfg.num, name: cfg.name, planned_start: row?.planned_start ?? null,
+             planned_end: row?.planned_end ?? null, status: row?.status ?? 'locked', pct, ...st }
+  })
+  // At-risk: phase past its end date but not finished
+  const atRiskPhases = timelinePhases.filter(p =>
+    p.planned_end && new Date(p.planned_end) < today && p.pct < 100 && (p.available ?? 0) > 0)
+  // Upcoming: milestones + phase starts still ahead, soonest first
+  const upcoming = [
+    ...milestones.filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
+      .map(m => ({ date: m.milestone_date, label: m.name, kind: 'milestone', color: m.color })),
+    ...timelinePhases.filter(p => p.planned_start && new Date(p.planned_start) > today)
+      .map(p => ({ date: p.planned_start, label: `${p.name} starts`, kind: 'phase' })),
+  ].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 5)
+  const fmtDate = d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short' })
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -304,6 +330,57 @@ export function MemberDashboard({ preview = null }) {
           </div>
         )}
       </div>
+
+      {/* ── TIMELINE + INSIGHTS ─────────────────────────────────────────── */}
+      {!loading && phases.length > 0 && (
+        <div className="max-w-4xl px-8 pt-8 space-y-4">
+          {/* At-risk banner */}
+          {atRiskPhases.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
+              <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">Needs attention</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {atRiskPhases.map(p => (
+                  <span key={p.phase_number} className="text-sm text-amber-800">
+                    <strong>{p.name}</strong> overdue · {p.pct}% · was due {fmtDate(p.planned_end)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-3 gap-4">
+            {/* Timeline strip */}
+            <div className="md:col-span-2 bg-white rounded-2xl border border-slate-100 p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-4">Project timeline</p>
+              <MiniTimeline phases={timelinePhases} milestones={milestones} />
+            </div>
+
+            {/* Upcoming */}
+            <div className="bg-white rounded-2xl border border-slate-100 p-5">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Upcoming</p>
+              {upcoming.length === 0 ? (
+                <p className="text-xs text-slate-400">Nothing scheduled ahead.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {upcoming.map((u, i) => (
+                    <div key={i} className="flex items-start gap-2.5">
+                      <span className="mt-0.5 shrink-0">
+                        {u.kind === 'milestone'
+                          ? <svg width="10" height="10" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={u.color || '#1F4E79'} /></svg>
+                          : <span className="block w-2.5 h-2.5 rounded-full bg-slate-300" />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-700 leading-tight truncate">{u.label}</p>
+                        <p className="text-[11px] text-slate-400">{fmtDate(u.date)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── COCKPIT SECTION ─────────────────────────────────────────────── */}
       {!loading && (
