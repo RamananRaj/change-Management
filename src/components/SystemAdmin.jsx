@@ -3,11 +3,10 @@ import { supabase } from '../lib/supabase'
 
 // Master Admin oversight hub. Its own sub-navigation keeps future views (users, invites,
 // activity, health…) contained here rather than adding tabs to the top Admin bar.
-const SUBTABS = ['User Management', 'Pending Invites']
-
 // clientId set → scoped mode for a Client Admin (their client's users only).
 export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const scoped = !!clientId
+  const subtabs = scoped ? ['User Management', 'Pending Invites'] : ['User Management', 'Pending Invites', 'System Health']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -75,6 +74,52 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const doLock   = u => runAction({ action: u.locked ? 'unlock' : 'lock', userId: u.id }, `${u.locked ? 'Unlock' : 'Lock'} ${u.name}?`)
   const doDelete = u => runAction({ action: 'delete', userId: u.id }, `Permanently delete ${u.name}? This removes their account and cannot be undone.`)
 
+  // ── System Health ──────────────────────────────────────────────────────────
+  const [health, setHealth] = useState({ ran: false, running: false, checks: [], dbPing: null, at: null })
+
+  async function runHealth() {
+    setHealth(h => ({ ...h, running: true }))
+    const results = []
+    const time = async (name, group, fn) => {
+      const t0 = performance.now()
+      try {
+        const detail = await fn()
+        results.push({ name, group, ok: true, detail: detail ?? `${Math.round(performance.now() - t0)}ms` })
+      } catch (e) {
+        results.push({ name, group, ok: false, detail: (e?.message ?? String(e)).slice(0, 80) })
+      }
+    }
+    const headCount = table => async () => {
+      const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true })
+      if (error) throw error
+      return `${count ?? 0} rows`
+    }
+
+    // Server
+    const p0 = performance.now()
+    const { error: pingErr } = await supabase.from('clients').select('id', { count: 'exact', head: true })
+    const dbPing = Math.round(performance.now() - p0)
+
+    await time('Database (Supabase)', 'Server', async () => { if (pingErr) throw pingErr; return `${dbPing}ms response` })
+    await time('Auth session', 'Server', async () => { const { data } = await supabase.auth.getSession(); if (!data.session) throw new Error('no session'); return 'authenticated' })
+    await time('Edge function (admin-user-actions)', 'Server', async () => {
+      const { data, error } = await supabase.functions.invoke('admin-user-actions', { body: { action: 'ping' } })
+      if (error || data?.error) throw new Error(data?.error ?? error?.message ?? 'unreachable')
+      return `ok (${data?.role ?? 'admin'})`
+    })
+
+    // Data tables
+    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites'])
+      await time(t, 'Data', headCount(t))
+
+    // Permissions / RPC helpers
+    await time('admin_user_meta()', 'Permissions', async () => { const { data, error } = await supabase.rpc('admin_user_meta'); if (error) throw error; return `${(data ?? []).length} users` })
+    await time('is_admin()', 'Permissions', async () => { const { data, error } = await supabase.rpc('is_admin'); if (error) throw error; return String(data) })
+    await time('my_client_id()', 'Permissions', async () => { const { error } = await supabase.rpc('my_client_id'); if (error) throw error; return 'ok' })
+
+    setHealth({ ran: true, running: false, checks: results, dbPing, at: new Date() })
+  }
+
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
   const roleLabel  = code => allRoles.find(r => r.code === code)?.label ?? (code ? code.toUpperCase() : '—')
   const fmtDate    = d => d ? new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
@@ -101,8 +146,8 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
 
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
-        {SUBTABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
+        {subtabs.map(t => (
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health' && !health.ran) runHealth() }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -251,6 +296,62 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
             </table>
           </div>
         )
+      )}
+
+      {/* ── SYSTEM HEALTH ── */}
+      {tab === 'System Health' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs text-slate-400">
+              {health.at ? `Last checked: ${health.at.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' })} · ${health.checks.filter(c => c.ok).length}/${health.checks.length} passing` : 'Not run yet'}
+            </p>
+            <button onClick={runHealth} disabled={health.running}
+              className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] disabled:opacity-60">
+              {health.running ? 'Running…' : '↻ Run checks'}
+            </button>
+          </div>
+
+          {/* Status cards */}
+          <div className="grid grid-cols-4 gap-3 mb-6">
+            {[
+              { l: 'API status', v: health.ran ? (health.checks.find(c => c.name === 'Database (Supabase)')?.ok ? 'Online ✓' : 'Degraded') : '—', c: 'text-green-600' },
+              { l: 'DB ping', v: health.dbPing != null ? `${health.dbPing}ms` : '—', c: 'text-[#1F4E79]' },
+              { l: 'Checks passing', v: health.ran ? `${health.checks.filter(c => c.ok).length}/${health.checks.length}` : '—', c: health.ran && health.checks.every(c => c.ok) ? 'text-green-600' : 'text-[#E8913A]' },
+              { l: 'Environment', v: 'React + Vite', c: 'text-slate-700' },
+            ].map((m, i) => (
+              <div key={i} className="bg-white rounded-xl border border-slate-100 p-4">
+                <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">{m.l}</p>
+                <p className={`text-xl font-bold mt-1 ${m.c}`}>{m.v}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Checks by group */}
+          {health.running && health.checks.length === 0 ? (
+            <div className="space-y-2">{[1,2,3,4].map(n => <div key={n} className="h-10 bg-slate-100 rounded-lg animate-pulse" />)}</div>
+          ) : (
+            ['Server', 'Data', 'Permissions'].map(group => {
+              const rows = health.checks.filter(c => c.group === group)
+              if (!rows.length) return null
+              return (
+                <div key={group} className="mb-5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{group}</p>
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    {rows.map((c, i) => (
+                      <div key={c.name} className={`flex items-center justify-between px-4 py-2.5 text-sm ${i > 0 ? 'border-t border-slate-100' : ''}`}>
+                        <span className="flex items-center gap-2 text-slate-700">
+                          <span className={`w-2 h-2 rounded-full ${c.ok ? 'bg-green-500' : 'bg-red-500'}`} />
+                          {c.name}
+                        </span>
+                        <span className={`text-xs ${c.ok ? 'text-slate-400' : 'text-red-500 font-medium'}`}>{c.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
       )}
 
       {/* Edit modal */}

@@ -44,6 +44,12 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}))
     const { action, userId } = body
+
+    // Health check — no target needed, just proves the function is reachable + who called.
+    if (action === 'ping') {
+      return json({ ok: true, role: myProfile.is_admin ? 'master' : 'client_admin' })
+    }
+
     if (!action || !userId) return json({ error: 'action and userId required' }, 400)
 
     const { data: target } = await admin.from('profiles')
