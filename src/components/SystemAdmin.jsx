@@ -5,7 +5,9 @@ import { supabase } from '../lib/supabase'
 // activity, health…) contained here rather than adding tabs to the top Admin bar.
 const SUBTABS = ['User Management', 'Pending Invites']
 
-export default function SystemAdmin({ allRoles = [] }) {
+// clientId set → scoped mode for a Client Admin (their client's users only).
+export default function SystemAdmin({ allRoles = [], clientId = null }) {
+  const scoped = !!clientId
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -13,34 +15,65 @@ export default function SystemAdmin({ allRoles = [] }) {
   const [invites, setInvites] = useState([])
   const [clientFilter, setClientFilter] = useState('')
   const [search, setSearch]   = useState('')
+  const [editing, setEditing] = useState(null)   // user being edited
+  const [editForm, setEditForm] = useState({ full_name: '', role: '', email: '' })
+  const [busy, setBusy]       = useState(false)
+  const [note, setNote]       = useState(null)   // { type:'ok'|'err', text }
 
   useEffect(() => { load() }, [])
 
   async function load() {
     setLoading(true)
-    const [{ data: cls }, { data: profs }, { data: pm }, { data: projs }, emailRes, { data: inv }] = await Promise.all([
+    const [{ data: cls }, { data: profs }, { data: pm }, { data: projs }, metaRes, { data: inv }] = await Promise.all([
       supabase.from('clients').select('id, name'),
       supabase.from('profiles').select('id, full_name, role, industry, is_admin, is_client_admin, client_id, onboarding_done, created_at'),
       supabase.from('project_members').select('user_id, project_id'),
       supabase.from('projects').select('id, name, client_id'),
-      supabase.rpc('admin_user_emails'),
+      supabase.rpc('admin_user_meta'),
       supabase.from('project_invites').select('id, email, full_name, role, status, client_id, project_id, as_client_admin, created_at').eq('status', 'pending').order('created_at', { ascending: false }),
     ])
     setClients(cls ?? [])
-    const emailOf  = id => (emailRes?.data ?? []).find(e => e.id === id)?.email ?? null
+    const metaOf   = id => (metaRes?.data ?? []).find(e => e.id === id)
     const projName = id => (projs ?? []).find(p => p.id === id)?.name
 
-    setUsers((profs ?? []).map(p => {
-      const projNames = [...new Set((pm ?? []).filter(m => m.user_id === p.id).map(m => projName(m.project_id)).filter(Boolean))]
-      const access = p.is_admin ? 'Master Admin' : p.is_client_admin ? 'Client Admin' : 'Member'
-      return { id: p.id, name: p.full_name ?? '—', email: emailOf(p.id), role: p.role ?? null,
-               client_id: p.client_id ?? null, access, projects: projNames,
-               joined: p.created_at ?? null, onboarded: !!p.onboarding_done }
-    }).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')))
+    setUsers((profs ?? [])
+      .filter(p => !scoped || p.client_id === clientId)   // scoped mode: this client only
+      .map(p => {
+        const projNames = [...new Set((pm ?? []).filter(m => m.user_id === p.id).map(m => projName(m.project_id)).filter(Boolean))]
+        const access = p.is_admin ? 'Master Admin' : p.is_client_admin ? 'Client Admin' : 'Member'
+        const meta = metaOf(p.id)
+        const locked = meta?.banned_until && new Date(meta.banned_until) > new Date()
+        return { id: p.id, name: p.full_name ?? '—', email: meta?.email ?? null, role: p.role ?? null,
+                 client_id: p.client_id ?? null, access, is_admin: !!p.is_admin, projects: projNames,
+                 joined: p.created_at ?? null, lastSignIn: meta?.last_sign_in_at ?? null, locked }
+      }).sort((a, b) => (a.name ?? '').localeCompare(b.name ?? '')))
 
-    setInvites((inv ?? []).map(i => ({ ...i, projectName: projName(i.project_id) })))
+    setInvites((inv ?? []).filter(i => !scoped || i.client_id === clientId).map(i => ({ ...i, projectName: projName(i.project_id) })))
     setLoading(false)
   }
+
+  async function runAction(payload, confirmMsg) {
+    if (confirmMsg && !window.confirm(confirmMsg)) return
+    setBusy(true); setNote(null)
+    const { data, error } = await supabase.functions.invoke('admin-user-actions', { body: payload })
+    setBusy(false)
+    if (error || data?.error) { setNote({ type: 'err', text: (data?.error ?? error?.message ?? 'Action failed') }); return false }
+    setNote({ type: 'ok', text: 'Done.' })
+    await load()
+    return true
+  }
+
+  function openEdit(u) {
+    setEditForm({ full_name: u.name === '—' ? '' : u.name, role: u.role ?? '', email: u.email ?? '' })
+    setEditing(u); setNote(null)
+  }
+  async function saveEdit() {
+    const ok = await runAction({ action: 'update', userId: editing.id, full_name: editForm.full_name, role: editForm.role || null, email: editForm.email || undefined })
+    if (ok) setEditing(null)
+  }
+  const doReset  = u => runAction({ action: 'reset', userId: u.id, email: u.email, redirectTo: `${window.location.origin}/auth/reset` }, `Send a password reset link to ${u.email}?`)
+  const doLock   = u => runAction({ action: u.locked ? 'unlock' : 'lock', userId: u.id }, `${u.locked ? 'Unlock' : 'Lock'} ${u.name}?`)
+  const doDelete = u => runAction({ action: 'delete', userId: u.id }, `Permanently delete ${u.name}? This removes their account and cannot be undone.`)
 
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
   const roleLabel  = code => allRoles.find(r => r.code === code)?.label ?? (code ? code.toUpperCase() : '—')
@@ -62,8 +95,8 @@ export default function SystemAdmin({ allRoles = [] }) {
   return (
     <div>
       <div className="mb-4">
-        <h2 className="text-lg font-bold text-slate-800">System Admin</h2>
-        <p className="text-xs text-slate-400 mt-0.5">Platform-wide oversight for Master Admins.</p>
+        <h2 className="text-lg font-bold text-slate-800">{scoped ? 'Users' : 'System Admin'}</h2>
+        <p className="text-xs text-slate-400 mt-0.5">{scoped ? 'Manage the people in your client.' : 'Platform-wide oversight for Master Admins.'}</p>
       </div>
 
       {/* Sub-navigation */}
@@ -76,16 +109,26 @@ export default function SystemAdmin({ allRoles = [] }) {
         ))}
       </div>
 
+      {note && (
+        <div className={`mb-4 rounded-lg px-4 py-2.5 text-sm ${note.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-600'}`}>
+          {note.type === 'ok' ? '✓ ' : '⚠ '}{note.text}
+        </div>
+      )}
+
       {/* ── USER MANAGEMENT ── */}
       {tab === 'User Management' && (
         <div>
-          <div className="grid grid-cols-4 gap-3 mb-5">
-            {[
+          <div className={`grid ${scoped ? 'grid-cols-3' : 'grid-cols-4'} gap-3 mb-5`}>
+            {(scoped ? [
+              { v: users.length, l: 'Total users' },
+              { v: clientAdmins, l: 'Client admins' },
+              { v: users.filter(u => u.access === 'Member').length, l: 'Members' },
+            ] : [
               { v: users.length, l: 'Total users' },
               { v: clients.length, l: 'Clients' },
               { v: clientAdmins, l: 'Client admins' },
               { v: unassigned, l: 'Unassigned' },
-            ].map((m, i) => (
+            ]).map((m, i) => (
               <div key={i} className="bg-white rounded-xl border border-slate-100 p-4">
                 <p className="text-2xl font-bold text-[#1F4E79]">{m.v}</p>
                 <p className="text-[11px] text-slate-400 mt-1 font-medium">{m.l}</p>
@@ -94,12 +137,14 @@ export default function SystemAdmin({ allRoles = [] }) {
           </div>
 
           <div className="flex flex-wrap gap-3 mb-4">
-            <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[200px]">
-              <option value="">All clients</option>
-              {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              <option value="__none">— Unassigned</option>
-            </select>
+            {!scoped && (
+              <select value={clientFilter} onChange={e => setClientFilter(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[200px]">
+                <option value="">All clients</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="__none">— Unassigned</option>
+              </select>
+            )}
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or email…"
               className="flex-1 min-w-[220px] border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
             <span className="flex items-center text-xs text-slate-400 px-2">{filtered.length} users</span>
@@ -116,7 +161,8 @@ export default function SystemAdmin({ allRoles = [] }) {
                   <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
                     <th className="py-2.5 px-4">User</th><th className="py-2.5 px-4">Client</th>
                     <th className="py-2.5 px-4">Access</th><th className="py-2.5 px-4">Persona</th>
-                    <th className="py-2.5 px-4">Projects</th><th className="py-2.5 px-4">Joined</th>
+                    <th className="py-2.5 px-4">Projects</th><th className="py-2.5 px-4">Last sign-in</th>
+                    <th className="py-2.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -134,14 +180,32 @@ export default function SystemAdmin({ allRoles = [] }) {
                         </div>
                       </td>
                       <td className="py-2.5 px-4 text-slate-600">{u.client_id ? clientName(u.client_id) : <span className="text-slate-300">—</span>}</td>
-                      <td className="py-2.5 px-4"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${accessBadge(u.access)}`}>{u.access}</span></td>
+                      <td className="py-2.5 px-4">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${accessBadge(u.access)}`}>{u.access}</span>
+                        {u.locked && <span className="ml-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">Locked</span>}
+                      </td>
                       <td className="py-2.5 px-4 text-slate-600">{roleLabel(u.role)}</td>
                       <td className="py-2.5 px-4">
                         {u.projects.length === 0 ? <span className="text-slate-300">—</span> : (
                           <span className="text-slate-600 text-xs">{u.projects.slice(0, 2).join(', ')}{u.projects.length > 2 ? ` +${u.projects.length - 2}` : ''}</span>
                         )}
                       </td>
-                      <td className="py-2.5 px-4 text-slate-500 text-xs whitespace-nowrap">{fmtDate(u.joined)}</td>
+                      <td className="py-2.5 px-4 text-slate-500 text-xs whitespace-nowrap">{u.lastSignIn ? fmtDate(u.lastSignIn) : <span className="text-slate-300">never</span>}</td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button onClick={() => openEdit(u)} disabled={busy} title="Edit"
+                            className="text-xs text-[#1F4E79] hover:underline disabled:opacity-40">Edit</button>
+                          <span className="text-slate-200">·</span>
+                          <button onClick={() => doReset(u)} disabled={busy || !u.email} title="Send reset link"
+                            className="text-xs text-slate-500 hover:text-[#1F4E79] disabled:opacity-40">Reset</button>
+                          <span className="text-slate-200">·</span>
+                          <button onClick={() => doLock(u)} disabled={busy} title={u.locked ? 'Unlock' : 'Lock'}
+                            className="text-xs text-slate-500 hover:text-amber-600 disabled:opacity-40">{u.locked ? 'Unlock' : 'Lock'}</button>
+                          <span className="text-slate-200">·</span>
+                          <button onClick={() => doDelete(u)} disabled={busy} title="Delete"
+                            className="text-xs text-red-400 hover:text-red-600 disabled:opacity-40">Delete</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -187,6 +251,43 @@ export default function SystemAdmin({ allRoles = [] }) {
             </table>
           </div>
         )
+      )}
+
+      {/* Edit modal */}
+      {editing && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={() => !busy && setEditing(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Edit user</h3>
+            <p className="text-xs text-slate-400 mb-4">{editing.email}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Full name</label>
+                <input value={editForm.full_name} onChange={e => setEditForm(f => ({ ...f, full_name: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Persona</label>
+                <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                  <option value="">— None</option>
+                  {allRoles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Email</label>
+                <input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                <p className="text-[10px] text-slate-400 mt-1">Changing email updates their sign-in address.</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setEditing(null)} disabled={busy} className="text-sm font-semibold text-slate-500 px-4 py-2 rounded-lg hover:bg-slate-100">Cancel</button>
+              <button onClick={saveEdit} disabled={busy} className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] disabled:opacity-60">
+                {busy ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
