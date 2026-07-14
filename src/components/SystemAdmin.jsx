@@ -76,6 +76,12 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
 
   // ── System Health ──────────────────────────────────────────────────────────
   const [health, setHealth] = useState({ ran: false, running: false, checks: [], dbPing: null, at: null })
+  const [healthHistory, setHealthHistory] = useState([])
+
+  async function loadHealthHistory() {
+    const { data } = await supabase.from('health_runs').select('*').order('ran_at', { ascending: false }).limit(20)
+    setHealthHistory(data ?? [])
+  }
 
   async function runHealth() {
     setHealth(h => ({ ...h, running: true }))
@@ -118,6 +124,10 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     await time('my_client_id()', 'Permissions', async () => { const { error } = await supabase.rpc('my_client_id'); if (error) throw error; return 'ok' })
 
     setHealth({ ran: true, running: false, checks: results, dbPing, at: new Date() })
+
+    // Persist this run to history (server-side), then refresh the history table.
+    try { await supabase.functions.invoke('health-check', { body: { source: 'manual' } }) } catch { /* history is best-effort */ }
+    loadHealthHistory()
   }
 
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
@@ -147,7 +157,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {subtabs.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t === 'System Health' && !health.ran) runHealth() }}
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); if (!health.ran) runHealth() } }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -351,6 +361,49 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
               )
             })
           )}
+
+          {/* Run history (scheduled + manual) */}
+          {healthHistory.length > 0 && (() => {
+            const lastScheduled = healthHistory.find(r => r.source === 'scheduled')
+            const rate = r => r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0
+            return (
+              <div className="mt-6">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Run history</p>
+                  {lastScheduled && (
+                    <p className="text-[11px] text-slate-400">
+                      Last scheduled: {new Date(lastScheduled.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · {rate(lastScheduled)}%
+                    </p>
+                  )}
+                </div>
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                        <th className="py-2 px-4">Time</th><th className="py-2 px-4">Source</th>
+                        <th className="py-2 px-4">Passed</th><th className="py-2 px-4">Failed</th><th className="py-2 px-4">Pass rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {healthHistory.map(r => (
+                        <tr key={r.id} className="border-t border-slate-100">
+                          <td className="py-2 px-4 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                          <td className="py-2 px-4">
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.source === 'scheduled' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{r.source}</span>
+                          </td>
+                          <td className="py-2 px-4 text-green-600 font-medium">{r.passed}</td>
+                          <td className={`py-2 px-4 font-medium ${r.failed > 0 ? 'text-red-600' : 'text-slate-300'}`}>{r.failed}</td>
+                          <td className="py-2 px-4">
+                            <span className={`text-xs font-semibold ${rate(r) === 100 ? 'text-green-600' : 'text-[#E8913A]'}`}>{rate(r)}%</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
 
