@@ -110,7 +110,12 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     await time('Auth session', 'Server', async () => { const { data } = await supabase.auth.getSession(); if (!data.session) throw new Error('no session'); return 'authenticated' })
     await time('Edge function (admin-user-actions)', 'Server', async () => {
       const { data, error } = await supabase.functions.invoke('admin-user-actions', { body: { action: 'ping' } })
-      if (error || data?.error) throw new Error(data?.error ?? error?.message ?? 'unreachable')
+      if (error) {
+        let msg = error.message
+        try { const b = await error.context?.json(); if (b?.error) msg = `${b.error} (${error.context?.status ?? '?'})` } catch { /* noop */ }
+        throw new Error(msg)
+      }
+      if (data?.error) throw new Error(data.error)
       return `ok (${data?.role ?? 'admin'})`
     })
 
