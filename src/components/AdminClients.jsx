@@ -31,7 +31,7 @@ function StatusDot({ status }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function AdminClients({ allRoles = [], lockedClientId = null }) {
+export default function AdminClients({ allRoles = [], lockedClientId = null, initialClientId = null }) {
   const { user } = useAuth()
   const [clients,        setClients]        = useState([])
   const [allUsers,       setAllUsers]       = useState([])
@@ -85,6 +85,14 @@ export default function AdminClients({ allRoles = [], lockedClientId = null }) {
       .then(({ data }) => { if (data) openClient(data) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockedClientId])
+
+  // Deep-link (?client=<id>): auto-open that client on first load
+  useEffect(() => {
+    if (lockedClientId || !initialClientId) return
+    supabase.from('clients').select('*').eq('id', initialClientId).single()
+      .then(({ data }) => { if (data) openClient(data) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialClientId])
 
   async function fetchClients() {
     setLoading(true)

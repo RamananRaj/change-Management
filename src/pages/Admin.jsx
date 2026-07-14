@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AdminSurveys from '../components/AdminSurveys'
@@ -89,7 +90,9 @@ const emptyIndustryForm = {
 
 export default function Admin() {
   const { profile } = useAuth()
-  const [section, setSection] = useState('Content Manager')
+  const [searchParams] = useSearchParams()
+  // Allow deep-linking, e.g. /admin?section=Clients&client=<id>
+  const [section, setSection] = useState(() => searchParams.get('section') || 'Content Manager')
 
   // ── Content Manager state ──
   const [filterPhase,    setFilterPhase]    = useState(1)
@@ -1246,7 +1249,7 @@ export default function Admin() {
 
       {/* ── CLIENTS ── */}
       {section === 'Clients' && (
-        <AdminClients allRoles={roles} />
+        <AdminClients allRoles={roles} initialClientId={searchParams.get('client')} />
       )}
 
       {/* ── CONTENT FORM MODAL ── */}

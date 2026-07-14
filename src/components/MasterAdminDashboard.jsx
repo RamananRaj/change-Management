@@ -112,7 +112,7 @@ export default function MasterAdminDashboard() {
               </button>
             )}
             <Link to="/admin/preview" className="text-sm font-semibold text-[#1F4E79] hover:underline">View as member →</Link>
-            <Link to="/admin" className="text-sm font-semibold text-[#1F4E79] hover:underline">Open admin →</Link>
+            <Link to="/admin?section=Clients" className="text-sm font-semibold text-[#1F4E79] hover:underline">Open admin →</Link>
           </div>
         </div>
 
@@ -174,7 +174,7 @@ export default function MasterAdminDashboard() {
                           ))}
                         </div>
                       )}
-                      <Link to="/admin" className="inline-block mt-3 text-xs font-semibold text-[#1F4E79] hover:underline">
+                      <Link to={`/admin?section=Clients&client=${c.id}`} className="inline-block mt-3 text-xs font-semibold text-[#1F4E79] hover:underline">
                         Manage {c.name} →
                       </Link>
                     </div>
