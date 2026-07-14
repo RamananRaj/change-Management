@@ -2,6 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import ClientAdminDashboard from '../components/ClientAdminDashboard'
+import MasterAdminDashboard from '../components/MasterAdminDashboard'
+
+// Role-aware dashboard: Master Admin → platform overview, Client Admin → client roll-up,
+// everyone else → their personal journey.
+export default function Dashboard() {
+  const { profile } = useAuth()
+  if (profile?.is_admin)        return <MasterAdminDashboard />
+  if (profile?.is_client_admin) return <ClientAdminDashboard />
+  return <MemberDashboard />
+}
 
 const phaseConfig = [
   { num: 1, label: '01', name: 'Diagnose',  path: '/phases/diagnose', icon: '🔍', desc: 'Understand where you are before you move' },
@@ -48,7 +59,7 @@ function RagPill({ score, green, amber }) {
   )
 }
 
-export default function Dashboard() {
+function MemberDashboard() {
   const { profile, user } = useAuth()
   const [phases,         setPhases]         = useState([])
   const [phaseStats,     setPhaseStats]     = useState({})
