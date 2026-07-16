@@ -131,7 +131,8 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
     setThinking(true); setProgress(null)
     try {
       const d = await ask(q, ctx, { onProgress: p => setProgress(p?.text ?? null) })
-      setWidgets(w => [{ ...d, query: q, key: Date.now() }, ...w])
+      // De-dupe: replace any existing card with the same title, moved fresh to the top.
+      setWidgets(w => [{ ...d, query: q, key: Date.now() }, ...w.filter(x => x.title !== d.title)])
     } catch {
       setWidgets(w => [{ type: 'narrative', title: 'Something went wrong', body: 'That query could not be answered. Please try again.', query: q, key: Date.now() }, ...w])
     } finally {
