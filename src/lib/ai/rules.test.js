@@ -13,6 +13,8 @@ describe('matchIntent', () => {
     ['any blockers?',                                'at_risk'],
     ['what milestones are due next week',            'milestones'],
     ['what is due soon',                             'milestones'],
+    ['Show all clients',                             'clients'],
+    ['which clients do we have',                     'clients'],
     ['progress by project',                          'progress'],
     ['how far along are we',                         'progress'],
     ['summarise readiness',                          'readiness'],

@@ -118,6 +118,23 @@ async function runMilestones() {
   }
 }
 
+async function runClients() {
+  const { clients, projRollup } = await loadData()
+  const rows = clients.map(c => {
+    const cp = projRollup.filter(p => p.client_id === c.id)
+    const people = new Set(cp.flatMap(p => p.memberIds)).size
+    const done = cp.reduce((s, p) => s + p.done, 0)
+    const total = cp.reduce((s, p) => s + p.total, 0)
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0
+    return { label: c.name, sub: `${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}`, value: pct }
+  }).sort((a, b) => a.value - b.value)
+  return {
+    type: 'progress', title: `Clients (${rows.length})`, rows,
+    empty: 'No clients yet.',
+    commentary: rows.length ? `${rows.length} client${rows.length === 1 ? '' : 's'} on the platform, sorted by completion. Tap "Open admin" on the dashboard to manage any of them.` : null,
+  }
+}
+
 async function runProgress() {
   const { projRollup } = await loadData()
   const rows = projRollup.map(p => ({ label: p.name, value: p.pct, sub: p.clientName }))
@@ -177,6 +194,7 @@ async function runMembersBehind({ phase } = {}) {
 }
 
 const RUNNERS = {
+  clients: runClients,
   members_behind: runMembersBehind,
   at_risk: runAtRisk,
   milestones: runMilestones,

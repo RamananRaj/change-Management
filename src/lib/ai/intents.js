@@ -8,6 +8,7 @@ export const INTENTS = [
   { intent: 'members_behind',      re: /(who('?s| is)?\s+behind|laggard|not (started|done|completed)|behind on|stuck on)/i },
   { intent: 'at_risk',             re: /(at risk|at-risk|overdue|slipping|needs? attention|red flags?|blockers?)/i },
   { intent: 'milestones',          re: /(milestone|due (this|next|soon|in)|deadline|what('?s| is) due|coming up|upcoming)/i },
+  { intent: 'clients',             re: /(clients|which client|list client|show client|all client)/i },
   { intent: 'progress',            re: /(progress|completion|how far|on track|percent|% (done|complete))/i },
   { intent: 'readiness',           re: /(readiness|rag status|how are we|overall health|summary|summarise|summarize|how('?s| is) it going)/i },
 ]
