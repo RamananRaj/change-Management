@@ -117,7 +117,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
 
   const [summary, setSummary] = useState(null)
   const [chipsOpen, setChipsOpen] = useState(true)
-  const [dockOpen, setDockOpen] = useState(true)
+  const [dockOpen, setDockOpen] = useState(false)   // start as the compact floating pill
   const [widgets, setWidgets] = useState([])
   const [thinking, setThinking] = useState(false)
   const [progress, setProgress] = useState(null)
