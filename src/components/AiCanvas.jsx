@@ -117,6 +117,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
 
   const [summary, setSummary] = useState(null)
   const [chipsOpen, setChipsOpen] = useState(true)
+  const [dockOpen, setDockOpen] = useState(true)
   const [widgets, setWidgets] = useState([])
   const [thinking, setThinking] = useState(false)
   const [progress, setProgress] = useState(null)
@@ -204,27 +205,37 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
         )}
       </div>
 
-      {/* Prompt dock */}
-      <div className="bg-white border-t border-slate-200 px-5 py-3 shrink-0 rounded-b-xl">
-        <div className="flex gap-2 overflow-x-auto pb-2.5">
-          {SUGGESTIONS.map(s => (
-            <button key={s.q} onClick={() => run(s.q)} disabled={thinking}
-              className="shrink-0 border border-slate-200 rounded-full px-3.5 py-2 text-[13px] text-[#1F4E79] hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap">
-              {s.label}
-            </button>
-          ))}
+      {/* Prompt dock — collapsible to free the canvas */}
+      <div className="bg-white border-t border-slate-200 px-5 pb-3 shrink-0 rounded-b-xl">
+        <div className="flex justify-center">
+          <button onClick={() => setDockOpen(o => !o)}
+            className="-mt-3 bg-white border border-slate-200 rounded-full px-3.5 py-1 text-[11px] font-semibold text-slate-500 shadow-sm hover:text-[#1F4E79] hover:border-slate-300 transition-colors">
+            {dockOpen ? '▾ collapse' : '▸ Ask AI'}
+          </button>
         </div>
-        <form onSubmit={submit} className="flex items-center gap-2.5 border-[1.5px] border-[#E8913A] rounded-2xl px-4 py-2.5" style={{ boxShadow: '0 0 0 3px rgba(232,145,58,.12)' }}>
-          <span className="w-2.5 h-2.5 rounded-full bg-[#E8913A] shrink-0" />
-          <input value={input} onChange={e => setInput(e.target.value)} disabled={thinking}
-            placeholder="Ask AI anything — risks, readiness, progress, timelines…"
-            className="flex-1 outline-none text-[15px] text-slate-800 placeholder:text-slate-400 disabled:opacity-60" />
-          <button type="submit" disabled={thinking || !input.trim()}
-            className="bg-[#E8913A] text-white rounded-xl w-9 h-8 font-bold disabled:opacity-50 hover:brightness-95">↑</button>
-        </form>
-        <p className="text-center text-[10px] text-slate-300 tracking-widest mt-2 font-mono">
-          CHANGEFLOW · AI · GROUNDED &amp; ROLE-SCOPED{slmOptedIn() ? ' · ON-DEVICE SLM ON' : ''}
-        </p>
+        {dockOpen && (
+          <div className="pt-2">
+            <div className="flex gap-2 overflow-x-auto pb-2.5">
+              {SUGGESTIONS.map(s => (
+                <button key={s.q} onClick={() => run(s.q)} disabled={thinking}
+                  className="shrink-0 border border-slate-200 rounded-full px-3.5 py-2 text-[13px] text-[#1F4E79] hover:bg-slate-50 disabled:opacity-50 whitespace-nowrap">
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={submit} className="flex items-center gap-2.5 border-[1.5px] border-[#E8913A] rounded-2xl px-4 py-2.5" style={{ boxShadow: '0 0 0 3px rgba(232,145,58,.12)' }}>
+              <span className="w-2.5 h-2.5 rounded-full bg-[#E8913A] shrink-0" />
+              <input value={input} onChange={e => setInput(e.target.value)} disabled={thinking}
+                placeholder="Ask AI anything — risks, readiness, progress, timelines…"
+                className="flex-1 outline-none text-[15px] text-slate-800 placeholder:text-slate-400 disabled:opacity-60" />
+              <button type="submit" disabled={thinking || !input.trim()}
+                className="bg-[#E8913A] text-white rounded-xl w-9 h-8 font-bold disabled:opacity-50 hover:brightness-95">↑</button>
+            </form>
+            <p className="text-center text-[10px] text-slate-300 tracking-widest mt-2 font-mono">
+              CHANGEFLOW · AI · GROUNDED &amp; ROLE-SCOPED{slmOptedIn() ? ' · ON-DEVICE SLM ON' : ''}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
