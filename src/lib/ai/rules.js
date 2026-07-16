@@ -193,6 +193,96 @@ async function runMembersBehind({ phase } = {}) {
   }
 }
 
+// Detail for a single named client — projects (with current phase), people, completion,
+// overdue phases and next milestone. Grounded; mirrors the dashboard's expanded client view.
+async function runClientDetail(client, data) {
+  const { projRollup, today } = data
+  const cp = projRollup.filter(p => p.client_id === client.id)
+  const people = new Set(cp.flatMap(p => p.memberIds)).size
+  const done = cp.reduce((s, p) => s + p.done, 0)
+  const total = cp.reduce((s, p) => s + p.total, 0)
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  const currentPhase = p => {
+    const ph = p.phases.find(x => x.planned_start && x.planned_end && new Date(x.planned_start) <= today && today <= new Date(x.planned_end))
+    return ph ? ph.name : (p.phases.every(x => !x.planned_start) ? null : null)
+  }
+  const rows = cp.map(p => {
+    const cur = currentPhase(p)
+    const noDates = p.phases.every(x => !x.planned_start)
+    return { label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}${cur ? ` · ${cur} underway` : noDates ? ' · no dates yet' : ''}`, value: p.pct }
+  })
+  let overdue = 0
+  cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue++ }))
+  const nextMs = cp.flatMap(p => p.milestones).filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
+    .sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
+  const commentary = `**${client.name}** — ${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'} · **${pct}%** average completion.` +
+    (overdue ? ` ${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue.` : '') +
+    (nextMs ? ` Next milestone: ${nextMs.name} on ${new Date(nextMs.milestone_date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}.` : '')
+  return { type: 'progress', title: client.name, rows, empty: `${client.name} has no projects yet.`, commentary }
+}
+
+const fmtDate = d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short' })
+
+// Detail for a single project — phase-by-phase completion, current phase, overdue, next milestone.
+function runProjectDetail(p, data) {
+  const { today } = data
+  const rows = p.phases.map(ph => ({ label: ph.name, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet', value: ph.pct }))
+  const current = p.phases.find(ph => ph.planned_start && ph.planned_end && new Date(ph.planned_start) <= today && today <= new Date(ph.planned_end))
+  const overdue = p.phases.filter(ph => ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0).length
+  const nextMs = (p.milestones ?? []).filter(m => m.milestone_date && new Date(m.milestone_date) >= today).sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
+  const commentary = `**${p.name}**${p.clientName ? ` · ${p.clientName}` : ''} — ${p.members} ${p.members === 1 ? 'person' : 'people'} · **${p.pct}%** complete.` +
+    (current ? ` Currently in **${current.name}**.` : '') +
+    (overdue ? ` ${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue.` : '') +
+    (nextMs ? ` Next milestone: ${nextMs.name} on ${fmtDate(nextMs.milestone_date)}.` : '')
+  return { type: 'progress', title: p.name, rows, empty: 'No phases set up yet.', commentary }
+}
+
+// Detail for a person — their projects with their own per-phase completion.
+function runPersonDetail(userId, data) {
+  const { projRollup, profiles } = data
+  const prof = profiles.find(u => u.id === userId)
+  const theirs = projRollup.filter(p => p.memberIds.includes(userId))
+  const rows = theirs.map(p => {
+    let done = 0, steps = 0
+    p.phases.forEach(ph => { const mm = ph.perMember.find(x => x.user_id === userId); if (mm) { done += mm.done; steps += mm.steps } })
+    return { label: p.name, sub: `${done}/${steps} steps · ${p.clientName}`, value: steps > 0 ? Math.round((done / steps) * 100) : 0 }
+  })
+  const commentary = `**${prof?.full_name ?? 'Member'}**${prof?.role ? ` · ${prof.role}` : ''} — on ${theirs.length} project${theirs.length === 1 ? '' : 's'}.`
+  return { type: 'progress', title: prof?.full_name ?? 'Member', rows, empty: 'Not assigned to any projects.', commentary }
+}
+
+function runStakeholderDetail(s) {
+  return { type: 'narrative', title: s.name, body: `**${s.name}**${s.detail ? ` — ${s.detail}` : ''}. In your stakeholder register.` }
+}
+
+// Generic grounded resolver: scan everything captured (clients, projects, people, stakeholders)
+// for a name mentioned in the question, and return that record's detail. Prefers the longest
+// (most specific) name match. This is what lets "any detail we have" be answered by the rules.
+async function resolveEntity(text) {
+  const t = (text ?? '').toLowerCase()
+  const [data, { data: stakeholders }] = await Promise.all([
+    loadData(),
+    supabase.from('stakeholders').select('id, name, detail').eq('is_active', true),
+  ])
+  const candidates = []
+  data.clients.forEach(c => c.name && candidates.push({ type: 'client', id: c.id, name: c.name }))
+  data.projRollup.forEach(p => p.name && candidates.push({ type: 'project', id: p.id, name: p.name }))
+  data.profiles.forEach(u => u.full_name && candidates.push({ type: 'person', id: u.id, name: u.full_name }))
+  ;(stakeholders ?? []).forEach(s => s.name && candidates.push({ type: 'stakeholder', id: s.id, name: s.name, detail: s.detail }))
+
+  const matches = candidates.filter(c => c.name.length >= 3 && t.includes(c.name.toLowerCase()))
+  if (!matches.length) return null
+  matches.sort((a, b) => b.name.length - a.name.length)   // most specific wins
+  const m = matches[0]
+
+  let descriptor
+  if (m.type === 'client')      descriptor = await runClientDetail(data.clients.find(c => c.id === m.id), data)
+  else if (m.type === 'project')     descriptor = runProjectDetail(data.projRollup.find(p => p.id === m.id), data)
+  else if (m.type === 'person')      descriptor = runPersonDetail(m.id, data)
+  else                               descriptor = runStakeholderDetail(m)
+  return { type: m.type, descriptor }
+}
+
 const RUNNERS = {
   clients: runClients,
   members_behind: runMembersBehind,
@@ -206,9 +296,15 @@ const RUNNERS = {
 // null when no rule matched (router then escalates to the SLM).
 export async function runRules(text) {
   const hit = matchIntent(text)
-  if (!hit) return { matched: false, intent: null, descriptor: null }
-  const descriptor = await RUNNERS[hit.intent](hit.params)
-  return { matched: true, intent: hit.intent, descriptor }
+  if (hit) {
+    const descriptor = await RUNNERS[hit.intent](hit.params)
+    return { matched: true, intent: hit.intent, descriptor }
+  }
+  // Generic grounded fallback: does the question name anything we've captured — a client,
+  // project, person or stakeholder? If so, answer from that record. Everything stays in rules.
+  const resolved = await resolveEntity(text)
+  if (resolved) return { matched: true, intent: `detail_${resolved.type}`, descriptor: resolved.descriptor }
+  return { matched: false, intent: null, descriptor: null }
 }
 
 // Lightweight summary for the collapsed KPI chips (one grounded load).

@@ -40,6 +40,7 @@ A running list of open work and considerations. Grouped by priority. Check off a
 - [ ] **Self-hosted SLM option** — provider interface is in place (`slm.js`); add an Ollama-endpoint provider as an alternative to in-browser WebLLM for orgs that prefer a central model.
 - [ ] **More rule intents** — survey response rates, comms draft, per-client comparison. Each new grounded intent keeps work off the model (see "Adding a capability" in the setup doc).
 - [ ] **Vitest in CI** — `rules.test.js` verified via node in-sandbox; run under real Vitest in CI.
+- [ ] **Lean entity resolver (when data grows)** — the generic resolver in `rules.js` currently does a full `loadData()` per freeform question to match a named client/project/person/stakeholder. Fine at current size; when it gets slow, switch to a cheap name-only index first (query just id+name per table), then load full detail only on a hit, and cache the catalog. Extend candidates to surveys/invites/content as those become question-worthy.
 
 ## Recently shipped (context)
 
