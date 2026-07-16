@@ -28,7 +28,9 @@ Deno.serve(async (req) => {
   try {
     const url        = Deno.env.get('SUPABASE_URL')!
     const anonKey    = Deno.env.get('SUPABASE_ANON_KEY')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    // Prefer the auto-injected key; fall back to a manually-set secret (SB_SERVICE_ROLE_KEY)
+    // for projects where SUPABASE_SERVICE_ROLE_KEY isn't provided to functions.
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SB_SERVICE_ROLE_KEY') || ''
     const authHeader = req.headers.get('Authorization') ?? ''
 
     // Who is calling? (RLS as the caller)

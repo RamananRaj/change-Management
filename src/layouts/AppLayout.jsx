@@ -29,6 +29,16 @@ export default function AppLayout() {
         </div>
 
         <nav className="flex-1 px-3 py-4">
+          <NavLink to="/canvas"
+            className={({ isActive }) =>
+              `flex items-center gap-2 px-3 py-2 rounded-md text-sm mb-3 transition-colors ${
+                isActive ? 'bg-white/20 text-white font-medium' : 'text-white/70 hover:bg-white/10 hover:text-white'
+              }`
+            }>
+            <span className="w-4 h-4 bg-[#E8913A] inline-block" style={{ clipPath: 'polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)' }} />
+            AI Canvas
+          </NavLink>
+
           <p className="text-[10px] font-semibold tracking-widest text-white/40 uppercase px-2 mb-2">Phases</p>
           {phases.map(p => (
             <NavLink

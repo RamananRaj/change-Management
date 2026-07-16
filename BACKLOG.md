@@ -26,10 +26,20 @@ A running list of open work and considerations. Grouped by priority. Check off a
 
 - [ ] **Refactor dashboards to import `src/lib/logic.js`** — RAG, access level, at-risk, upcoming, phase status are now canonical + tested in `logic.js` but still inlined in Dashboard/Master/Client components. Point them at the module for a single source of truth.
 - [ ] **Component render tests** — React Testing Library tests for SystemAdmin table, dashboards, and the preview flow (needs jsdom env).
+- [~] **Edge Function integration tests** — `src/integration/edgeFunctions.test.js` invokes the deployed `admin-user-actions` (ping + unknown-action guard, opt-in reset). Skipped unless `TEST_SUPABASE_URL` / admin creds are set. This is the class of test that would have caught the missing service-role key. To extend: add lock/unlock + edit assertions against a throwaway test user, and wire into CI with test secrets.
+- [ ] **Password-reset E2E** — exercise the full reset loop against a dedicated test inbox (trigger reset → confirm recovery link works via `/auth/reset`). Not suitable for the live health dashboard (sends real email).
 - [x] **Scheduled health auto-runs** — `health-check` Edge Function + pg_cron every 15 min + `health_runs` history, shown in the System Health tab (scheduled/manual, pass rates). Secret: `HEALTH_CRON_SECRET` (Supabase secrets). Cron job: `changeflow-health-check`.
 - [ ] **Lock/delete via backend confirmed** — done via `admin-user-actions`; consider soft-deactivate flag as a reversible alternative to hard delete.
 
 ---
+
+## AI Canvas — follow-ups
+
+- [x] **AI Canvas framework** — `/canvas` page: collapsed KPI chips → grounded widgets. Tiered router (Rules → in-browser SLM → external), telemetry to `ai_usage`, System Admin "AI Usage" tab. SQL: `add_ai_canvas.sql`. Setup: `AI_CANVAS_SETUP.md`. Master Admin flows untouched (purely additive). Current intents: at-risk, milestones-due, progress, readiness, members-behind. Capabilities added one at a time from here.
+- [ ] **Stakeholder impact heat map** — deferred (needs an impact-capture step). When built: add `stakeholder_impact` table + RLS, a capture grid (Client Admin → Stakeholders) to score stakeholder × phase 0–100, the `stakeholder_heatmap` intent, and the heat-map widget renderer.
+- [ ] **Self-hosted SLM option** — provider interface is in place (`slm.js`); add an Ollama-endpoint provider as an alternative to in-browser WebLLM for orgs that prefer a central model.
+- [ ] **More rule intents** — survey response rates, comms draft, per-client comparison. Each new grounded intent keeps work off the model (see "Adding a capability" in the setup doc).
+- [ ] **Vitest in CI** — `rules.test.js` verified via node in-sandbox; run under real Vitest in CI.
 
 ## Recently shipped (context)
 

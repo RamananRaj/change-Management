@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
   try {
     const url        = Deno.env.get('SUPABASE_URL')!
     const anonKey    = Deno.env.get('SUPABASE_ANON_KEY')!
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SB_SERVICE_ROLE_KEY') || ''
     const cronSecret = Deno.env.get('HEALTH_CRON_SECRET') ?? ''
     const admin = createClient(url, serviceKey)
 

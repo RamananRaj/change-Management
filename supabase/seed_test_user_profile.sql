@@ -11,7 +11,7 @@
 
 DO $$
 DECLARE
-  v_user_id uuid := 'PASTE-AUTH-USER-UUID-HERE';  -- ← replace this
+  v_user_id uuid := 'faa44ca1-a839-42d8-ac2e-2e9040cf3a11';  -- ← replace this
 BEGIN
 
   INSERT INTO public.profiles (

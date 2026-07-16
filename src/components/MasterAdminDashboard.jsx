@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import MiniTimeline from './MiniTimeline'
+import AiCanvas from './AiCanvas'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -22,6 +23,7 @@ export default function MasterAdminDashboard() {
   const [needsAttention, setNeedsAttention] = useState([])
   const [upcoming, setUpcoming] = useState([])
   const [expanded, setExpanded] = useState({})
+  const [view, setView] = useState('dashboard')   // 'dashboard' | 'ai'
 
   const firstName = profile?.full_name ? profile.full_name.split(' ')[0] : 'there'
   const hour = new Date().getHours()
@@ -130,11 +132,38 @@ export default function MasterAdminDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="bg-[#1F4E79] text-white px-8 py-8">
-        <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Platform Admin</p>
-        <h1 className="text-2xl font-bold">{greeting}, {firstName}</h1>
-        <p className="text-white/70 text-sm mt-1">Platform overview across all clients</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Platform Admin</p>
+            <h1 className="text-2xl font-bold">{greeting}, {firstName}</h1>
+            <p className="text-white/70 text-sm mt-1">{view === 'ai' ? 'Ask AI across all clients — grounded in your data' : 'Platform overview across all clients'}</p>
+          </div>
+          {/* Dashboard ⇄ AI toggle. Dashboard is the default; nothing is removed. */}
+          <div className="flex bg-white/10 rounded-xl p-1 shrink-0">
+            {['dashboard', 'ai'].map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${view === v ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-white/70 hover:text-white'}`}>
+                {v === 'dashboard' ? 'Dashboard' : '✦ AI'}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
+      {view === 'ai' ? (
+        <div className="px-8 py-6">
+          <AiCanvas
+            context="Platform overview across all clients"
+            chips={[
+              { color: '#1F4E79', tag: 'CLIENTS', label: 'Clients', value: totals.clients },
+              { color: '#1F4E79', tag: 'PROJECTS', label: 'Projects', value: totals.projects },
+              { color: '#1F4E79', tag: 'PEOPLE', label: 'People', value: totals.members },
+              { color: '#E8913A', tag: 'PROGRESS', label: 'Avg completion', value: `${totals.pct}%`, query: 'Progress by project' },
+              { color: totals.atRisk > 0 ? '#DC2626' : '#16A34A', tag: 'ATTENTION', label: 'Need attention', value: totals.atRisk, query: "What's at risk this week?" },
+            ]}
+          />
+        </div>
+      ) : (
       <div className="px-8 py-6">
         {/* Metric cards */}
         <div className="grid grid-cols-5 gap-3 mb-5">
@@ -271,6 +300,7 @@ export default function MasterAdminDashboard() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

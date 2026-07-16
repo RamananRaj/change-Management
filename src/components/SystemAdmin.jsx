@@ -6,7 +6,9 @@ import { supabase } from '../lib/supabase'
 // clientId set → scoped mode for a Client Admin (their client's users only).
 export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const scoped = !!clientId
-  const subtabs = scoped ? ['User Management', 'Pending Invites'] : ['User Management', 'Pending Invites', 'System Health']
+  const subtabs = scoped
+    ? ['User Management', 'Pending Invites', 'AI Usage']
+    : ['User Management', 'Pending Invites', 'System Health', 'AI Usage']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -138,6 +140,14 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     loadHealthHistory()
   }
 
+  // ── AI Usage ─────────────────────────────────────────────────────────────────
+  const [ai, setAi] = useState(null)   // null = not loaded yet
+  async function loadAiUsage() {
+    // RLS scopes this: Master Admin sees all, Client Admin sees their client's rows.
+    const { data } = await supabase.from('ai_usage').select('*').order('created_at', { ascending: false }).limit(500)
+    setAi(data ?? [])
+  }
+
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
   const roleLabel  = code => allRoles.find(r => r.code === code)?.label ?? (code ? code.toUpperCase() : '—')
   const fmtDate    = d => d ? new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
@@ -165,7 +175,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {subtabs.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); if (!health.ran) runHealth() } }}
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage() }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -419,6 +429,81 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           })()}
         </div>
       )}
+
+      {/* ── AI USAGE ── */}
+      {tab === 'AI Usage' && (() => {
+        if (ai === null) return <div className="space-y-2">{[1,2,3,4].map(n => <div key={n} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div>
+        const total = ai.length
+        const byTier = t => ai.filter(r => r.tier === t).length
+        const rules = byTier('rules'), slm = byTier('slm'), ext = byTier('external')
+        const localPct = total ? Math.round(((rules + slm) / total) * 100) : 0
+        const extPct   = total ? Math.round((ext / total) * 100) : 0
+        const withLat  = ai.filter(r => r.latency_ms != null)
+        const avgLat   = withLat.length ? Math.round(withLat.reduce((s, r) => s + r.latency_ms, 0) / withLat.length) : 0
+        const tierBadge = t => t === 'rules' ? 'bg-green-100 text-green-700' : t === 'slm' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+        const seg = [{ t: 'rules', n: rules, c: '#16A34A' }, { t: 'slm', n: slm, c: '#2563EB' }, { t: 'external', n: ext, c: '#D97706' }]
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs text-slate-400">Where AI queries are being answered — Rules and the on-device model cost nothing and stay private; external is the only paid, off-device path.</p>
+              <button onClick={loadAiUsage} className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c]">↻ Refresh</button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 mb-5">
+              {[
+                { l: 'Total queries', v: total, c: 'text-[#1F4E79]' },
+                { l: 'Answered locally', v: `${localPct}%`, c: 'text-green-600' },
+                { l: 'Escalated (external)', v: `${extPct}%`, c: extPct > 0 ? 'text-amber-600' : 'text-slate-400' },
+                { l: 'Avg latency', v: `${avgLat}ms`, c: 'text-[#1F4E79]' },
+              ].map((m, i) => (
+                <div key={i} className="bg-white rounded-xl border border-slate-100 p-4">
+                  <p className={`text-2xl font-bold ${m.c}`}>{m.v}</p>
+                  <p className="text-[11px] text-slate-400 mt-1 font-medium">{m.l}</p>
+                </div>
+              ))}
+            </div>
+
+            {total === 0 ? (
+              <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No AI queries logged yet. Try the AI Canvas.</div>
+            ) : (
+              <>
+                {/* Tier split */}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">By tier</p>
+                <div className="flex h-3 rounded-full overflow-hidden mb-2 bg-slate-100">
+                  {seg.filter(s => s.n > 0).map(s => <div key={s.t} style={{ width: `${(s.n / total) * 100}%`, background: s.c }} />)}
+                </div>
+                <div className="flex gap-4 mb-6 text-xs text-slate-500">
+                  {seg.map(s => <span key={s.t} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.c }} />{s.t} ({s.n})</span>)}
+                </div>
+
+                {/* Recent queries */}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent queries</p>
+                <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
+                        <th className="py-2.5 px-3">Time</th><th className="py-2.5 px-3">Tier</th>
+                        <th className="py-2.5 px-3">Intent</th><th className="py-2.5 px-3">Query</th><th className="py-2.5 px-3 text-right">Latency</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ai.slice(0, 60).map(r => (
+                        <tr key={r.id} className="border-t border-slate-100">
+                          <td className="py-2 px-3 text-slate-500 text-xs whitespace-nowrap">{new Date(r.created_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                          <td className="py-2 px-3"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tierBadge(r.tier)}`}>{r.tier}</span></td>
+                          <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.intent ?? '—'}</td>
+                          <td className="py-2 px-3 text-slate-600 text-xs max-w-[280px] truncate" title={r.query}>{r.query ?? '—'}</td>
+                          <td className="py-2 px-3 text-slate-400 text-xs text-right whitespace-nowrap">{r.latency_ms != null ? `${r.latency_ms}ms` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Edit modal */}
       {editing && (

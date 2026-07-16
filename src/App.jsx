@@ -11,6 +11,7 @@ import RoleSelect     from './pages/onboarding/RoleSelect'
 import IndustrySelect from './pages/onboarding/IndustrySelect'
 import Confirm        from './pages/onboarding/Confirm'
 import Dashboard      from './pages/Dashboard'
+import Canvas        from './pages/Canvas'
 import Admin         from './pages/Admin'
 import ClientAdmin   from './pages/ClientAdmin'
 import AdminPreview  from './pages/AdminPreview'
@@ -41,6 +42,7 @@ export default function App() {
             {/* App — requires auth, wrapped in sidebar layout */}
             <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
               <Route path="/dashboard"       element={<Dashboard />} />
+              <Route path="/canvas"          element={<Canvas />} />
               <Route path="/admin"           element={<Admin />} />
               <Route path="/admin/preview"   element={<AdminPreview />} />
               <Route path="/client-admin"    element={<ClientAdmin />} />
