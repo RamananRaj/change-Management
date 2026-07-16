@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { ask } from '../lib/ai/router'
 import { loadSummary } from '../lib/ai/rules'
 import { slmOptedIn } from '../lib/ai/slm'
+import ProjectTimeline from './ProjectTimeline'
 
 // ChangeFlow · reusable AI Canvas experience.
 // Collapsed KPI chips (glance layer) → grounded widgets in an open canvas → prompt bar.
@@ -36,7 +37,7 @@ function Bold({ text }) {
     : <span key={i}>{p}</span>)
 }
 
-function Widget({ d, onRemove }) {
+function Widget({ d, onRemove, onDrill }) {
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm mb-4 overflow-hidden animate-[fadeIn_.25s_ease]">
       <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100">
@@ -50,7 +51,7 @@ function Widget({ d, onRemove }) {
         </div>
       </div>
       <div className="p-5">
-        <WidgetBody d={d} />
+        <WidgetBody d={d} onDrill={onDrill} />
         {d.commentary && (
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3 text-[13.5px] leading-relaxed text-slate-600">
             <Bold text={d.commentary} />
@@ -61,24 +62,39 @@ function Widget({ d, onRemove }) {
   )
 }
 
-function WidgetBody({ d }) {
+function WidgetBody({ d, onDrill }) {
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700"><Bold text={d.body} /></p>
+
+  if (d.type === 'projectTimeline') {
+    if (!d.projects?.length) return <p className="text-sm text-slate-400">No project timeline available.</p>
+    return (
+      <div className="space-y-8">
+        {d.projects.map(p => <ProjectTimeline key={p.id} project={p} readOnly />)}
+      </div>
+    )
+  }
 
   if (d.type === 'list') {
     if (!d.rows?.length) return <p className="text-sm text-slate-400">{d.empty}</p>
     return (
       <div className="space-y-2">
-        {d.rows.map((r, i) => (
-          <div key={i} className="flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5">
-            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.rag === 'r' ? 'bg-red-500' : r.rag === 'a' ? 'bg-amber-500' : 'bg-green-500'}`} />
-            <div className="min-w-0">
-              <p className="font-semibold text-sm text-slate-800 truncate">{r.name}</p>
-              <p className="text-xs text-slate-400 truncate">{r.meta}</p>
-            </div>
-            {r.due && <span className="ml-auto text-xs text-slate-400 shrink-0">{r.due}</span>}
-          </div>
-        ))}
+        {d.rows.map((r, i) => {
+          const clickable = r.drill && onDrill
+          const Tag = clickable ? 'button' : 'div'
+          return (
+            <Tag key={i} onClick={clickable ? () => onDrill(r.drill) : undefined}
+              className={`w-full text-left flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5 ${clickable ? 'cursor-pointer hover:border-[#1F4E79] hover:bg-slate-50 transition-colors' : ''}`}>
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.rag === 'r' ? 'bg-red-500' : r.rag === 'a' ? 'bg-amber-500' : 'bg-green-500'}`} />
+              <div className="min-w-0">
+                <p className="font-semibold text-sm text-slate-800 truncate">{r.name}</p>
+                <p className="text-xs text-slate-400 truncate">{r.meta}</p>
+              </div>
+              {r.due && <span className="ml-auto text-xs text-slate-400 shrink-0">{r.due}</span>}
+              {clickable && <span className={`text-slate-300 ${r.due ? '' : 'ml-auto'}`}>›</span>}
+            </Tag>
+          )
+        })}
       </div>
     )
   }
@@ -86,11 +102,14 @@ function WidgetBody({ d }) {
   if (d.type === 'progress') {
     if (!d.rows?.length) return <p className="text-sm text-slate-400">{d.empty}</p>
     return (
-      <div className="space-y-2.5">
+      <div className="space-y-1.5">
         {d.rows.map((r, i) => {
           const c = r.value >= 75 ? '#16A34A' : r.value >= 55 ? '#D97706' : '#DC2626'
+          const clickable = r.drill && onDrill
+          const Tag = clickable ? 'button' : 'div'
           return (
-            <div key={i} className="flex items-center gap-3">
+            <Tag key={i} onClick={clickable ? () => onDrill(r.drill) : undefined}
+              className={`w-full text-left flex items-center gap-3 rounded-lg px-2 py-1.5 ${clickable ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''}`}>
               <div className="w-32 shrink-0 min-w-0">
                 <p className="text-[13px] font-semibold text-slate-700 truncate">{r.label}</p>
                 {r.sub && <p className="text-[10px] text-slate-400 truncate">{r.sub}</p>}
@@ -99,7 +118,8 @@ function WidgetBody({ d }) {
                 <div className="h-full rounded-full" style={{ width: `${r.value}%`, background: c }} />
               </div>
               <span className="w-11 text-right text-[13px] font-bold" style={{ color: c }}>{r.value}%</span>
-            </div>
+              {clickable && <span className="text-slate-300">›</span>}
+            </Tag>
           )
         })}
       </div>
@@ -202,7 +222,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
             <p className="max-w-md text-sm leading-relaxed">Answers are grounded in your real, role-scoped data. Tap a chip above or a suggestion below to begin.</p>
           </div>
         ) : (
-          widgets.map(w => <Widget key={w.key} d={w} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
+          widgets.map(w => <Widget key={w.key} d={w} onDrill={run} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
         )}
       </div>
 

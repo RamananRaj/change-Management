@@ -126,7 +126,7 @@ async function runClients() {
     const done = cp.reduce((s, p) => s + p.done, 0)
     const total = cp.reduce((s, p) => s + p.total, 0)
     const pct = total > 0 ? Math.round((done / total) * 100) : 0
-    return { label: c.name, sub: `${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}`, value: pct }
+    return { label: c.name, sub: `${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}`, value: pct, drill: `Show me the details on ${c.name}` }
   }).sort((a, b) => a.value - b.value)
   return {
     type: 'progress', title: `Clients (${rows.length})`, rows,
@@ -137,7 +137,7 @@ async function runClients() {
 
 async function runProgress() {
   const { projRollup } = await loadData()
-  const rows = projRollup.map(p => ({ label: p.name, value: p.pct, sub: p.clientName }))
+  const rows = projRollup.map(p => ({ label: p.name, value: p.pct, sub: p.clientName, drill: `Show me the ${p.name} timeline` }))
     .sort((a, b) => a.value - b.value)
   const avg = rows.length ? Math.round(rows.reduce((s, r) => s + r.value, 0) / rows.length) : 0
   const drag = rows[0], lead = rows[rows.length - 1]
@@ -209,7 +209,7 @@ async function runClientDetail(client, data) {
   const rows = cp.map(p => {
     const cur = currentPhase(p)
     const noDates = p.phases.every(x => !x.planned_start)
-    return { label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}${cur ? ` · ${cur} underway` : noDates ? ' · no dates yet' : ''}`, value: p.pct }
+    return { label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}${cur ? ` · ${cur} underway` : noDates ? ' · no dates yet' : ''}`, value: p.pct, drill: `Show me the ${p.name} timeline` }
   })
   let overdue = 0
   cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue++ }))
@@ -245,7 +245,7 @@ function runPersonDetail(userId, data) {
   const rows = theirs.map(p => {
     let done = 0, steps = 0
     p.phases.forEach(ph => { const mm = ph.perMember.find(x => x.user_id === userId); if (mm) { done += mm.done; steps += mm.steps } })
-    return { label: p.name, sub: `${done}/${steps} steps · ${p.clientName}`, value: steps > 0 ? Math.round((done / steps) * 100) : 0 }
+    return { label: p.name, sub: `${done}/${steps} steps · ${p.clientName}`, value: steps > 0 ? Math.round((done / steps) * 100) : 0, drill: `Show me the ${p.name} timeline` }
   })
   const commentary = `**${prof?.full_name ?? 'Member'}**${prof?.role ? ` · ${prof.role}` : ''} — on ${theirs.length} project${theirs.length === 1 ? '' : 's'}.`
   return { type: 'progress', title: prof?.full_name ?? 'Member', rows, empty: 'Not assigned to any projects.', commentary }
@@ -274,6 +274,16 @@ async function resolveEntity(text) {
   if (!matches.length) return null
   matches.sort((a, b) => b.name.length - a.name.length)   // most specific wins
   const m = matches[0]
+
+  // "timeline / schedule / roadmap / gantt" → render the actual timeline (delivery + change
+  // lanes + phases) rather than a progress list. Client → all its projects' timelines.
+  const wantsTimeline = /(timeline|schedule|roadmap|gantt)/i.test(text)
+  if (wantsTimeline && (m.type === 'client' || m.type === 'project')) {
+    const projects = m.type === 'project'
+      ? [{ id: m.id, name: m.name }]
+      : data.projRollup.filter(p => p.client_id === m.id).map(p => ({ id: p.id, name: p.name }))
+    return { type: 'timeline', descriptor: { type: 'projectTimeline', title: `${m.name} — timeline${projects.length === 1 ? '' : 's'}`, projects } }
+  }
 
   let descriptor
   if (m.type === 'client')      descriptor = await runClientDetail(data.clients.find(c => c.id === m.id), data)

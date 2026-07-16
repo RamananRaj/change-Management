@@ -227,6 +227,58 @@ export default function ProjectTimeline({ project, readOnly = false }) {
               )
             })}
 
+            {/* CHANGE group */}
+            <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-widest text-teal-600">CHANGE</div>
+            {changeItems.length === 0 && (
+              <div className="px-3 pb-2 text-[11px] text-slate-300">No change milestones yet.</div>
+            )}
+            {changeItems.map(m => {
+              const isBand = m.starts_on && m.ends_on
+              return (
+                <div key={m.id} className="flex items-center border-b border-slate-50 group">
+                  <LabelCol name={m.name} dates={isBand ? `${fmtShort(toDate(m.starts_on))} – ${fmtShort(toDate(m.ends_on))}` : (m.milestone_date ? fmtShort(toDate(m.milestone_date)) : '—')} accent="text-teal-600" />
+                  <div className="relative flex-1 h-8" style={{ width: trackW }}>
+                    <TodayLine />
+                    {isBand ? (() => {
+                      const bx = posOf(m.starts_on)
+                      const bw = Math.max(posOf(m.ends_on) - bx, 8)
+                      const inside = bw >= estTextW(m.name)
+                      const outRight = bx + bw + estTextW(m.name) <= trackW
+                      return (
+                        <>
+                          <div className="absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden" style={{ left: bx, width: bw, background: '#ccfbf1', border: '1px solid #5eead4' }}>
+                            {inside && <span className="text-[10px] font-semibold text-teal-700 whitespace-nowrap">{m.name}</span>}
+                          </div>
+                          {!inside && (
+                            <span className="absolute top-2 text-[10px] font-semibold text-teal-700 whitespace-nowrap"
+                              style={outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(m.name) - 4, 2) }}>{m.name}</span>
+                          )}
+                        </>
+                      )
+                    })() : m.milestone_date && (() => {
+                      const dx = posOf(m.milestone_date)
+                      const labelRight = dx + 12 + estTextW(m.name) <= trackW
+                      return (
+                        <>
+                          <div className="absolute z-[5]" style={{ left: dx - 7, top: 6 }}>
+                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={m.color || '#0d9488'} /></svg>
+                          </div>
+                          <span className="absolute top-2 text-[10px] font-semibold text-teal-700 whitespace-nowrap"
+                            style={labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(m.name) - 11, 2) }}>{m.name}</span>
+                        </>
+                      )
+                    })()}
+                  </div>
+                  {!readOnly && (
+                    <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setMsForm({ ...emptyMs, ...m, kind: isBand ? 'band' : 'point', milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '' })} className="text-[10px] text-teal-600 hover:underline">Edit</button>
+                      <button onClick={() => deleteMilestone(m.id)} className="text-[10px] text-red-400 hover:underline ml-1.5">Del</button>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
             {/* CHANGEFLOW group */}
             <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-widest text-[#E8913A]">CHANGEFLOW PHASES</div>
             {phases.map(p => {
