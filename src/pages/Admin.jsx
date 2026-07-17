@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AdminSurveys from '../components/AdminSurveys'
@@ -92,6 +92,7 @@ const emptyIndustryForm = {
 
 export default function Admin() {
   const { profile } = useAuth()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   // Allow deep-linking, e.g. /admin?section=Clients&client=<id>
   const [section, setSection] = useState(() => searchParams.get('section') || 'Cockpit')
@@ -658,7 +659,7 @@ export default function Admin() {
   const selectedProject = allProjects.find(p => p.id === selectedUser)
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="p-8">
       {/* Header */}
       <div className="mb-6">
         <p className="text-xs text-slate-400 uppercase tracking-widest font-semibold mb-1">Admin</p>
@@ -1809,6 +1810,14 @@ export default function Admin() {
           </div>
         </div>
       )}
+
+      {/* Admin "Ask" pill — persistent across every admin screen (grounded, admin-scoped AI) */}
+      <button onClick={() => navigate('/canvas')}
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-white border border-slate-200 rounded-full pl-4 pr-2 py-2 shadow-lg hover:shadow-xl transition-shadow">
+        <span className="w-2.5 h-2.5 rounded-full bg-[#E8913A]" />
+        <span className="text-slate-500 text-sm">Ask ChangeFlow — admin…</span>
+        <span className="w-8 h-8 rounded-full bg-[#FDECD8] text-[#E8913A] grid place-items-center font-bold text-sm">✦</span>
+      </button>
     </div>
   )
 }
