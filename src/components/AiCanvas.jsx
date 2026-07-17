@@ -79,6 +79,21 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700"><Bold text={d.body} /></p>
 
+  if (d.type === 'report') {
+    return (
+      <div className="space-y-7">
+        {d.subtitle && <p className="text-xs text-slate-400 -mt-1">{d.subtitle}</p>}
+        {(d.sections ?? []).map((s, i) => (
+          <section key={i}>
+            <h3 className="text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">{s.heading}</h3>
+            <WidgetBody d={s} onDrill={onDrill} onNavigate={onNavigate} />
+          </section>
+        ))}
+        <button onClick={() => window.print()} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">🖨 Print / Save as PDF</button>
+      </div>
+    )
+  }
+
   if (d.type === 'templateDraft') {
     const dr = d.draft
     const typeBadge = { text: 'bg-slate-100 text-slate-600', number: 'bg-blue-100 text-blue-700', date: 'bg-purple-100 text-purple-700', select: 'bg-amber-100 text-amber-700', rating: 'bg-green-100 text-green-700', checkbox: 'bg-slate-100 text-slate-600' }

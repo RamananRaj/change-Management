@@ -213,6 +213,68 @@ async function runHeatmap(_params, text) {
   return { type: 'narrative', title: 'No heat map yet', body: named ? `No heat map captured for **${named.name}** yet — attach the stakeholder-mapping slide and I'll capture it.` : 'No heat maps captured yet. Attach a stakeholder-mapping slide in the AI Canvas and I\'ll capture it.' }
 }
 
+// Assemble a comprehensive change report for a client — snapshot, heat map, timeline,
+// needs-attention, upcoming, readiness, recommendations. Sections are mini-descriptors the
+// report widget renders with the existing renderers. Grounded; will grow over time.
+async function runReport(_params, text) {
+  const data = await loadData()
+  const t = (text ?? '').toLowerCase()
+  const client = data.clients.find(c => c.name && c.name.length >= 3 && t.includes(c.name.toLowerCase())) || (data.clients.length === 1 ? data.clients[0] : null)
+  if (!client && data.clients.length > 1) {
+    return { type: 'narrative', title: 'Which client?', body: `Name the client for the report, e.g. "build the change report for **${data.clients[0].name}**".` }
+  }
+  const cid = client?.id
+  const cp = data.projRollup.filter(p => !cid || p.client_id === cid)
+  const memberIds = new Set(cp.flatMap(p => p.memberIds))
+  const people = memberIds.size
+  const done = cp.reduce((s, p) => s + p.done, 0), total = cp.reduce((s, p) => s + p.total, 0)
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0
+  const scores = data.surveys.filter(s => memberIds.has(s.user_id) && s.score != null)
+  const avg = scores.length ? scores.reduce((s, r) => s + r.score, 0) / scores.length : null
+  const ragWord = avg == null ? 'not yet measured' : avg >= 3.5 ? 'Green — on track' : avg >= 2.5 ? 'Amber — at risk' : 'Red — critical'
+
+  const atRisk = []
+  cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < data.today && ph.pct < 100 && ph.steps > 0) atRisk.push({ rag: ph.pct < 40 ? 'r' : 'a', name: `${ph.name} · ${p.name}`, meta: `${ph.pct}% complete`, due: 'overdue' }) }))
+
+  const soon = new Date(data.today); soon.setDate(soon.getDate() + 30)
+  const projName = id => cp.find(p => p.id === id)?.name ?? 'Project'
+  const upcoming = [
+    ...data.milestones.filter(m => cp.some(p => p.id === m.project_id) && m.milestone_date && new Date(m.milestone_date) >= data.today && new Date(m.milestone_date) <= soon)
+      .map(m => ({ rag: 'g', name: m.name, meta: projName(m.project_id), due: fmtDate(m.milestone_date), _d: m.milestone_date })),
+    ...cp.flatMap(p => p.phases.filter(ph => ph.planned_start && new Date(ph.planned_start) > data.today && new Date(ph.planned_start) <= soon)
+      .map(ph => ({ rag: 'g', name: `${ph.name} starts`, meta: p.name, due: fmtDate(ph.planned_start), _d: ph.planned_start }))),
+  ].sort((a, b) => new Date(a._d) - new Date(b._d)).slice(0, 8)
+
+  let heatSection = null, heatInsights = []
+  if (cid) {
+    const { data: arts } = await supabase.from('change_artifacts').select('title, version, source, data').eq('client_id', cid).eq('type', 'stakeholder_heatmap').eq('is_current', true).order('version', { ascending: false }).limit(1)
+    const a = arts?.[0]
+    if (a) { heatInsights = analyseHeatmap(a.data); heatSection = { heading: 'Change impact heat map', type: 'heatmap', cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, headline: a.data.commentary, insights: heatInsights } }
+  }
+
+  const sections = []
+  sections.push({ heading: 'Executive summary', type: 'narrative', body:
+    `**${client?.name ?? 'Programme'}** — ${cp.length} project${cp.length === 1 ? '' : 's'}, ${people} ${people === 1 ? 'person' : 'people'}, **${pct}%** average completion. Readiness is **${ragWord}**.` +
+    (atRisk.length ? ` **${atRisk.length}** phase${atRisk.length === 1 ? ' is' : 's are'} overdue and need attention.` : ' No phases are currently overdue.') })
+  sections.push({ heading: 'Programme snapshot', type: 'progress', empty: 'No projects yet.',
+    rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => a.value - b.value) })
+  if (heatSection) sections.push(heatSection)
+  if (cp.length) sections.push({ heading: 'Delivery & change timeline', type: 'projectTimeline', projects: cp.map(p => ({ id: p.id, name: p.name })) })
+  sections.push({ heading: 'Needs attention', type: 'list', rows: atRisk, empty: 'Everything is on track.' })
+  sections.push({ heading: 'Upcoming (next 30 days)', type: 'list', rows: upcoming, empty: 'Nothing scheduled ahead.' })
+  sections.push({ heading: 'Readiness', type: 'narrative', body: `Average readiness **${avg == null ? '—' : avg.toFixed(1)}** (${ragWord})${scores.length ? ` from ${scores.length} survey response${scores.length === 1 ? '' : 's'}` : ' — no survey responses captured yet'}.` })
+
+  const recs = []
+  if (heatInsights.length) recs.push(heatInsights[heatInsights.length - 1].replace(/^\*\*Recommendation:\*\*\s*/, ''))
+  if (atRisk.length) recs.push(`Clear the ${atRisk.length} overdue phase${atRisk.length === 1 ? '' : 's'} first — they gate go-live.`)
+  if (avg != null && avg < 3.5) recs.push('Lift survey readiness with targeted comms before the next gate.')
+  if (!recs.length) recs.push('On track — maintain cadence and re-run this report as data updates.')
+  sections.push({ heading: 'Recommendations', type: 'narrative', body: recs.join(' ') })
+
+  return { type: 'report', title: `Change report — ${client?.name ?? 'Programme'}`,
+    subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })} · grounded in live data`, sections }
+}
+
 async function runUpcoming() {
   const { projRollup, milestones, today } = await loadData()
   const projName = id => projRollup.find(p => p.id === id)?.name ?? 'Project'
@@ -458,6 +520,7 @@ async function resolveEntity(text) {
 }
 
 const RUNNERS = {
+  report: runReport,
   heatmap: runHeatmap,
   my_progress: runMyJourney,
   my_readiness: runMyReadiness,

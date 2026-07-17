@@ -125,7 +125,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     })
 
     // Data tables
-    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites'])
+    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites', 'templates', 'ai_usage', 'change_artifacts'])
       await time(t, 'Data', headCount(t))
 
     // Permissions / RPC helpers

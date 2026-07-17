@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     const { error: pingErr } = await admin.from('clients').select('id', { count: 'exact', head: true })
     await check('Database (Supabase)', 'Server', async () => { if (pingErr) throw pingErr; return `${Date.now() - p0}ms response` })
 
-    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites', 'health_runs'])
+    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites', 'health_runs', 'templates', 'ai_usage', 'change_artifacts'])
       await check(t, 'Data', head(t))
 
     const total = checks.length
