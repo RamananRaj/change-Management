@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ask } from '../lib/ai/router'
 import { loadSummary } from '../lib/ai/rules'
@@ -37,7 +38,10 @@ function Bold({ text }) {
     : <span key={i}>{p}</span>)
 }
 
-function Widget({ d, onRemove, onDrill }) {
+const RAG_DOT = { green: '#16A34A', amber: '#D97706', red: '#DC2626' }
+
+function Widget({ d, onRemove, onDrill, onNavigate, canAct }) {
+  const showAction = d.action && (!d.action.adminOnly || canAct)
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm mb-4 overflow-hidden animate-[fadeIn_.25s_ease]">
       <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100">
@@ -56,6 +60,11 @@ function Widget({ d, onRemove, onDrill }) {
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3 text-[13.5px] leading-relaxed text-slate-600">
             <Bold text={d.commentary} />
           </div>
+        )}
+        {showAction && (
+          <button onClick={() => onNavigate?.(d.action.to)} className="mt-3 text-sm font-semibold text-[#1F4E79] hover:underline">
+            {d.action.label}
+          </button>
         )}
       </div>
     </div>
@@ -111,7 +120,10 @@ function WidgetBody({ d, onDrill }) {
             <Tag key={i} onClick={clickable ? () => onDrill(r.drill) : undefined}
               className={`w-full text-left flex items-center gap-3 rounded-lg px-2 py-1.5 ${clickable ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''}`}>
               <div className="w-32 shrink-0 min-w-0">
-                <p className="text-[13px] font-semibold text-slate-700 truncate">{r.label}</p>
+                <p className="text-[13px] font-semibold text-slate-700 truncate flex items-center gap-1.5">
+                  {r.rag && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: RAG_DOT[r.rag] }} />}
+                  <span className="truncate">{r.label}</span>
+                </p>
                 {r.sub && <p className="text-[10px] text-slate-400 truncate">{r.sub}</p>}
               </div>
               <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
@@ -135,6 +147,7 @@ function WidgetBody({ d, onDrill }) {
 // briefing (e.g. Needs attention + Upcoming) instead of an empty canvas.
 export default function AiCanvas({ fill = false, context = 'Ask anything about your programme — grounded in your data', showChips = true, chips = null, initialQueries = null }) {
   const { user, profile } = useAuth()
+  const navigate = useNavigate()
   const ctx = useMemo(() => ({ userId: user?.id ?? null, clientId: profile?.client_id ?? null }), [user, profile])
 
   const [summary, setSummary] = useState(null)
@@ -240,7 +253,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
             <p className="max-w-md text-sm leading-relaxed">Answers are grounded in your real, role-scoped data. Tap a chip above or a suggestion below to begin.</p>
           </div>
         ) : (
-          widgets.map(w => <Widget key={w.key} d={w} onDrill={run} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
+          widgets.map(w => <Widget key={w.key} d={w} onDrill={run} onNavigate={navigate} canAct={!!profile?.is_admin} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
         )}
       </div>
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { MemberDashboard } from './Dashboard'
@@ -19,6 +19,11 @@ export default function AdminPreview() {
   const [memberId,  setMemberId]  = useState('')
   const [preview,   setPreview]   = useState(null)
 
+  // Deep link from the AI Canvas: /admin/preview?project=<id>&user=<id> → auto-open that member.
+  const [params] = useSearchParams()
+  const deepProject = params.get('project')
+  const deepUser    = params.get('user')
+
   useEffect(() => {
     Promise.all([
       supabase.from('clients').select('id, name, industry').order('name'),
@@ -28,6 +33,20 @@ export default function AdminPreview() {
       setClients(c.data ?? []); setProjects(p.data ?? []); setRoles(r.data ?? [])
     })
   }, [])
+
+  // Apply a deep link once: preselect the project + member mode.
+  useEffect(() => {
+    if (deepProject) { setProjectId(deepProject); setMode('member') }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepProject])
+
+  // When that project's members load, auto-start the preview for the deep-linked user.
+  useEffect(() => {
+    if (!deepUser || preview) return
+    const m = members.find(x => x.id === deepUser)
+    if (m) { setMemberId(deepUser); setPreview({ userId: deepUser, projectId: deepProject, profile: m }) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, deepUser])
 
   // Load the chosen project's members (for the "view as member" dropdown)
   useEffect(() => {

@@ -118,15 +118,23 @@ async function runMilestones() {
   }
 }
 
+const RAG_WORD = { green: 'On track', amber: 'At risk', red: 'Critical' }
+const ragOf = avg => avg == null ? null : avg >= 3.5 ? 'green' : avg >= 2.5 ? 'amber' : 'red'
+
 async function runClients() {
-  const { clients, projRollup } = await loadData()
+  const { clients, projRollup, surveys } = await loadData()
   const rows = clients.map(c => {
     const cp = projRollup.filter(p => p.client_id === c.id)
-    const people = new Set(cp.flatMap(p => p.memberIds)).size
+    const memberIds = new Set(cp.flatMap(p => p.memberIds))
+    const people = memberIds.size
     const done = cp.reduce((s, p) => s + p.done, 0)
     const total = cp.reduce((s, p) => s + p.total, 0)
     const pct = total > 0 ? Math.round((done / total) * 100) : 0
-    return { label: c.name, sub: `${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}`, value: pct, drill: `Show me the details on ${c.name}` }
+    const cScores = surveys.filter(s => memberIds.has(s.user_id) && s.score != null)
+    const avg = cScores.length ? cScores.reduce((s, r) => s + r.score, 0) / cScores.length : null
+    const rag = ragOf(avg)
+    const base = `${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'}`
+    return { label: c.name, sub: rag ? `${base} · ${RAG_WORD[rag]}` : base, value: pct, rag, drill: `Show me the details on ${c.name}` }
   }).sort((a, b) => a.value - b.value)
   return {
     type: 'progress', title: `Clients (${rows.length})`, rows,
@@ -209,9 +217,12 @@ async function runMembersBehind({ phase } = {}) {
 // Detail for a single named client — projects (with current phase), people, completion,
 // overdue phases and next milestone. Grounded; mirrors the dashboard's expanded client view.
 async function runClientDetail(client, data) {
-  const { projRollup, today } = data
+  const { projRollup, today, surveys } = data
   const cp = projRollup.filter(p => p.client_id === client.id)
-  const people = new Set(cp.flatMap(p => p.memberIds)).size
+  const memberIds = new Set(cp.flatMap(p => p.memberIds))
+  const people = memberIds.size
+  const cScores = (surveys ?? []).filter(s => memberIds.has(s.user_id) && s.score != null)
+  const clientRag = ragOf(cScores.length ? cScores.reduce((s, r) => s + r.score, 0) / cScores.length : null)
   const done = cp.reduce((s, p) => s + p.done, 0)
   const total = cp.reduce((s, p) => s + p.total, 0)
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
@@ -228,7 +239,7 @@ async function runClientDetail(client, data) {
   cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue++ }))
   const nextMs = cp.flatMap(p => p.milestones).filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
     .sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
-  const commentary = `**${client.name}** — ${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'} · **${pct}%** average completion.` +
+  const commentary = `**${client.name}** — ${clientRag ? `**${RAG_WORD[clientRag]}** · ` : ''}${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'} · **${pct}%** average completion.` +
     (overdue ? ` ${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue.` : '') +
     (nextMs ? ` Next milestone: ${nextMs.name} on ${new Date(nextMs.milestone_date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}.` : '')
   return { type: 'progress', title: client.name, rows, empty: `${client.name} has no projects yet.`, commentary }
@@ -261,7 +272,11 @@ function runPersonDetail(userId, data) {
     return { label: p.name, sub: `${done}/${steps} steps · ${p.clientName}`, value: steps > 0 ? Math.round((done / steps) * 100) : 0, drill: `Show me the ${p.name} timeline` }
   })
   const commentary = `**${prof?.full_name ?? 'Member'}**${prof?.role ? ` · ${prof.role}` : ''} — on ${theirs.length} project${theirs.length === 1 ? '' : 's'}.`
-  return { type: 'progress', title: prof?.full_name ?? 'Member', rows, empty: 'Not assigned to any projects.', commentary }
+  // "View as member" deep-link (Master-Admin-only; the UI gates rendering by role).
+  const action = theirs.length
+    ? { label: `View as ${prof?.full_name ?? 'member'} (read-only) →`, to: `/admin/preview?project=${theirs[0].id}&user=${userId}`, adminOnly: true }
+    : null
+  return { type: 'progress', title: prof?.full_name ?? 'Member', rows, empty: 'Not assigned to any projects.', commentary, action }
 }
 
 function runStakeholderDetail(s) {

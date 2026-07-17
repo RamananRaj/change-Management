@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { usePresence } from '../hooks/usePresence'
 import AdminNotes from '../components/AdminNotes'
 
 // Full-page layout. No left rail — content uses the whole width. Navigation lives in two
@@ -16,8 +17,9 @@ const phases = [
 ]
 
 export default function AppLayout() {
-  const { profile, signOut } = useAuth()
+  const { user, profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const online = usePresence(user, profile)
   const [fabOpen, setFabOpen]   = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -51,6 +53,37 @@ export default function AppLayout() {
         </NavLink>
 
         <div className="ml-auto flex items-center gap-1.5">
+          {/* Presence — who's online (foundation for chat/comments later) */}
+          {online.length > 0 && (
+            <div className="relative group flex items-center mr-1">
+              <div className="flex -space-x-2 items-center">
+                {online.slice(0, 4).map(u => (
+                  <span key={u.id} title={u.name}
+                    className="relative w-8 h-8 rounded-full bg-[#1F4E79] text-white text-[11px] font-bold flex items-center justify-center ring-2 ring-white">
+                    {u.initials}
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white" />
+                  </span>
+                ))}
+                {online.length > 4 && (
+                  <span className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 text-[11px] font-bold flex items-center justify-center ring-2 ring-white">+{online.length - 4}</span>
+                )}
+              </div>
+              {/* Hover tooltip: who's online */}
+              <div className="absolute right-0 top-11 hidden group-hover:block bg-white shadow-xl border border-slate-100 rounded-xl p-3 w-60 z-50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Online now · {online.length}</p>
+                <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                  {online.map(u => (
+                    <div key={u.id} className="flex items-center gap-2">
+                      <span className="w-2 h-2 bg-green-500 rounded-full shrink-0" />
+                      <span className="text-sm text-slate-700 truncate">{u.name}</span>
+                      {u.role && <span className="ml-auto text-[10px] text-slate-400 shrink-0">{u.role}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="w-px h-6 bg-slate-200 mx-2" />
+            </div>
+          )}
           <TopIcon to="/dashboard" title="Dashboard">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
           </TopIcon>
