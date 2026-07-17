@@ -158,6 +158,31 @@ async function runPeople() {
   }
 }
 
+// Compute grounded insights from a heat-map grid (not a one-liner): hottest groups + domain,
+// the actual High+ hotspots, the spread, lightest touch, and a sequencing recommendation.
+function analyseHeatmap(data) {
+  const SCORE = { vh: 5, h: 4, m: 3, l: 2, vl: 1, none: 0 }
+  const LBL = { vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Very Low', none: 'None' }
+  const cols = data.cols ?? [], rows = data.rows ?? []
+  if (!rows.length || !cols.length) return []
+  const rowTotals = rows.map(r => ({ label: r.label, total: r.cells.reduce((s, c) => s + (SCORE[c] ?? 0), 0) })).sort((a, b) => b.total - a.total)
+  const colTotals = cols.map((c, ci) => ({ label: c, total: rows.reduce((s, r) => s + (SCORE[r.cells[ci]] ?? 0), 0) })).sort((a, b) => b.total - a.total)
+  const hotspots = []
+  const counts = {}
+  rows.forEach(r => r.cells.forEach((c, ci) => { counts[c] = (counts[c] || 0) + 1; if (c === 'vh' || c === 'h') hotspots.push(`${r.label} · ${cols[ci]} (${LBL[c]})`) }))
+  const totalCells = rows.length * cols.length
+  const highPlus = (counts.vh || 0) + (counts.h || 0)
+  const out = [
+    `**Highest-impact groups:** ${rowTotals.slice(0, 2).map(r => r.label).join(' and ')} — focus change effort, comms and champions here first.`,
+    `**Most-affected domain:** ${colTotals[0].label}${colTotals[1] ? `, then ${colTotals[1].label}` : ''} across the register — align training and readiness to it.`,
+    hotspots.length ? `**${hotspots.length} hotspot${hotspots.length > 1 ? 's' : ''} at High or above:** ${hotspots.slice(0, 6).join('; ')}${hotspots.length > 6 ? ` +${hotspots.length - 6} more` : ''}.` : 'No cells rated High or above.',
+    `**Spread:** ${highPlus} of ${totalCells} cells are High+, ${counts.m || 0} Medium, ${(counts.l || 0) + (counts.vl || 0)} Low.`,
+    `**Lightest touch:** ${rowTotals[rowTotals.length - 1].label} — keep informed, but don't over-invest engagement there.`,
+    `**Recommendation:** sequence engagement starting with ${rowTotals[0].label}; prioritise ${colTotals[0].label} interventions, and revisit as the assessment is re-versioned.`,
+  ]
+  return out
+}
+
 // Retrieve a stored heat-map artifact. Works whether or not a client is named:
 //  • names a client  → that client's current heat map
 //  • no client, one available (RLS-scoped) → show it
@@ -177,7 +202,9 @@ async function runHeatmap(_params, text) {
   else if (list.length === 1) pick = list[0]
 
   if (pick) {
-    return { type: 'heatmap', title: `${nameOfClient(pick.client_id)} — ${pick.title}`, cols: pick.data.cols, rows: pick.data.rows, version: pick.version, source: pick.source, commentary: pick.data.commentary ?? null }
+    return { type: 'heatmap', title: `${nameOfClient(pick.client_id)} — ${pick.title}`,
+      cols: pick.data.cols, rows: pick.data.rows, version: pick.version, source: pick.source,
+      headline: pick.data.commentary ?? null, insights: analyseHeatmap(pick.data) }
   }
   if (list.length > 1) {
     const names = [...new Set(list.map(a => nameOfClient(a.client_id)).filter(Boolean))]

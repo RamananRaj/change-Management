@@ -144,6 +144,17 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
         <div className="flex flex-wrap gap-2.5 mt-3 text-[10.5px] text-slate-400">
           {['vh', 'h', 'm', 'l', 'vl', 'none'].map(k => <span key={k} className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ background: LV[k] }} />{NAME[k]}</span>)}
         </div>
+        {(d.headline || d.insights?.length) && (
+          <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3.5">
+            <p className="text-[10px] font-bold text-[#E8913A] uppercase tracking-widest mb-2">✦ AI insight</p>
+            {d.headline && <p className="text-[13.5px] leading-relaxed text-slate-600 mb-2.5"><Bold text={d.headline} /></p>}
+            {d.insights?.length > 0 && (
+              <ul className="space-y-1.5 text-[13px] leading-relaxed text-slate-600 list-disc pl-4 marker:text-slate-300">
+                {d.insights.map((s, i) => <li key={i}><Bold text={s} /></li>)}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     )
   }
