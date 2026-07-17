@@ -254,6 +254,10 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
   const progressPct  = allPhases.length > 0 ? Math.round((completedCount / allPhases.length) * 100) : 0
   const isLocked     = phaseStatus === 'locked' && !profile?.is_admin
 
+  // Pathway progress (for the hero strip)
+  const pathwayDone = pathwayItems.filter(i => activities.find(a => a.content_id === i.id)?.status === 'completed').length
+  const pathwayPct  = pathwayItems.length > 0 ? Math.round((pathwayDone / pathwayItems.length) * 100) : 0
+
   // Scope filter counts (for pill labels)
   const scopeCounts = {
     all:      items.length,
@@ -296,8 +300,8 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
 
   return (
     <div className="min-h-full bg-slate-50">
-      {/* Phase hero */}
-      <div className={`bg-gradient-to-br ${color.bg} px-8 py-8`}>
+      {/* Phase hero — navy, matching the app-wide AI theme */}
+      <div className="bg-gradient-to-br from-[#1F4E79] to-[#163a5c] px-8 py-8">
         <div className="max-w-4xl">
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs font-bold tracking-widest text-white/60 uppercase">
@@ -329,6 +333,19 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
                 className="text-xs bg-white/15 text-white border border-white/25 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-white/60 [&>option]:text-slate-800">
                 {projectsList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
+            </div>
+          )}
+
+          {/* Pathway progress strip */}
+          {!loading && !isLocked && pathwayItems.length > 0 && (
+            <div className="mt-5 bg-white/10 rounded-2xl px-5 py-4 max-w-xl">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-white text-sm font-semibold">Your Path · {pathwayItems.length} step{pathwayItems.length === 1 ? '' : 's'}</p>
+                <span className="text-xl font-bold text-[#E8913A]">{pathwayPct}%</span>
+              </div>
+              <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-[#E8913A] rounded-full transition-all duration-500" style={{ width: `${pathwayPct}%` }} />
+              </div>
             </div>
           )}
         </div>
@@ -535,72 +552,57 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         ) : (
           /* ── UNLOCKED: full interactive content ── */
           <>
-            {/* ── PHASE PATHWAY ── when set, this IS the primary view ── */}
+            {/* ── PHASE PATHWAY ── when set, this IS the primary view (tile grid) ── */}
             {pathwayItems.length > 0 && (
               <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">🗺️</span>
-                    <h2 className="font-bold text-slate-800 text-sm">Your Path</h2>
-                    <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{pathwayItems.length} steps</span>
-                  </div>
-                  {/* Progress summary */}
-                  <span className="text-[10px] text-slate-400">
-                    {pathwayItems.filter(i => activities.find(a => a.content_id === i.id)?.status === 'completed').length}/{pathwayItems.length} done
-                  </span>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-base">🗺️</span>
+                  <h2 className="font-bold text-slate-800 text-sm">Your Path</h2>
+                  <span className="text-[10px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{pathwayItems.length} steps</span>
+                  <span className="ml-auto text-[11px] text-slate-400">{pathwayDone}/{pathwayItems.length} done</span>
                 </div>
 
-                {/* Compact pathway cards — horizontal connector line */}
-                <div className="relative">
-                  {/* Vertical connector */}
-                  <div className="absolute left-[17px] top-9 bottom-9 w-0.5 bg-slate-100 z-0" />
-
-                  <div className="space-y-2 relative z-10">
-                    {pathwayItems.map(item => {
-                      const activity = activities.find(a => a.content_id === item.id)
-                      const isComplete = activity?.status === 'completed'
-                      const isStarted  = activity?.status === 'in_progress'
-                      const cfg = typeConfig[item.content_type] ?? typeConfig.exercise
-                      return (
-                        <div
-                          key={item.id}
-                          onClick={() => setDrawerItem(item)}
-                          className={`flex items-center gap-3 bg-white border rounded-xl px-4 py-3 cursor-pointer transition-all hover:shadow-sm group ${
-                            isComplete ? 'border-green-200' : 'border-[#1F4E79]/15 hover:border-[#1F4E79]/35'
-                          }`}
-                        >
-                          {/* Step badge */}
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm ${
-                            isComplete ? 'bg-green-500 text-white' : 'bg-[#1F4E79] text-white'
-                          }`}>
+                {/* Rectangle tiles */}
+                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
+                  {pathwayItems.map(item => {
+                    const activity = activities.find(a => a.content_id === item.id)
+                    const isComplete = activity?.status === 'completed'
+                    const isStarted  = activity?.status === 'in_progress'
+                    const cfg = typeConfig[item.content_type] ?? typeConfig.exercise
+                    const itemPct = isComplete ? 100 : isStarted ? 50 : 0
+                    const accent = isComplete ? '#16A34A' : isStarted ? '#E8913A' : '#1F4E79'
+                    return (
+                      <div key={item.id} onClick={() => setDrawerItem(item)}
+                        className={`relative flex flex-col min-h-[150px] bg-white border rounded-2xl p-[18px] pb-3 cursor-pointer overflow-hidden shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg ${isComplete ? 'border-green-200' : 'border-slate-200 hover:border-slate-300'}`}>
+                        <div className="absolute left-0 top-0 bottom-0 w-[5px]" style={{ background: accent }} />
+                        <div className="flex items-center gap-2.5 mb-2.5">
+                          <div className="w-9 h-9 rounded-[10px] text-white font-bold text-sm grid place-items-center shrink-0" style={{ background: accent }}>
                             {isComplete ? '✓' : item.pathway_step}
                           </div>
-                          {/* Title + status */}
-                          <div className="flex-1 min-w-0">
-                            <p className={`font-semibold text-sm leading-tight ${isComplete ? 'text-slate-400 line-through' : 'text-slate-800'}`}>
-                              {item.title}
-                            </p>
-                            {isStarted && !isComplete && (
-                              <p className="text-[10px] text-[#1F4E79] font-semibold mt-0.5">● In progress</p>
-                            )}
+                          <span className={`ml-auto text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${cfg.badge}`}>{cfg.label.slice(0, -1)}</span>
+                        </div>
+                        <h3 className={`text-[15px] font-bold leading-tight mb-1 ${isComplete ? 'text-slate-400' : 'text-slate-800'}`}>{item.title}</h3>
+                        {item.description && <p className="text-xs text-slate-400 leading-snug line-clamp-2">{item.description}</p>}
+                        <div className="mt-auto pt-3.5">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${isComplete ? 'bg-green-100 text-green-700' : isStarted ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {isComplete ? '✓ Done' : isStarted ? '● In progress' : 'Not started'}
+                            </span>
+                            <span className="ml-auto text-[13px] font-bold text-[#1F4E79]">{isComplete ? 'Review →' : isStarted ? 'Continue →' : 'Start →'}</span>
                           </div>
-                          {/* Type chip + arrow */}
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${cfg.badge}`}>{cfg.label.slice(0,-1)}</span>
-                            <svg className="w-3.5 h-3.5 text-slate-300 group-hover:text-[#1F4E79] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                            </svg>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all" style={{ width: `${itemPct}%`, background: accent }} />
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
+                      </div>
+                    )
+                  })}
                 </div>
 
                 {/* "More resources" toggle — full library hidden by default when pathway exists */}
                 <button
                   onClick={() => setShowAllResources(v => !v)}
-                  className="mt-4 flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors w-full justify-center py-2"
+                  className="mt-5 flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600 transition-colors w-full justify-center py-2"
                 >
                   <svg className={`w-3.5 h-3.5 transition-transform ${showAllResources ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
