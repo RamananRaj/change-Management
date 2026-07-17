@@ -73,10 +73,16 @@ function Widget({ d, onRemove, onDrill, onNavigate, onConfirmDraft, canAct }) {
   )
 }
 
-// The report renders as a clean, printable document. "Print" tags this element and a print
-// stylesheet (below) hides everything else — so you get the report, not a screenshot.
+// The report renders as a clean, printable document. Admins can edit the narrative sections
+// in place; "Print" tags this element and a print stylesheet hides everything else; PowerPoint
+// and Word exports read the (edited) sections.
 function ReportBody({ d, onDrill, onNavigate }) {
+  const { profile } = useAuth()
+  const canEdit = !!(profile?.is_admin || profile?.is_client_admin)
+  const [sections, setSections] = useState(d.sections ?? [])
   const ref = useRef(null)
+  const report = { ...d, sections }
+  const setBody = (i, body) => setSections(prev => prev.map((s, idx) => idx === i ? { ...s, body } : s))
   const doPrint = () => {
     const el = ref.current; if (!el) return
     el.classList.add('cf-print'); window.print()
@@ -87,16 +93,30 @@ function ReportBody({ d, onDrill, onNavigate }) {
       <div className="mb-1">
         <h1 className="text-[22px] font-extrabold text-[#1F4E79] leading-tight">{d.title}</h1>
         {d.subtitle && <p className="text-xs text-slate-400 mt-1">{d.subtitle}</p>}
+        {canEdit && <p className="cf-no-print text-[11px] text-[#E8913A] mt-1">✎ Narrative sections are editable — your changes flow into the exports.</p>}
       </div>
       <div className="space-y-7 mt-5">
-        {(d.sections ?? []).map((s, i) => (
+        {sections.map((s, i) => (
           <section key={i} style={{ breakInside: 'avoid' }}>
             <h3 className="text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">{s.heading}</h3>
-            <WidgetBody d={s} onDrill={onDrill} onNavigate={onNavigate} />
+            {s.type === 'narrative' && canEdit ? (
+              <>
+                <textarea value={s.body ?? ''} onChange={e => setBody(i, e.target.value)}
+                  rows={Math.max(2, Math.ceil((s.body ?? '').length / 95))}
+                  className="cf-no-print w-full text-[14px] text-slate-700 leading-relaxed border border-dashed border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:border-[#1F4E79] resize-y" />
+                <p className="hidden print:block text-[14px] leading-relaxed text-slate-700"><Bold text={s.body} /></p>
+              </>
+            ) : (
+              <WidgetBody d={s} onDrill={onDrill} onNavigate={onNavigate} />
+            )}
           </section>
         ))}
       </div>
-      <button onClick={doPrint} className="cf-no-print mt-7 text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-5 py-2 hover:bg-[#163a5c]">🖨 Print / Save as PDF</button>
+      <div className="cf-no-print mt-7 flex flex-wrap gap-2">
+        <button onClick={doPrint} className="text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-4 py-2 hover:bg-[#163a5c]">🖨 PDF</button>
+        <button onClick={() => exportReportPptx(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📊 PowerPoint</button>
+        <button onClick={() => exportReportDoc(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📄 Word</button>
+      </div>
     </div>
   )
 }
@@ -366,6 +386,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
       <style>{`
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
         @media print{
+          *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
           body *{visibility:hidden !important}
           .cf-print,.cf-print *{visibility:visible !important}
           .cf-print{position:absolute !important;left:0;top:0;width:100% !important;padding:6mm !important;background:#fff !important}
