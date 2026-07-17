@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { ask } from '../lib/ai/router'
 import { loadSummary } from '../lib/ai/rules'
 import { slmOptedIn } from '../lib/ai/slm'
+import { buildTemplateDraft, createTemplate } from '../lib/ai/templateDraft'
 import ProjectTimeline from './ProjectTimeline'
 
 // ChangeFlow · reusable AI Canvas experience.
@@ -41,7 +42,7 @@ function Bold({ text }) {
 
 const RAG_DOT = { green: '#16A34A', amber: '#D97706', red: '#DC2626' }
 
-function Widget({ d, onRemove, onDrill, onNavigate, canAct }) {
+function Widget({ d, onRemove, onDrill, onNavigate, onConfirmDraft, canAct }) {
   const showAction = d.action && (!d.action.adminOnly || canAct)
   return (
     <div className="bg-white border border-slate-200 rounded-2xl shadow-sm mb-4 overflow-hidden animate-[fadeIn_.25s_ease]">
@@ -56,7 +57,7 @@ function Widget({ d, onRemove, onDrill, onNavigate, canAct }) {
         </div>
       </div>
       <div className="p-5">
-        <WidgetBody d={d} onDrill={onDrill} onNavigate={onNavigate} />
+        <WidgetBody d={d} onDrill={onDrill} onNavigate={onNavigate} onConfirmDraft={onConfirmDraft} onCancel={onRemove} />
         {d.commentary && (
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3 text-[13.5px] leading-relaxed text-slate-600">
             <Bold text={d.commentary} />
@@ -72,11 +73,47 @@ function Widget({ d, onRemove, onDrill, onNavigate, canAct }) {
   )
 }
 
-function WidgetBody({ d, onDrill, onNavigate }) {
+function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
   // A row is clickable if it carries a drill query or a navigation target.
   const rowHandler = r => r.to && onNavigate ? () => onNavigate(r.to) : r.drill && onDrill ? () => onDrill(r.drill) : null
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700"><Bold text={d.body} /></p>
+
+  if (d.type === 'templateDraft') {
+    const dr = d.draft
+    const typeBadge = { text: 'bg-slate-100 text-slate-600', number: 'bg-blue-100 text-blue-700', date: 'bg-purple-100 text-purple-700', select: 'bg-amber-100 text-amber-700', rating: 'bg-green-100 text-green-700', checkbox: 'bg-slate-100 text-slate-600' }
+    return (
+      <div>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          {[['Title', dr.title], ['Phase', `0${dr.phase_number} · ${['Diagnose', 'Design', 'Engage', 'Embed', 'Evaluate'][dr.phase_number - 1]}`],
+            ['Customer', dr.client_name ?? 'Global (all)'], ['Columns', `${dr.columns.length}`]].map(([k, v]) => (
+            <div key={k} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{k}</p>
+              <p className="text-sm font-semibold text-slate-800 truncate">{v}</p>
+            </div>
+          ))}
+        </div>
+        {!dr.client_name && <p className="text-xs text-amber-600 mb-3">No customer matched in your message — this will be created as a <b>global</b> template. Add the customer's name to scope it.</p>}
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Columns</p>
+        <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 mb-4 max-h-56 overflow-y-auto">
+          {dr.columns.length === 0 ? <p className="text-sm text-slate-400 px-3 py-3">No columns found in the file's header row.</p> :
+            dr.columns.map((c, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2">
+                <span className="text-sm text-slate-700 flex-1 truncate">{c.label}</span>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeBadge[c.type] ?? 'bg-slate-100 text-slate-600'}`}>{c.type}</span>
+              </div>
+            ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => onConfirmDraft?.(d)} disabled={d.busy || dr.columns.length === 0}
+            className="bg-[#E8913A] text-white text-sm font-semibold px-5 py-2 rounded-lg hover:brightness-95 disabled:opacity-50">
+            {d.busy ? 'Creating…' : `Create template${dr.client_name ? ` for ${dr.client_name}` : ''}`}
+          </button>
+          <button onClick={() => onCancel?.()} className="text-sm font-semibold text-slate-500 px-4 py-2 rounded-lg hover:bg-slate-100">Cancel</button>
+        </div>
+      </div>
+    )
+  }
 
   if (d.type === 'projectTimeline') {
     if (!d.projects?.length) return <p className="text-sm text-slate-400">No project timeline available.</p>
@@ -160,7 +197,10 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
   const [thinking, setThinking] = useState(false)
   const [progress, setProgress] = useState(null)
   const [input, setInput] = useState('')
+  const [attachedFile, setAttachedFile] = useState(null)   // admin: template file to turn into a workbook
   const canvasRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const isAdminish = !!(profile?.is_admin || profile?.is_client_admin)
 
   useEffect(() => { loadSummary().then(setSummary).catch(() => setSummary(null)) }, [])
 
@@ -195,7 +235,34 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
     }
   }
 
-  function submit(e) { e?.preventDefault(); const q = input.trim(); if (q) { run(q); setInput('') } }
+  function submit(e) {
+    e?.preventDefault()
+    if (attachedFile) { handleTemplateFile(); return }
+    const q = input.trim(); if (q) { run(q); setInput('') }
+  }
+
+  // Admin flow: parse the attached file + prompt into a DRAFT template (nothing written yet).
+  async function handleTemplateFile() {
+    const file = attachedFile, prompt = input.trim()
+    setAttachedFile(null); setInput(''); if (fileInputRef.current) fileInputRef.current.value = ''
+    setThinking(true); setProgress('Reading your template file…')
+    try {
+      const draft = await buildTemplateDraft(file, prompt)
+      setWidgets(w => [{ type: 'templateDraft', title: 'Template draft — review before creating', query: prompt || `Attached: ${file.name}`, draft, key: `draft-${Date.now()}` }, ...w])
+    } catch {
+      setWidgets(w => [{ type: 'narrative', title: 'Could not read that file', body: 'Please attach an **.xlsx**, **.xls** or **.csv** with a header row of column names.', key: Date.now() }, ...w])
+    } finally { setThinking(false); setProgress(null) }
+  }
+
+  // Guarded write — only after the admin clicks Confirm on the draft card.
+  async function confirmDraft(d) {
+    setWidgets(w => w.map(x => x.key === d.key ? { ...x, busy: true } : x))
+    const err = await createTemplate(d.draft)
+    setWidgets(w => w.map(x => x.key === d.key ? (err
+      ? { ...x, type: 'narrative', title: 'Could not create template', body: err.message, busy: false }
+      : { ...x, type: 'narrative', title: '✓ Template created', body: `**${d.draft.title}** added${d.draft.client_name ? ` for **${d.draft.client_name}**` : ' (global)'} — Phase ${d.draft.phase_number}, ${d.draft.columns.length} column${d.draft.columns.length === 1 ? '' : 's'}. It's now available to that client's members.`, busy: false }
+    ) : x))
+  }
 
   // Chips to show: the host's own (dashboard KPIs) if provided, else the default AI summary.
   const defaultChips = [
@@ -256,7 +323,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
             <p className="max-w-md text-sm leading-relaxed">Answers are grounded in your real, role-scoped data. Tap a chip above or a suggestion below to begin.</p>
           </div>
         ) : (
-          widgets.map(w => <Widget key={w.key} d={w} onDrill={run} onNavigate={navigate} canAct={!!profile?.is_admin} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
+          widgets.map(w => <Widget key={w.key} d={w} onDrill={run} onNavigate={navigate} onConfirmDraft={confirmDraft} canAct={!!profile?.is_admin} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
         )}
       </div>
 
@@ -278,12 +345,32 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
                 </button>
               ))}
             </div>
+            {attachedFile && (
+              <div className="flex items-center gap-2 mb-2 text-xs">
+                <span className="inline-flex items-center gap-1.5 bg-[#FDECD8] text-[#B45309] border border-amber-200 rounded-full px-3 py-1 font-semibold">
+                  📎 {attachedFile.name}
+                  <button onClick={() => { setAttachedFile(null); if (fileInputRef.current) fileInputRef.current.value = '' }} className="text-amber-500 hover:text-amber-700">✕</button>
+                </span>
+                <span className="text-slate-400">Add the customer's name &amp; phase, then send to draft a template.</span>
+              </div>
+            )}
             <form onSubmit={submit} className="flex items-center gap-2.5 border-[1.5px] border-[#E8913A] rounded-2xl px-4 py-2.5" style={{ boxShadow: '0 0 0 3px rgba(232,145,58,.12)' }}>
               <span className="w-2.5 h-2.5 rounded-full bg-[#E8913A] shrink-0" />
+              {isAdminish && (
+                <>
+                  <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                    onChange={e => setAttachedFile(e.target.files?.[0] ?? null)} />
+                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={thinking}
+                    title="Attach a template file (Excel/CSV) to create a workbook"
+                    className="text-slate-400 hover:text-[#E8913A] shrink-0 disabled:opacity-50">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  </button>
+                </>
+              )}
               <input value={input} onChange={e => setInput(e.target.value)} disabled={thinking}
-                placeholder="Ask AI anything — risks, readiness, progress, timelines…"
+                placeholder={attachedFile ? 'e.g. add this template for Horizon Power, phase 2' : 'Ask AI anything — risks, readiness, progress, timelines…'}
                 className="flex-1 outline-none text-[15px] text-slate-800 placeholder:text-slate-400 disabled:opacity-60" />
-              <button type="submit" disabled={thinking || !input.trim()}
+              <button type="submit" disabled={thinking || (!input.trim() && !attachedFile)}
                 className="bg-[#E8913A] text-white rounded-xl w-9 h-8 font-bold disabled:opacity-50 hover:brightness-95">↑</button>
             </form>
             <p className="text-center text-[10px] text-slate-300 tracking-widest mt-2 font-mono">
