@@ -40,6 +40,8 @@ A running list of open work and considerations. Grouped by priority. Check off a
 - [ ] **Self-hosted SLM option** — provider interface is in place (`slm.js`); add an Ollama-endpoint provider as an alternative to in-browser WebLLM for orgs that prefer a central model.
 - [ ] **More rule intents** — survey response rates, comms draft, per-client comparison. Each new grounded intent keeps work off the model (see "Adding a capability" in the setup doc).
 - [ ] **Vitest in CI** — `rules.test.js` verified via node in-sandbox; run under real Vitest in CI.
+- [ ] **Admin AI console (cockpit)** — reskin Platform Admin (and Client Admin) to the AI theme: pill-tab module nav + a "Cockpit" 360° client-health landing (cards with Onboarding/Activity/People/Progress/Timeline chips) + an admin "Ask" pill. Mockup: `changeflow_admin_cockpit_mockup.html`. Phase it: shell + Cockpit first, then modules to cards. Keep existing modal forms behind it initially.
+- [ ] **AI-assisted form/template creation** — (after the admin cockpit) attach a template file (Excel/doc) in Platform Admin and have the AI parse it and create the content/template entry (infer columns, phase, type). Builds on the existing Excel→column import in the Templates builder + the admin Ask pill.
 - [ ] **Lean entity resolver (when data grows)** — the generic resolver in `rules.js` currently does a full `loadData()` per freeform question to match a named client/project/person/stakeholder. Fine at current size; when it gets slow, switch to a cheap name-only index first (query just id+name per table), then load full detail only on a hit, and cache the catalog. Extend candidates to surveys/invites/content as those become question-worthy.
 
 ## Recently shipped (context)

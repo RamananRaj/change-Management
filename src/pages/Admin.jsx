@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import AdminSurveys from '../components/AdminSurveys'
 import AdminClients from '../components/AdminClients'
 import SystemAdmin from '../components/SystemAdmin'
+import AdminCockpit from '../components/AdminCockpit'
 
 const PHASES = [
   { num: 1, label: '01 Diagnose' },
@@ -20,7 +21,7 @@ const CONTENT_TYPES = [
   { value: 'template', label: 'Template' },
 ]
 
-const SECTIONS = ['Clients', 'System Admin', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Access Personas', 'Stakeholders', 'Impacted Roles']
+const SECTIONS = ['Cockpit', 'Clients', 'System Admin', 'Content Manager', 'Phase Manager', 'Templates', 'Surveys', 'Industry Manager', 'Access Personas', 'Stakeholders', 'Impacted Roles']
 
 const COLUMN_TYPES = [
   { value: 'text',        label: 'Text' },
@@ -93,7 +94,7 @@ export default function Admin() {
   const { profile } = useAuth()
   const [searchParams] = useSearchParams()
   // Allow deep-linking, e.g. /admin?section=Clients&client=<id>
-  const [section, setSection] = useState(() => searchParams.get('section') || 'Content Manager')
+  const [section, setSection] = useState(() => searchParams.get('section') || 'Cockpit')
 
   // ── Content Manager state ──
   const [filterPhase,    setFilterPhase]    = useState(1)
@@ -664,17 +665,21 @@ export default function Admin() {
         <h1 className="text-2xl font-bold text-slate-800">Platform Management</h1>
       </div>
 
-      {/* Section tabs */}
-      <div className="flex gap-2 mb-8 border-b border-slate-200 overflow-x-auto">
+      {/* Section pill-tabs (AI console theme) */}
+      <div className="flex flex-wrap gap-2 mb-8 overflow-x-auto pb-1">
         {SECTIONS.map(s => (
           <button key={s} onClick={() => setSection(s)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
-              section === s ? 'border-[#1F4E79] text-[#1F4E79]' : 'border-transparent text-slate-500 hover:text-slate-700'
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap border transition-colors ${
+              section === s ? 'bg-[#1F4E79] text-white border-[#1F4E79]' : 'bg-white text-slate-500 border-slate-200 hover:text-slate-700 hover:border-slate-300'
             }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${section === s ? 'bg-[#E8913A]' : 'bg-slate-300'}`} />
             {s}
           </button>
         ))}
       </div>
+
+      {/* ── COCKPIT ── */}
+      {section === 'Cockpit' && <AdminCockpit onOpenClient={() => setSection('Clients')} />}
 
       {/* ── CONTENT MANAGER ── */}
       {section === 'Content Manager' && (
