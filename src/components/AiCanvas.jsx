@@ -115,6 +115,39 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
     )
   }
 
+  if (d.type === 'heatmap') {
+    if (!d.rows?.length) return <p className="text-sm text-slate-400">No heat map data.</p>
+    const LV = { vh: '#991B1B', h: '#DC2626', m: '#E8913A', l: '#16A34A', vl: '#86EFAC', none: '#E2E8F0' }
+    const NAME = { vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Very Low', none: 'None' }
+    return (
+      <div>
+        {(d.version || d.source) && <p className="text-[11px] text-slate-400 mb-2">✦ {d.version ? `v${d.version} · current` : ''}{d.source ? ` · from ${d.source}` : ''}</p>}
+        <div className="overflow-x-auto">
+          <table className="border-separate" style={{ borderSpacing: '6px' }}>
+            <thead>
+              <tr><th></th>{d.cols.map(c => <th key={c} className="text-[11px] font-semibold text-slate-500 px-1 text-center whitespace-nowrap">{c}</th>)}</tr>
+            </thead>
+            <tbody>
+              {d.rows.map((r, i) => (
+                <tr key={i}>
+                  <td className="text-[12px] font-semibold text-slate-700 pr-2 text-right whitespace-nowrap">{r.label}</td>
+                  {r.cells.map((lv, j) => (
+                    <td key={j} className="text-center">
+                      <span title={NAME[lv] ?? lv} className="inline-block w-[18px] h-[18px] rounded-full align-middle" style={{ background: LV[lv] ?? LV.none, boxShadow: '0 1px 3px rgba(0,0,0,.18)' }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap gap-2.5 mt-3 text-[10.5px] text-slate-400">
+          {['vh', 'h', 'm', 'l', 'vl', 'none'].map(k => <span key={k} className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ background: LV[k] }} />{NAME[k]}</span>)}
+        </div>
+      </div>
+    )
+  }
+
   if (d.type === 'projectTimeline') {
     if (!d.projects?.length) return <p className="text-sm text-slate-400">No project timeline available.</p>
     return (
@@ -336,7 +369,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
               ▾ collapse
             </button>
           </div>
-          <div className="pt-2">
+          <div className="pt-2 max-w-4xl mx-auto px-2">
             <div className="flex gap-2 overflow-x-auto pb-2.5">
               {SUGGESTIONS.map(s => (
                 <button key={s.q} onClick={() => run(s.q)} disabled={thinking}

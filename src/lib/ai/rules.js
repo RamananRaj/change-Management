@@ -384,6 +384,18 @@ async function resolveEntity(text) {
   matches.sort((a, b) => b.name.length - a.name.length)   // most specific wins
   const m = matches[0]
 
+  // "heat map for <client>" → retrieve the stored artifact (versioned) and render it.
+  const wantsHeatmap = /(heat ?map|impact map)/i.test(text)
+  if (wantsHeatmap && m.type === 'client') {
+    const { data: arts } = await supabase.from('change_artifacts')
+      .select('title, version, source, data')
+      .eq('client_id', m.id).eq('type', 'stakeholder_heatmap').eq('is_current', true)
+      .order('version', { ascending: false }).limit(1)
+    const a = arts?.[0]
+    if (a) return { type: 'heatmap', descriptor: { type: 'heatmap', title: `${m.name} — ${a.title}`, cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, commentary: a.data.commentary ?? null } }
+    return { type: 'heatmap', descriptor: { type: 'narrative', title: `${m.name} — heat map`, body: `No heat map captured for **${m.name}** yet. Attach the stakeholder-mapping slide or spreadsheet in the AI Canvas and I'll capture it.` } }
+  }
+
   // "timeline / schedule / roadmap / gantt" → render the actual timeline (delivery + change
   // lanes + phases) rather than a progress list. Client → all its projects' timelines.
   const wantsTimeline = /(timeline|schedule|roadmap|gantt)/i.test(text)
