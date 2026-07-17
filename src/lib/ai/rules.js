@@ -171,6 +171,72 @@ async function runUpcoming() {
   return { type: 'list', title: 'Upcoming milestones', empty: 'Nothing scheduled ahead.', rows }
 }
 
+// ── Member-personal ("me") rules ──────────────────────────────────────────────
+const PHASE_PATH = { 1: '/phases/diagnose', 2: '/phases/design', 3: '/phases/engage', 4: '/phases/embed', 5: '/phases/evaluate' }
+
+async function myActiveProject() {
+  const { data: { user } } = await supabase.auth.getUser()
+  const uid = user?.id
+  if (!uid) return { uid: null, projectId: null }
+  const stored = (typeof localStorage !== 'undefined') ? localStorage.getItem('cf_active_project') : null
+  const { data: mems } = await supabase.from('project_members').select('project_id').eq('user_id', uid)
+  const ids = [...new Set((mems ?? []).map(m => m.project_id))]
+  return { uid, projectId: (stored && ids.includes(stored)) ? stored : (ids[0] ?? null) }
+}
+
+async function runMyJourney() {
+  const { uid, projectId } = await myActiveProject()
+  if (!uid || !projectId) return { type: 'narrative', title: 'My progress', body: "You're not assigned to a project yet." }
+  const [{ data: phaseRows }, { data: pathways }, { data: acts }] = await Promise.all([
+    supabase.from('project_phases').select('phase_number, planned_start, planned_end, status').eq('project_id', projectId),
+    supabase.from('project_pathways').select('phase_number, content_id').eq('project_id', projectId),
+    supabase.from('user_activities').select('content_id, phase_number, status').eq('user_id', uid).eq('status', 'completed'),
+  ])
+  const pathIds = new Set((pathways ?? []).map(p => p.content_id))
+  const today = new Date()
+  let overallDone = 0, overallAvail = 0, current = null, overdue = 0
+  const rows = PHASES.map(n => {
+    const avail = (pathways ?? []).filter(p => p.phase_number === n).length
+    const done = (acts ?? []).filter(a => a.phase_number === n && pathIds.has(a.content_id)).length
+    overallDone += done; overallAvail += avail
+    const pct = avail > 0 ? Math.round((done / avail) * 100) : 0
+    const row = (phaseRows ?? []).find(r => r.phase_number === n)
+    let status = 'Upcoming'
+    if (pct >= 100) status = 'Done'
+    else if (row?.planned_start && today >= new Date(row.planned_start)) status = 'In progress'
+    if (row?.planned_end && new Date(row.planned_end) < today && pct < 100 && avail > 0) { overdue++; status = 'Overdue' }
+    if (status === 'In progress' && !current) current = PHASE_NAMES[n]
+    return { label: `${String(n).padStart(2, '0')} ${PHASE_NAMES[n]}`, sub: `${status} · ${done}/${avail}`, value: pct, to: PHASE_PATH[n] }
+  })
+  const overallPct = overallAvail > 0 ? Math.round((overallDone / overallAvail) * 100) : 0
+  const commentary = `You're **${overallPct}%** through your journey${current ? `, currently in **${current}**` : ''}. ` +
+    (overdue ? `**${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue** — finishing those steps gets you back on track.` : 'Everything is on schedule.') +
+    ' Tap any phase to open it.'
+  return { type: 'progress', title: 'My journey — 5 phases', rows, empty: 'No phases set up yet.', commentary }
+}
+
+async function runMyReadiness() {
+  const { data: { user } } = await supabase.auth.getUser()
+  const uid = user?.id
+  if (!uid) return { type: 'narrative', title: 'My readiness', body: 'Sign in to see your readiness.' }
+  const { data: resps } = await supabase.from('survey_responses').select('survey_id, score, submitted_at').eq('user_id', uid).not('submitted_at', 'is', null)
+  const ids = [...new Set((resps ?? []).map(r => r.survey_id).filter(Boolean))]
+  let meta = []
+  if (ids.length) { const { data } = await supabase.from('surveys').select('id, title, phase_number, rag_green_threshold, rag_amber_threshold').in('id', ids); meta = data ?? [] }
+  const scored = (resps ?? []).filter(r => r.score != null)
+  const rows = scored.map(r => {
+    const s = meta.find(m => m.id === r.survey_id)
+    const g = s?.rag_green_threshold ?? 3.5, a = s?.rag_amber_threshold ?? 2.5
+    return { rag: r.score >= g ? 'g' : r.score >= a ? 'a' : 'r', name: s?.title ?? 'Survey',
+      meta: `${s?.phase_number ? `Phase ${s.phase_number} · ` : ''}${new Date(r.submitted_at).toLocaleDateString('en', { day: 'numeric', month: 'short' })}`,
+      due: r.score.toFixed(1) }
+  })
+  const avg = scored.length ? scored.reduce((s, r) => s + r.score, 0) / scored.length : null
+  const ragWord = avg == null ? 'not yet measured' : avg >= 3.5 ? 'On track (Green)' : avg >= 2.5 ? 'At risk (Amber)' : 'Critical (Red)'
+  return { type: 'list', title: 'My survey readiness', rows, empty: 'You haven’t submitted any surveys yet.',
+    commentary: scored.length ? `Your average readiness is **${avg.toFixed(1)} — ${ragWord}**${rows.length > 1 ? '. Focus on your lowest survey to lift it.' : '.'}` : null }
+}
+
 async function runProgress() {
   const { projRollup } = await loadData()
   const rows = projRollup.map(p => ({ label: p.name, value: p.pct, sub: p.clientName, drill: `Show me the ${p.name} timeline` }))
@@ -337,6 +403,8 @@ async function resolveEntity(text) {
 }
 
 const RUNNERS = {
+  my_progress: runMyJourney,
+  my_readiness: runMyReadiness,
   clients: runClients,
   people: runPeople,
   members_behind: runMembersBehind,

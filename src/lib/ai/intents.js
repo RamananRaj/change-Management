@@ -5,6 +5,8 @@
 // text to a grounded intent. Ordered — more specific patterns first.
 
 export const INTENTS = [
+  { intent: 'my_readiness',        re: /(my readiness|my surveys?|my (rag|score)|how ready am i)/i },
+  { intent: 'my_progress',         re: /(my progress|my journey|my phases|my steps|my completion|how am i doing|where am i)/i },
   { intent: 'members_behind',      re: /(who('?s| is)?\s+behind|laggard|not (started|done|completed)|behind on|stuck on)/i },
   { intent: 'at_risk',             re: /(at risk|at-risk|overdue|slipping|needs? attention|red flags?|blockers?)/i },
   { intent: 'upcoming',            re: /(upcoming|coming up|what('?s| is) next|phase starts?|what('?s| is) ahead|road ?ahead)/i },

@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import ClientAdminDashboard from '../components/ClientAdminDashboard'
 import MasterAdminDashboard from '../components/MasterAdminDashboard'
 import MiniTimeline from '../components/MiniTimeline'
+import AiCanvas from '../components/AiCanvas'
 
 // Role-aware dashboard: Master Admin → platform overview, Client Admin → client roll-up,
 // everyone else → their personal journey.
@@ -243,6 +244,56 @@ export function MemberDashboard({ preview = null }) {
       .map(p => ({ date: p.planned_start, label: `${p.name} starts`, kind: 'phase' })),
   ].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 5)
   const fmtDate = d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short' })
+
+  // ── AI view (real member) ────────────────────────────────────────────────────
+  // Members land in the AI experience by default. The classic dashboard below is kept for
+  // the Master Admin "view as" preview (detailed oversight) and is otherwise unreachable.
+  if (!preview) {
+    const ragLabel = overallReadiness == null ? '—' : overallReadiness >= 3.5 ? 'On track' : overallReadiness >= 2.5 ? 'At risk' : 'Critical'
+    const ragColor = overallReadiness == null ? '#94A3B8' : overallReadiness >= 3.5 ? '#16A34A' : overallReadiness >= 2.5 ? '#D97706' : '#DC2626'
+    const currentName = activePhase ? (phaseConfig.find(p => p.num === activePhase.phase_number)?.name ?? '—') : (completedPhases === 5 ? 'Complete' : '—')
+    const continuePath = activePhase ? (phaseConfig.find(p => p.num === activePhase.phase_number)?.path ?? '#') : null
+    return (
+      <div className="min-h-full bg-slate-50">
+        <div className="bg-gradient-to-br from-[#1F4E79] to-[#163a5c] px-8 py-7">
+          <p className="text-white/50 text-xs font-semibold tracking-widest uppercase mb-1">Your AI assistant</p>
+          <h1 className="text-2xl font-bold text-white">{greeting}, {firstName} 👋</h1>
+          {profile?.role && (
+            <p className="text-white/60 text-sm mt-1">
+              {roleLabels[profile.role] ?? profile.role}{profile.industry ? ` · ${industryLabels[profile.industry] ?? profile.industry}` : ''}
+            </p>
+          )}
+          {projectsList.length > 1 && (
+            <div className="mt-3 flex items-center gap-2">
+              <span className="text-xs text-white/60">Project:</span>
+              <select value={activeProjectId} onChange={e => switchProject(e.target.value)}
+                className="text-xs bg-white/15 text-white border border-white/25 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-white/60 [&>option]:text-slate-800">
+                {projectsList.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
+          {continuePath && (
+            <Link to={continuePath}
+              className="mt-4 inline-flex items-center gap-2 bg-[#E8913A] text-white text-sm font-semibold px-5 py-2.5 rounded-xl hover:bg-[#d07e2e] transition-colors shadow-lg shadow-orange-900/20">
+              Continue Phase {activePhase.phase_number}: {phaseConfig.find(p => p.num === activePhase.phase_number)?.name} →
+            </Link>
+          )}
+        </div>
+        <div className="px-8 py-6">
+          <AiCanvas
+            context="Your change journey — grounded in your own data"
+            chips={[
+              { color: '#E8913A', tag: 'PROGRESS', label: 'My completion', value: `${progressPct}%`, query: 'My progress' },
+              { color: '#1F4E79', tag: 'PHASE', label: 'Current', value: currentName, query: 'My progress' },
+              { color: ragColor, tag: 'RAG', label: 'Readiness', value: ragLabel, query: 'My readiness' },
+              { color: '#DC2626', tag: 'ATTENTION', label: 'Overdue', value: atRiskPhases.length, query: 'My progress' },
+              { color: '#16A34A', tag: 'DUE', label: 'Coming up', value: upcoming.length, query: 'Upcoming milestones' },
+            ]}
+          />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-full bg-slate-50">

@@ -56,7 +56,7 @@ function Widget({ d, onRemove, onDrill, onNavigate, canAct }) {
         </div>
       </div>
       <div className="p-5">
-        <WidgetBody d={d} onDrill={onDrill} />
+        <WidgetBody d={d} onDrill={onDrill} onNavigate={onNavigate} />
         {d.commentary && (
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3 text-[13.5px] leading-relaxed text-slate-600">
             <Bold text={d.commentary} />
@@ -72,7 +72,9 @@ function Widget({ d, onRemove, onDrill, onNavigate, canAct }) {
   )
 }
 
-function WidgetBody({ d, onDrill }) {
+function WidgetBody({ d, onDrill, onNavigate }) {
+  // A row is clickable if it carries a drill query or a navigation target.
+  const rowHandler = r => r.to && onNavigate ? () => onNavigate(r.to) : r.drill && onDrill ? () => onDrill(r.drill) : null
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700"><Bold text={d.body} /></p>
 
@@ -90,18 +92,18 @@ function WidgetBody({ d, onDrill }) {
     return (
       <div className="space-y-2">
         {d.rows.map((r, i) => {
-          const clickable = r.drill && onDrill
-          const Tag = clickable ? 'button' : 'div'
+          const onClick = rowHandler(r)
+          const Tag = onClick ? 'button' : 'div'
           return (
-            <Tag key={i} onClick={clickable ? () => onDrill(r.drill) : undefined}
-              className={`w-full text-left flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5 ${clickable ? 'cursor-pointer hover:border-[#1F4E79] hover:bg-slate-50 transition-colors' : ''}`}>
+            <Tag key={i} onClick={onClick ?? undefined}
+              className={`w-full text-left flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5 ${onClick ? 'cursor-pointer hover:border-[#1F4E79] hover:bg-slate-50 transition-colors' : ''}`}>
               <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.rag === 'r' ? 'bg-red-500' : r.rag === 'a' ? 'bg-amber-500' : 'bg-green-500'}`} />
               <div className="min-w-0">
                 <p className="font-semibold text-sm text-slate-800 truncate">{r.name}</p>
                 <p className="text-xs text-slate-400 truncate">{r.meta}</p>
               </div>
               {r.due && <span className="ml-auto text-xs text-slate-400 shrink-0">{r.due}</span>}
-              {clickable && <span className={`text-slate-300 ${r.due ? '' : 'ml-auto'}`}>›</span>}
+              {onClick && <span className={`text-slate-300 ${r.due ? '' : 'ml-auto'}`}>›</span>}
             </Tag>
           )
         })}
@@ -115,11 +117,11 @@ function WidgetBody({ d, onDrill }) {
       <div className="space-y-1.5">
         {d.rows.map((r, i) => {
           const c = r.value >= 75 ? '#16A34A' : r.value >= 55 ? '#D97706' : '#DC2626'
-          const clickable = r.drill && onDrill
-          const Tag = clickable ? 'button' : 'div'
+          const onClick = rowHandler(r)
+          const Tag = onClick ? 'button' : 'div'
           return (
-            <Tag key={i} onClick={clickable ? () => onDrill(r.drill) : undefined}
-              className={`w-full text-left flex items-center gap-3 rounded-lg px-2 py-1.5 ${clickable ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''}`}>
+            <Tag key={i} onClick={onClick ?? undefined}
+              className={`w-full text-left flex items-center gap-3 rounded-lg px-2 py-1.5 ${onClick ? 'cursor-pointer hover:bg-slate-50 transition-colors' : ''}`}>
               <div className="w-32 shrink-0 min-w-0">
                 <p className="text-[13px] font-semibold text-slate-700 truncate flex items-center gap-1.5">
                   {r.rag && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: RAG_DOT[r.rag] }} />}
@@ -131,7 +133,7 @@ function WidgetBody({ d, onDrill }) {
                 <div className="h-full rounded-full" style={{ width: `${r.value}%`, background: c }} />
               </div>
               <span className="w-11 text-right text-[13px] font-bold" style={{ color: c }}>{r.value}%</span>
-              {clickable && <span className="text-slate-300">›</span>}
+              {onClick && <span className="text-slate-300">›</span>}
             </Tag>
           )
         })}
