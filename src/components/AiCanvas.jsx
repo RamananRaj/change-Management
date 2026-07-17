@@ -5,6 +5,7 @@ import { ask } from '../lib/ai/router'
 import { loadSummary } from '../lib/ai/rules'
 import { slmOptedIn } from '../lib/ai/slm'
 import { buildTemplateDraft, createTemplate } from '../lib/ai/templateDraft'
+import { saveReportEdits } from '../lib/ai/reportMemory'
 import ProjectTimeline from './ProjectTimeline'
 
 // ChangeFlow · reusable AI Canvas experience.
@@ -80,9 +81,24 @@ function ReportBody({ d, onDrill, onNavigate }) {
   const { profile } = useAuth()
   const canEdit = !!(profile?.is_admin || profile?.is_client_admin)
   const [sections, setSections] = useState(d.sections ?? [])
+  const [note, setNote] = useState(null)
+  const [saving, setSaving] = useState(false)
   const ref = useRef(null)
+  const originals = useRef(Object.fromEntries((d.sections ?? []).filter(s => s.type === 'narrative').map(s => [s.heading, s.body])))
   const report = { ...d, sections }
   const setBody = (i, body) => setSections(prev => prev.map((s, idx) => idx === i ? { ...s, body } : s))
+
+  // Persist edits so future reports adopt them (the platform "learns" your wording).
+  async function teachAI() {
+    const edits = {}
+    sections.forEach(s => { if (s.type === 'narrative' && s.body !== originals.current[s.heading]) edits[s.heading] = s.body })
+    if (!Object.keys(edits).length) { setNote('No changes to save yet.'); return }
+    setSaving(true)
+    const err = await saveReportEdits(d.client_id, edits)
+    setSaving(false)
+    setNote(err ? `Could not save: ${err.message}` : '✓ Saved — the AI will adopt these in future reports for this client.')
+    if (!err) originals.current = { ...originals.current, ...edits }
+  }
   const doPrint = () => {
     const el = ref.current; if (!el) return
     el.classList.add('cf-print'); window.print()
@@ -98,7 +114,10 @@ function ReportBody({ d, onDrill, onNavigate }) {
       <div className="space-y-7 mt-5">
         {sections.map((s, i) => (
           <section key={i} style={{ breakInside: 'avoid' }}>
-            <h3 className="text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">{s.heading}</h3>
+            <h3 className="flex items-center gap-2 text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">
+              {s.heading}
+              {s.adopted && <span className="cf-no-print text-[9px] font-semibold text-[#E8913A] bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 normal-case tracking-normal">✦ adopted from your edits</span>}
+            </h3>
             {s.type === 'narrative' && canEdit ? (
               <>
                 <textarea value={s.body ?? ''} onChange={e => setBody(i, e.target.value)}
@@ -112,10 +131,16 @@ function ReportBody({ d, onDrill, onNavigate }) {
           </section>
         ))}
       </div>
-      <div className="cf-no-print mt-7 flex flex-wrap gap-2">
+      <div className="cf-no-print mt-7 flex flex-wrap items-center gap-2">
+        {canEdit && d.client_id && (
+          <button onClick={teachAI} disabled={saving} className="text-sm font-semibold text-white bg-[#E8913A] rounded-lg px-4 py-2 hover:brightness-95 disabled:opacity-60">
+            {saving ? 'Saving…' : '✦ Save & teach AI'}
+          </button>
+        )}
         <button onClick={doPrint} className="text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-4 py-2 hover:bg-[#163a5c]">🖨 PDF</button>
         <button onClick={() => exportReportPptx(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📊 PowerPoint</button>
         <button onClick={() => exportReportDoc(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📄 Word</button>
+        {note && <span className="text-xs text-slate-500">{note}</span>}
       </div>
     </div>
   )

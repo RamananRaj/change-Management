@@ -252,7 +252,7 @@ async function runReport(_params, text) {
     if (a) { heatInsights = analyseHeatmap(a.data); heatSection = { heading: 'Change impact heat map', type: 'heatmap', cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, headline: a.data.commentary, insights: heatInsights } }
   }
 
-  const sections = []
+  let sections = []
   sections.push({ heading: 'Executive summary', type: 'narrative', body:
     `**${client?.name ?? 'Programme'}** — ${cp.length} project${cp.length === 1 ? '' : 's'}, ${people} ${people === 1 ? 'person' : 'people'}, **${pct}%** average completion. Readiness is **${ragWord}**.` +
     (atRisk.length ? ` **${atRisk.length}** phase${atRisk.length === 1 ? ' is' : 's are'} overdue and need attention.` : ' No phases are currently overdue.') })
@@ -271,8 +271,19 @@ async function runReport(_params, text) {
   if (!recs.length) recs.push('On track — maintain cadence and re-run this report as data updates.')
   sections.push({ heading: 'Recommendations', type: 'narrative', body: recs.join(' ') })
 
+  // Adopt any saved admin edits for this client — the platform "learns" your wording and
+  // reuses it in future reports (data sections stay live).
+  if (cid) {
+    const { data: edits } = await supabase.from('change_artifacts').select('data')
+      .eq('client_id', cid).eq('type', 'report_edits').eq('is_current', true)
+      .order('version', { ascending: false }).limit(1)
+    const map = edits?.[0]?.data ?? {}
+    sections = sections.map(s => (s.type === 'narrative' && map[s.heading] != null) ? { ...s, body: map[s.heading], adopted: true } : s)
+  }
+
   return { type: 'report', title: `Change report — ${client?.name ?? 'Programme'}`,
-    subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })} · grounded in live data`, sections }
+    subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })} · grounded in live data`,
+    client_id: cid ?? null, client_name: client?.name ?? null, sections }
 }
 
 async function runUpcoming() {
