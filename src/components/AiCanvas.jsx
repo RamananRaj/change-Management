@@ -73,26 +73,42 @@ function Widget({ d, onRemove, onDrill, onNavigate, onConfirmDraft, canAct }) {
   )
 }
 
+// The report renders as a clean, printable document. "Print" tags this element and a print
+// stylesheet (below) hides everything else — so you get the report, not a screenshot.
+function ReportBody({ d, onDrill, onNavigate }) {
+  const ref = useRef(null)
+  const doPrint = () => {
+    const el = ref.current; if (!el) return
+    el.classList.add('cf-print'); window.print()
+    setTimeout(() => el.classList.remove('cf-print'), 500)
+  }
+  return (
+    <div ref={ref} className="cf-report">
+      <div className="mb-1">
+        <h1 className="text-[22px] font-extrabold text-[#1F4E79] leading-tight">{d.title}</h1>
+        {d.subtitle && <p className="text-xs text-slate-400 mt-1">{d.subtitle}</p>}
+      </div>
+      <div className="space-y-7 mt-5">
+        {(d.sections ?? []).map((s, i) => (
+          <section key={i} style={{ breakInside: 'avoid' }}>
+            <h3 className="text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">{s.heading}</h3>
+            <WidgetBody d={s} onDrill={onDrill} onNavigate={onNavigate} />
+          </section>
+        ))}
+      </div>
+      <button onClick={doPrint} className="cf-no-print mt-7 text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-5 py-2 hover:bg-[#163a5c]">🖨 Print / Save as PDF</button>
+    </div>
+  )
+}
+
 function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
   // A row is clickable if it carries a drill query or a navigation target.
   const rowHandler = r => r.to && onNavigate ? () => onNavigate(r.to) : r.drill && onDrill ? () => onDrill(r.drill) : null
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700"><Bold text={d.body} /></p>
 
-  if (d.type === 'report') {
-    return (
-      <div className="space-y-7">
-        {d.subtitle && <p className="text-xs text-slate-400 -mt-1">{d.subtitle}</p>}
-        {(d.sections ?? []).map((s, i) => (
-          <section key={i}>
-            <h3 className="text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">{s.heading}</h3>
-            <WidgetBody d={s} onDrill={onDrill} onNavigate={onNavigate} />
-          </section>
-        ))}
-        <button onClick={() => window.print()} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">🖨 Print / Save as PDF</button>
-      </div>
-    )
-  }
+  if (d.type === 'report') return <ReportBody d={d} onDrill={onDrill} onNavigate={onNavigate} />
+
 
   if (d.type === 'templateDraft') {
     const dr = d.draft
@@ -347,7 +363,16 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
 
   return (
     <div className={fill ? 'flex flex-col h-full bg-slate-50' : 'flex flex-col'}>
-      <style>{`@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}`}</style>
+      <style>{`
+        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+        @media print{
+          body *{visibility:hidden !important}
+          .cf-print,.cf-print *{visibility:visible !important}
+          .cf-print{position:absolute !important;left:0;top:0;width:100% !important;padding:6mm !important;background:#fff !important}
+          .cf-no-print{display:none !important}
+          @page{margin:14mm}
+        }
+      `}</style>
 
       {/* Chip strip (glance layer) */}
       {showChips && (
