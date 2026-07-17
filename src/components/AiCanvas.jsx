@@ -131,7 +131,9 @@ function WidgetBody({ d, onDrill }) {
 // `chips` (optional): the host's own KPI chips to show collapsed, so a dashboard keeps its
 // existing metrics visible in AI mode. Each: { color, tag, label, value, query? }. When a
 // chip has a `query`, clicking it drills into that AI answer; otherwise it's a static stat.
-export default function AiCanvas({ fill = false, context = 'Ask anything about your programme — grounded in your data', showChips = true, chips = null }) {
+// `initialQueries` (optional): grounded questions auto-run on entry so the AI view opens as a
+// briefing (e.g. Needs attention + Upcoming) instead of an empty canvas.
+export default function AiCanvas({ fill = false, context = 'Ask anything about your programme — grounded in your data', showChips = true, chips = null, initialQueries = null }) {
   const { user, profile } = useAuth()
   const ctx = useMemo(() => ({ userId: user?.id ?? null, clientId: profile?.client_id ?? null }), [user, profile])
 
@@ -145,6 +147,22 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
   const canvasRef = useRef(null)
 
   useEffect(() => { loadSummary().then(setSummary).catch(() => setSummary(null)) }, [])
+
+  // Briefing: auto-run the initial queries once, appended in order so the AI view opens populated.
+  useEffect(() => {
+    if (!initialQueries?.length) return
+    let cancelled = false
+    ;(async () => {
+      for (const q of initialQueries) {
+        try {
+          const d = await ask(q, ctx)
+          if (!cancelled) setWidgets(w => [...w, { ...d, query: q, key: `${q}-${Date.now()}` }])
+        } catch { /* skip a failed briefing card */ }
+      }
+    })()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function run(q) {
     if (!q?.trim() || thinking) return

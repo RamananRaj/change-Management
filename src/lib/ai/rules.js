@@ -135,6 +135,19 @@ async function runClients() {
   }
 }
 
+async function runUpcoming() {
+  const { projRollup, milestones, today } = await loadData()
+  const projName = id => projRollup.find(p => p.id === id)?.name ?? 'Project'
+  const items = [
+    ...(milestones ?? []).filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
+      .map(m => ({ date: m.milestone_date, label: m.name, project: projName(m.project_id) })),
+    ...projRollup.flatMap(p => p.phases.filter(ph => ph.planned_start && new Date(ph.planned_start) > today)
+      .map(ph => ({ date: ph.planned_start, label: `${ph.name} starts`, project: p.name }))),
+  ].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 8)
+  const rows = items.map(it => ({ rag: 'g', name: it.label, meta: it.project, due: fmtDate(it.date) }))
+  return { type: 'list', title: 'Upcoming milestones', empty: 'Nothing scheduled ahead.', rows }
+}
+
 async function runProgress() {
   const { projRollup } = await loadData()
   const rows = projRollup.map(p => ({ label: p.name, value: p.pct, sub: p.clientName, drill: `Show me the ${p.name} timeline` }))
@@ -298,6 +311,7 @@ const RUNNERS = {
   members_behind: runMembersBehind,
   at_risk: runAtRisk,
   milestones: runMilestones,
+  upcoming: runUpcoming,
   progress: runProgress,
   readiness: runReadiness,
 }

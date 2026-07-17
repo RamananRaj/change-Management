@@ -154,6 +154,7 @@ export default function MasterAdminDashboard() {
         <div className="px-8 py-6">
           <AiCanvas
             context="Platform overview across all clients"
+            initialQueries={['What needs attention?', 'Upcoming milestones']}
             chips={[
               { color: '#1F4E79', tag: 'CLIENTS', label: 'Clients', value: totals.clients, query: 'Show all clients' },
               { color: '#1F4E79', tag: 'PROJECTS', label: 'Projects', value: totals.projects, query: 'Progress by project' },
