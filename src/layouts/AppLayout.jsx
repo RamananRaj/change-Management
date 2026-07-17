@@ -30,10 +30,12 @@ export default function AppLayout() {
   const go = path => { navigate(path); setFabOpen(false) }
 
   // Quick-nav shown in the FAB: the journey phases, plus Dashboard and the AI Canvas.
+  // Master Admins also get "View as member" (the preview picker + persona mode).
   const fabItems = [
     { label: 'Dashboard', path: '/dashboard', bg: '#334155', glyph: '⬡' },
     ...phases.map(p => ({ label: p.label, path: p.path, bg: '#1F4E79', glyph: p.n })),
     { label: 'AI Canvas', path: '/canvas', bg: '#E8913A', glyph: '✦' },
+    ...(profile?.is_admin ? [{ label: 'View as member', path: '/admin/preview', bg: '#7C3AED', glyph: '⤢' }] : []),
   ]
 
   const TopIcon = ({ to, title, children }) => (
