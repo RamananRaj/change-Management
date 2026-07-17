@@ -5,7 +5,8 @@ import { ask } from '../lib/ai/router'
 import { loadSummary } from '../lib/ai/rules'
 import { slmOptedIn } from '../lib/ai/slm'
 import { buildTemplateDraft, createTemplate } from '../lib/ai/templateDraft'
-import { saveReportEdits } from '../lib/ai/reportMemory'
+import { saveReportEdits, promoteToStandard } from '../lib/ai/reportMemory'
+import { rewriteReportNarratives } from '../lib/ai/reportStyle'
 import ProjectTimeline from './ProjectTimeline'
 
 // ChangeFlow · reusable AI Canvas experience.
@@ -88,15 +89,40 @@ function ReportBody({ d, onDrill, onNavigate }) {
   const report = { ...d, sections }
   const setBody = (i, body) => setSections(prev => prev.map((s, idx) => idx === i ? { ...s, body } : s))
 
-  // Persist edits so future reports adopt them (the platform "learns" your wording).
-  async function teachAI() {
+  const collectEdits = () => {
     const edits = {}
     sections.forEach(s => { if (s.type === 'narrative' && s.body !== originals.current[s.heading]) edits[s.heading] = s.body })
+    return edits
+  }
+  // Save edits for THIS client — adopted in that client's future reports.
+  async function teachAI() {
+    const edits = collectEdits()
     if (!Object.keys(edits).length) { setNote('No changes to save yet.'); return }
     setSaving(true)
     const err = await saveReportEdits(d.client_id, edits)
     setSaving(false)
-    setNote(err ? `Could not save: ${err.message}` : '✓ Saved — the AI will adopt these in future reports for this client.')
+    setNote(err ? `Could not save: ${err.message}` : '✓ Saved — adopted in future reports for this client.')
+    if (!err) originals.current = { ...originals.current, ...edits }
+  }
+  // Opt-in on-device SLM pass: rewrite generated narrative in the learned style (facts kept).
+  async function styleWithAI() {
+    setSaving(true); setNote('Preparing on-device model…')
+    try {
+      const next = await rewriteReportNarratives(sections, p => setNote(p?.text ?? 'Styling…'))
+      setSections(next)
+      setNote('✨ Narrative restyled on-device — review, then Save & teach AI to keep it.')
+    } catch {
+      setNote('On-device model unavailable. Enable it (localStorage cf_ai_slm="on") on a WebGPU browser.')
+    } finally { setSaving(false) }
+  }
+  // Promote edits to the platform STANDARD — every client inherits them (Master Admin only).
+  async function promoteStandard() {
+    const edits = collectEdits()
+    if (!Object.keys(edits).length) { setNote('Edit a section first, then promote it.'); return }
+    setSaving(true)
+    const err = await promoteToStandard(edits)
+    setSaving(false)
+    setNote(err ? `Could not promote: ${err.message}` : '★ Promoted to the standard — all clients inherit this wording unless they override it.')
     if (!err) originals.current = { ...originals.current, ...edits }
   }
   const doPrint = () => {
@@ -116,7 +142,9 @@ function ReportBody({ d, onDrill, onNavigate }) {
           <section key={i} style={{ breakInside: 'avoid' }}>
             <h3 className="flex items-center gap-2 text-[12px] font-bold text-[#1F4E79] uppercase tracking-widest mb-3 pb-1 border-b border-slate-100">
               {s.heading}
-              {s.adopted && <span className="cf-no-print text-[9px] font-semibold text-[#E8913A] bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 normal-case tracking-normal">✦ adopted from your edits</span>}
+              {s.source === 'client' && <span className="cf-no-print text-[9px] font-semibold text-[#E8913A] bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 normal-case tracking-normal">✦ adopted from your edits</span>}
+              {s.source === 'standard' && <span className="cf-no-print text-[9px] font-semibold text-[#1F4E79] bg-[#1F4E79]/8 border border-[#1F4E79]/20 rounded-full px-2 py-0.5 normal-case tracking-normal">★ platform standard</span>}
+              {s.source === 'slm' && <span className="cf-no-print text-[9px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-full px-2 py-0.5 normal-case tracking-normal">✨ AI-styled (on-device)</span>}
             </h3>
             {s.type === 'narrative' && canEdit ? (
               <>
@@ -135,6 +163,18 @@ function ReportBody({ d, onDrill, onNavigate }) {
         {canEdit && d.client_id && (
           <button onClick={teachAI} disabled={saving} className="text-sm font-semibold text-white bg-[#E8913A] rounded-lg px-4 py-2 hover:brightness-95 disabled:opacity-60">
             {saving ? 'Saving…' : '✦ Save & teach AI'}
+          </button>
+        )}
+        {profile?.is_admin && (
+          <button onClick={promoteStandard} disabled={saving} title="Make this the default wording for every client"
+            className="text-sm font-semibold text-[#1F4E79] border border-[#1F4E79]/30 rounded-lg px-4 py-2 hover:bg-[#1F4E79]/5 disabled:opacity-60">
+            ★ Promote to standard
+          </button>
+        )}
+        {profile?.is_admin && slmOptedIn() && (
+          <button onClick={styleWithAI} disabled={saving} title="Rewrite the narrative in your house style, on-device (facts preserved)"
+            className="text-sm font-semibold text-violet-700 border border-violet-200 rounded-lg px-4 py-2 hover:bg-violet-50 disabled:opacity-60">
+            ✨ Rewrite in our style
           </button>
         )}
         <button onClick={doPrint} className="text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-4 py-2 hover:bg-[#163a5c]">🖨 PDF</button>

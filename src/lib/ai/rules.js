@@ -271,15 +271,20 @@ async function runReport(_params, text) {
   if (!recs.length) recs.push('On track — maintain cadence and re-run this report as data updates.')
   sections.push({ heading: 'Recommendations', type: 'narrative', body: recs.join(' ') })
 
-  // Adopt any saved admin edits for this client — the platform "learns" your wording and
-  // reuses it in future reports (data sections stay live).
-  if (cid) {
-    const { data: edits } = await supabase.from('change_artifacts').select('data')
-      .eq('client_id', cid).eq('type', 'report_edits').eq('is_current', true)
-      .order('version', { ascending: false }).limit(1)
-    const map = edits?.[0]?.data ?? {}
-    sections = sections.map(s => (s.type === 'narrative' && map[s.heading] != null) ? { ...s, body: map[s.heading], adopted: true } : s)
-  }
+  // Learning precedence for narrative sections: this client's saved edit > platform standard
+  // default (learned across clients) > freshly generated. Data sections always stay live.
+  const [{ data: defs }, { data: edits }] = await Promise.all([
+    supabase.from('change_artifacts').select('data').is('client_id', null).eq('type', 'report_defaults').eq('is_current', true).order('version', { ascending: false }).limit(1),
+    cid ? supabase.from('change_artifacts').select('data').eq('client_id', cid).eq('type', 'report_edits').eq('is_current', true).order('version', { ascending: false }).limit(1) : Promise.resolve({ data: [] }),
+  ])
+  const defMap = defs?.[0]?.data ?? {}
+  const cliMap = edits?.[0]?.data ?? {}
+  sections = sections.map(s => {
+    if (s.type !== 'narrative') return s
+    if (cliMap[s.heading] != null) return { ...s, body: cliMap[s.heading], source: 'client' }
+    if (defMap[s.heading] != null) return { ...s, body: defMap[s.heading], source: 'standard' }
+    return s
+  })
 
   return { type: 'report', title: `Change report — ${client?.name ?? 'Programme'}`,
     subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })} · grounded in live data`,

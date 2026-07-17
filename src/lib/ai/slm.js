@@ -52,3 +52,13 @@ export async function runSlm(text, ctx = {}, onProgress) {
   const tokens = res?.usage?.total_tokens ?? null
   return { text: out, model: MODEL, tokens }
 }
+
+// Generic generation with a caller-supplied system prompt (e.g. report-style rewriting).
+export async function slmGenerate(system, user, onProgress, { temperature = 0.5, maxTokens = 320 } = {}) {
+  const engine = await getEngine(onProgress)
+  const res = await engine.chat.completions.create({
+    messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    temperature, max_tokens: maxTokens,
+  })
+  return res?.choices?.[0]?.message?.content ?? ''
+}

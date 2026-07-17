@@ -29,3 +29,30 @@ export async function saveReportEdits(clientId, edits) {
   })
   return error
 }
+
+// Promote edits to the PLATFORM STANDARD (client_id NULL) — cross-client learning. Every
+// client's report inherits these unless that client has its own edit. Master Admin only
+// (enforced by RLS: only is_admin() can write client_id NULL rows).
+export async function promoteToStandard(edits) {
+  if (!edits || !Object.keys(edits).length) return null
+
+  const { data: cur } = await supabase.from('change_artifacts')
+    .select('id, version, data').is('client_id', null).eq('type', 'report_defaults').eq('is_current', true)
+    .order('version', { ascending: false }).limit(1)
+  const prev = cur?.[0]
+  const merged = { ...(prev?.data ?? {}), ...edits }
+
+  if (prev) {
+    await supabase.from('change_artifacts').update({ is_current: false }).eq('id', prev.id)
+    const { error } = await supabase.from('change_artifacts').insert({
+      client_id: null, type: 'report_defaults', title: 'Report defaults (standard)',
+      version: (prev.version ?? 1) + 1, is_current: true, data: merged, source: 'promoted by master admin',
+    })
+    return error
+  }
+  const { error } = await supabase.from('change_artifacts').insert({
+    client_id: null, type: 'report_defaults', title: 'Report defaults (standard)',
+    version: 1, is_current: true, data: edits, source: 'promoted by master admin',
+  })
+  return error
+}
