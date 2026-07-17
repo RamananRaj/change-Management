@@ -18,6 +18,7 @@ import ProjectTimeline from './ProjectTimeline'
 
 const SUGGESTIONS = [
   { label: "What's at risk this week?", q: "What's at risk this week?" },
+  { label: 'Upcoming milestones', q: 'Upcoming milestones' },
   { label: 'Summarise readiness', q: 'Summarise readiness' },
   { label: "Who's behind on Phase 2?", q: "Who's behind on Phase 2?" },
   { label: 'Progress by project', q: 'Progress by project' },

@@ -143,6 +143,21 @@ async function runClients() {
   }
 }
 
+async function runPeople() {
+  const { projRollup, profiles } = await loadData()
+  const rows = profiles.map(u => {
+    const theirs = projRollup.filter(p => p.memberIds.includes(u.id))
+    let done = 0, steps = 0
+    theirs.forEach(p => p.phases.forEach(ph => { const mm = ph.perMember.find(x => x.user_id === u.id); if (mm) { done += mm.done; steps += mm.steps } }))
+    const pct = steps > 0 ? Math.round((done / steps) * 100) : 0
+    return { label: u.full_name ?? 'Member', sub: `${u.role ? u.role.toUpperCase() + ' · ' : ''}${theirs.length} project${theirs.length === 1 ? '' : 's'}`, value: pct, drill: `Show me ${u.full_name}` }
+  }).sort((a, b) => a.value - b.value)
+  return {
+    type: 'progress', title: `People (${rows.length})`, rows, empty: 'No people assigned to projects yet.',
+    commentary: rows.length ? `${rows.length} ${rows.length === 1 ? 'person' : 'people'} across all projects, sorted by completion. Click anyone to see their detail.` : null,
+  }
+}
+
 async function runUpcoming() {
   const { projRollup, milestones, today } = await loadData()
   const projName = id => projRollup.find(p => p.id === id)?.name ?? 'Project'
@@ -323,6 +338,7 @@ async function resolveEntity(text) {
 
 const RUNNERS = {
   clients: runClients,
+  people: runPeople,
   members_behind: runMembersBehind,
   at_risk: runAtRisk,
   milestones: runMilestones,
