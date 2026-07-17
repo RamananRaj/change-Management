@@ -158,6 +158,34 @@ async function runPeople() {
   }
 }
 
+// Retrieve a stored heat-map artifact. Works whether or not a client is named:
+//  • names a client  → that client's current heat map
+//  • no client, one available (RLS-scoped) → show it
+//  • no client, several → ask which
+async function runHeatmap(_params, text) {
+  const [{ data: arts }, { data: clients }] = await Promise.all([
+    supabase.from('change_artifacts').select('client_id, title, version, source, data').eq('type', 'stakeholder_heatmap').eq('is_current', true).order('version', { ascending: false }),
+    supabase.from('clients').select('id, name'),
+  ])
+  const list = arts ?? []
+  const t = (text ?? '').toLowerCase()
+  const named = (clients ?? []).find(c => c.name && c.name.length >= 3 && t.includes(c.name.toLowerCase()))
+  const nameOfClient = id => (clients ?? []).find(c => c.id === id)?.name ?? ''
+
+  let pick = null
+  if (named) pick = list.find(a => a.client_id === named.id)
+  else if (list.length === 1) pick = list[0]
+
+  if (pick) {
+    return { type: 'heatmap', title: `${nameOfClient(pick.client_id)} — ${pick.title}`, cols: pick.data.cols, rows: pick.data.rows, version: pick.version, source: pick.source, commentary: pick.data.commentary ?? null }
+  }
+  if (list.length > 1) {
+    const names = [...new Set(list.map(a => nameOfClient(a.client_id)).filter(Boolean))]
+    return { type: 'narrative', title: 'Which heat map?', body: `I have stakeholder heat maps for: **${names.join('**, **')}**. Ask e.g. "show me the heat map for ${names[0]}".` }
+  }
+  return { type: 'narrative', title: 'No heat map yet', body: named ? `No heat map captured for **${named.name}** yet — attach the stakeholder-mapping slide and I'll capture it.` : 'No heat maps captured yet. Attach a stakeholder-mapping slide in the AI Canvas and I\'ll capture it.' }
+}
+
 async function runUpcoming() {
   const { projRollup, milestones, today } = await loadData()
   const projName = id => projRollup.find(p => p.id === id)?.name ?? 'Project'
@@ -384,18 +412,6 @@ async function resolveEntity(text) {
   matches.sort((a, b) => b.name.length - a.name.length)   // most specific wins
   const m = matches[0]
 
-  // "heat map for <client>" → retrieve the stored artifact (versioned) and render it.
-  const wantsHeatmap = /(heat ?map|impact map)/i.test(text)
-  if (wantsHeatmap && m.type === 'client') {
-    const { data: arts } = await supabase.from('change_artifacts')
-      .select('title, version, source, data')
-      .eq('client_id', m.id).eq('type', 'stakeholder_heatmap').eq('is_current', true)
-      .order('version', { ascending: false }).limit(1)
-    const a = arts?.[0]
-    if (a) return { type: 'heatmap', descriptor: { type: 'heatmap', title: `${m.name} — ${a.title}`, cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, commentary: a.data.commentary ?? null } }
-    return { type: 'heatmap', descriptor: { type: 'narrative', title: `${m.name} — heat map`, body: `No heat map captured for **${m.name}** yet. Attach the stakeholder-mapping slide or spreadsheet in the AI Canvas and I'll capture it.` } }
-  }
-
   // "timeline / schedule / roadmap / gantt" → render the actual timeline (delivery + change
   // lanes + phases) rather than a progress list. Client → all its projects' timelines.
   const wantsTimeline = /(timeline|schedule|roadmap|gantt)/i.test(text)
@@ -415,6 +431,7 @@ async function resolveEntity(text) {
 }
 
 const RUNNERS = {
+  heatmap: runHeatmap,
   my_progress: runMyJourney,
   my_readiness: runMyReadiness,
   clients: runClients,
@@ -432,7 +449,7 @@ const RUNNERS = {
 export async function runRules(text) {
   const hit = matchIntent(text)
   if (hit) {
-    const descriptor = await RUNNERS[hit.intent](hit.params)
+    const descriptor = await RUNNERS[hit.intent](hit.params, text)
     return { matched: true, intent: hit.intent, descriptor }
   }
   // Generic grounded fallback: does the question name anything we've captured — a client,
