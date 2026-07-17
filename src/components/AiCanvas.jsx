@@ -137,6 +137,32 @@ function ReportBody({ d, onDrill, onNavigate }) {
         {d.subtitle && <p className="text-xs text-slate-400 mt-1">{d.subtitle}</p>}
         {canEdit && <p className="cf-no-print text-[11px] text-[#E8913A] mt-1">✎ Narrative sections are editable — your changes flow into the exports.</p>}
       </div>
+
+      {/* Floating action toolbar — sticks to the top while you scroll the report */}
+      <div className="cf-no-print sticky top-2 z-20 mt-3 ml-auto w-fit max-w-full flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur border border-slate-200 shadow-md rounded-2xl px-3 py-2">
+        {canEdit && d.client_id && (
+          <button onClick={teachAI} disabled={saving} className="text-sm font-semibold text-white bg-[#E8913A] rounded-lg px-4 py-2 hover:brightness-95 disabled:opacity-60">
+            {saving ? 'Saving…' : '✦ Save & teach AI'}
+          </button>
+        )}
+        {profile?.is_admin && (
+          <button onClick={promoteStandard} disabled={saving} title="Make this the default wording for every client"
+            className="text-sm font-semibold text-[#1F4E79] border border-[#1F4E79]/30 rounded-lg px-4 py-2 hover:bg-[#1F4E79]/5 disabled:opacity-60">
+            ★ Promote to standard
+          </button>
+        )}
+        {profile?.is_admin && slmOptedIn() && (
+          <button onClick={styleWithAI} disabled={saving} title="Rewrite the narrative in your house style, on-device (facts preserved)"
+            className="text-sm font-semibold text-violet-700 border border-violet-200 rounded-lg px-4 py-2 hover:bg-violet-50 disabled:opacity-60">
+            ✨ Rewrite in our style
+          </button>
+        )}
+        <button onClick={doPrint} className="text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-4 py-2 hover:bg-[#163a5c]">🖨 PDF</button>
+        <button onClick={() => exportReportPptx(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📊 PowerPoint</button>
+        <button onClick={() => exportReportDoc(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📄 Word</button>
+        {note && <span className="text-xs text-slate-500 basis-full">{note}</span>}
+      </div>
+
       <div className="space-y-7 mt-5">
         {sections.map((s, i) => (
           <section key={i} style={{ breakInside: 'avoid' }}>
@@ -158,29 +184,6 @@ function ReportBody({ d, onDrill, onNavigate }) {
             )}
           </section>
         ))}
-      </div>
-      <div className="cf-no-print mt-7 flex flex-wrap items-center gap-2">
-        {canEdit && d.client_id && (
-          <button onClick={teachAI} disabled={saving} className="text-sm font-semibold text-white bg-[#E8913A] rounded-lg px-4 py-2 hover:brightness-95 disabled:opacity-60">
-            {saving ? 'Saving…' : '✦ Save & teach AI'}
-          </button>
-        )}
-        {profile?.is_admin && (
-          <button onClick={promoteStandard} disabled={saving} title="Make this the default wording for every client"
-            className="text-sm font-semibold text-[#1F4E79] border border-[#1F4E79]/30 rounded-lg px-4 py-2 hover:bg-[#1F4E79]/5 disabled:opacity-60">
-            ★ Promote to standard
-          </button>
-        )}
-        {profile?.is_admin && slmOptedIn() && (
-          <button onClick={styleWithAI} disabled={saving} title="Rewrite the narrative in your house style, on-device (facts preserved)"
-            className="text-sm font-semibold text-violet-700 border border-violet-200 rounded-lg px-4 py-2 hover:bg-violet-50 disabled:opacity-60">
-            ✨ Rewrite in our style
-          </button>
-        )}
-        <button onClick={doPrint} className="text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-4 py-2 hover:bg-[#163a5c]">🖨 PDF</button>
-        <button onClick={() => exportReportPptx(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📊 PowerPoint</button>
-        <button onClick={() => exportReportDoc(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📄 Word</button>
-        {note && <span className="text-xs text-slate-500">{note}</span>}
       </div>
     </div>
   )
