@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import MiniTimeline from './MiniTimeline'
+import AiCanvas from './AiCanvas'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -25,6 +26,7 @@ export default function ClientAdminDashboard() {
   const [needsAttention, setNeedsAttention] = useState([])
   const [upcoming, setUpcoming] = useState([])
   const [expanded, setExpanded] = useState({})
+  const [view] = useState('ai')   // AI only for now; classic dashboard code retained below, to be removed
 
   const toggle      = id => setExpanded(prev => ({ ...prev, [id]: !prev[id] }))
   const expandAll   = () => setExpanded(Object.fromEntries(rows.map(r => [r.id, true])))
@@ -130,11 +132,35 @@ export default function ClientAdminDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="bg-[#1F4E79] text-white px-8 py-8">
-        <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Client Admin</p>
-        <h1 className="text-2xl font-bold">{greeting}, {firstName}</h1>
-        <p className="text-white/70 text-sm mt-1">Programme overview for <strong>{client?.name ?? 'your client'}</strong></p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Client Admin</p>
+            <h1 className="text-2xl font-bold">{greeting}, {firstName}</h1>
+            <p className="text-white/70 text-sm mt-1">
+              {view === 'ai'
+                ? <>Ask AI about <strong>{client?.name ?? 'your programme'}</strong> — grounded in your data</>
+                : <>Programme overview for <strong>{client?.name ?? 'your client'}</strong></>}
+            </p>
+          </div>
+          {/* Classic-dashboard toggle hidden for now — AI is the only view. Old dashboard code
+              below is kept temporarily and will be removed shortly. */}
+        </div>
       </div>
 
+      {view === 'ai' ? (
+        <div className="px-8 py-6">
+          <AiCanvas
+            context={`Programme overview for ${client?.name ?? 'your client'}`}
+            chips={[
+              { color: '#1F4E79', tag: 'RAG', label: 'Readiness', value: totals.rag?.label ?? '—', query: 'Summarise readiness' },
+              { color: '#1F4E79', tag: 'PROJECTS', label: 'Projects', value: totals.projects, query: 'Progress by project' },
+              { color: '#1F4E79', tag: 'PEOPLE', label: 'People', value: totals.members, query: 'Show all people' },
+              { color: '#E8913A', tag: 'PROGRESS', label: 'Avg completion', value: `${totals.pct}%`, query: 'Progress by project' },
+              { color: totals.atRisk > 0 ? '#DC2626' : '#16A34A', tag: 'ATTENTION', label: 'Need attention', value: totals.atRisk, query: "What's at risk this week?" },
+            ]}
+          />
+        </div>
+      ) : (
       <div className="px-8 py-6">
         {/* Metric cards */}
         <div className="grid grid-cols-4 gap-4 mb-5">
@@ -261,6 +287,7 @@ export default function ClientAdminDashboard() {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

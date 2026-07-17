@@ -23,7 +23,7 @@ export default function MasterAdminDashboard() {
   const [needsAttention, setNeedsAttention] = useState([])
   const [upcoming, setUpcoming] = useState([])
   const [expanded, setExpanded] = useState({})
-  const [view, setView] = useState('dashboard')   // 'dashboard' | 'ai'
+  const [view] = useState('ai')   // AI only for now; classic dashboard code retained below, to be removed
 
   const firstName = profile?.full_name ? profile.full_name.split(' ')[0] : 'there'
   const hour = new Date().getHours()
@@ -138,15 +138,8 @@ export default function MasterAdminDashboard() {
             <h1 className="text-2xl font-bold">{greeting}, {firstName}</h1>
             <p className="text-white/70 text-sm mt-1">{view === 'ai' ? 'Ask AI across all clients — grounded in your data' : 'Platform overview across all clients'}</p>
           </div>
-          {/* Dashboard ⇄ AI toggle. Dashboard is the default; nothing is removed. */}
-          <div className="flex bg-white/10 rounded-xl p-1 shrink-0">
-            {['dashboard', 'ai'].map(v => (
-              <button key={v} onClick={() => setView(v)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${view === v ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-white/70 hover:text-white'}`}>
-                {v === 'dashboard' ? 'Dashboard' : '✦ AI'}
-              </button>
-            ))}
-          </div>
+          {/* Classic-dashboard toggle hidden for now — AI is the only view. Old dashboard code
+              below is kept temporarily and will be removed shortly. */}
         </div>
       </div>
 
