@@ -44,6 +44,7 @@ const emptyTemplateForm = {
   file_url:     '',
   sort_order:   0,
   is_active:    true,
+  client_id:    '',   // '' = global (Templates tab); set = one client
 }
 
 const emptyStakeholderForm = { name: '', detail: '', is_active: true }
@@ -151,6 +152,10 @@ export default function Admin() {
   const [templateEditId,     setTemplateEditId]     = useState(null)
   const [templateSaving,     setTemplateSaving]     = useState(false)
   const [templateFormError,  setTemplateFormError]  = useState(null)
+  const [filterTemplateClient, setFilterTemplateClient] = useState('')   // '', '__global', client id
+  const [cloneTpl,           setCloneTpl]           = useState(null)      // template pending clone
+  const [cloneTplTarget,     setCloneTplTarget]     = useState('')
+  const [cloningTpl,         setCloningTpl]         = useState(false)
 
   // ── Stakeholders state ──
   const [stakeholders,       setStakeholders]       = useState([])
@@ -196,7 +201,7 @@ export default function Admin() {
     if (section === 'Stakeholders')     fetchStakeholders()
     if (section === 'Impacted Roles')   fetchRoleMaps()
     if (section === 'Templates')        fetchTemplates()
-  }, [section, filterPhase, filterIndustry, filterRole, filterClient])
+  }, [section, filterPhase, filterIndustry, filterRole, filterClient, filterTemplateClient])
 
   // ── User Roles ──
   async function fetchRoleMaps() {
@@ -530,9 +535,37 @@ export default function Admin() {
   // ── Templates ──
   async function fetchTemplates() {
     setTemplatesLoading(true)
-    const { data } = await supabase.from('templates').select('*').order('phase_number').order('sort_order')
+    let query = supabase.from('templates').select('*').order('phase_number').order('sort_order')
+    if (filterTemplateClient === '__global') query = query.is('client_id', null)
+    else if (filterTemplateClient)           query = query.eq('client_id', filterTemplateClient)
+    const { data } = await query
     setTemplates(data ?? [])
     setTemplatesLoading(false)
+  }
+
+  // Master-Admin: promote a client template into the global Templates library (reusable).
+  async function promoteTemplate(t) {
+    if (!window.confirm(`Promote “${t.title}” to the global Templates library? Every current and future customer can use it.`)) return
+    const { error } = await supabase.from('templates').update({ client_id: null }).eq('id', t.id)
+    if (error) { window.alert(error.message); return }
+    fetchTemplates()
+  }
+
+  function openCloneTemplate(t) { setCloneTpl(t); setCloneTplTarget('') }
+
+  async function confirmCloneTemplate() {
+    if (!cloneTplTarget) return
+    const match = clients.find(c => c.id === cloneTplTarget)
+    if (!match) return
+    setCloningTpl(true)
+    const { id, created_at, updated_at, ...rest } = cloneTpl
+    const { error } = await supabase.from('templates').insert({
+      ...rest, client_id: match.id, title: `${cloneTpl.title} (${match.name})`,
+    })
+    setCloningTpl(false)
+    if (error) { window.alert(error.message); return }
+    setCloneTpl(null)
+    fetchTemplates()
   }
 
   function openNewTemplate() {
@@ -553,6 +586,7 @@ export default function Admin() {
       file_url:     t.file_url ?? '',
       sort_order:   t.sort_order ?? 0,
       is_active:    t.is_active,
+      client_id:    t.client_id ?? '',
     })
     // Restore columns into builder format
     setTemplateCols((t.columns ?? []).map(c => ({
@@ -585,9 +619,10 @@ export default function Admin() {
 
     const payload = {
       ...templateForm,
-      industry: templateForm.industry || null,
-      role:     templateForm.role     || null,
-      file_url: templateForm.file_url || null,
+      industry:  templateForm.industry  || null,
+      role:      templateForm.role      || null,
+      file_url:  templateForm.file_url  || null,
+      client_id: templateForm.client_id || null,
       columns,
     }
 
@@ -1275,6 +1310,13 @@ export default function Admin() {
             </button>
           </div>
 
+          <div className="mb-5 max-w-[240px]">
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Scope</label>
+            <ClientPicker value={filterTemplateClient} onChange={setFilterTemplateClient} clients={clients}
+              specials={[{ value: '', label: 'All scopes' }, { value: '__global', label: '🌐 Global library' }]}
+              placeholder="Search client…" />
+          </div>
+
           {templatesLoading ? (
             <p className="text-sm text-slate-400">Loading templates…</p>
           ) : templates.length === 0 ? (
@@ -1304,6 +1346,9 @@ export default function Admin() {
                             {roles.find(r => r.code === t.role)?.label ?? t.role}
                           </span>
                         )}
+                        {t.client_id
+                          ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 {clients.find(c => c.id === t.client_id)?.name ?? 'Client'}</span>
+                          : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Global</span>}
                         {!t.is_active && (
                           <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>
                         )}
@@ -1330,6 +1375,9 @@ export default function Admin() {
                       </button>
                       <button onClick={() => openEditTemplate(t)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
                       <button onClick={() => handleTemplateDelete(t.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                      {t.client_id
+                        ? <button onClick={() => promoteTemplate(t)} className="text-xs text-emerald-600 hover:underline whitespace-nowrap">↑ Promote</button>
+                        : <button onClick={() => openCloneTemplate(t)} className="text-xs text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone</button>}
                     </div>
                   </div>
                 </div>
@@ -1567,6 +1615,35 @@ export default function Admin() {
         </div>
       )}
 
+      {/* ── CLONE-TEMPLATE-TO-CLIENT MODAL ── */}
+      {cloneTpl && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800">Clone template to a client</h2>
+              <button onClick={() => setCloneTpl(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-slate-500">
+                Makes a client-specific copy of <span className="font-medium text-slate-700">“{cloneTpl.title}”</span>. The global
+                template is left untouched.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Clone for</label>
+                <ClientPicker value={cloneTplTarget} onChange={setCloneTplTarget} clients={clients} placeholder="Search client…" />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+              <button onClick={() => setCloneTpl(null)} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Cancel</button>
+              <button onClick={confirmCloneTemplate} disabled={!cloneTplTarget || cloningTpl}
+                className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-50">
+                {cloningTpl ? 'Cloning…' : 'Clone'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── ROLE FORM MODAL ── */}
       {showRoleForm && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -1735,6 +1812,21 @@ export default function Admin() {
                 <textarea value={templateForm.description} onChange={e => setTemplateForm({...templateForm, description: e.target.value})}
                   placeholder="What is this template for? How should users use it?"
                   rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
+              </div>
+
+              {/* Scope */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Scope <span className="text-slate-400 font-normal">(who can use this)</span>
+                </label>
+                <ClientPicker value={templateForm.client_id} onChange={v => setTemplateForm({...templateForm, client_id: v})} clients={clients}
+                  specials={[{ value: '', label: '🌐 Global library — every customer' }]}
+                  placeholder="Search client…" />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {templateForm.client_id
+                    ? 'Scoped to this client. Promote it to the global library later to reuse it for future customers.'
+                    : 'Global — available to all current and future customers.'}
+                </p>
               </div>
 
               {/* Phase + Industry + Role */}

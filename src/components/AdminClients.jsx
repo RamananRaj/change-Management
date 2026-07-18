@@ -90,6 +90,11 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
   const [contentSaving,  setContentSaving]  = useState(false)
   const [contentFormError, setContentFormError] = useState(null)
 
+  // Templates state (per-client: custom + inherited global)
+  const [ownTemplates,   setOwnTemplates]   = useState([])
+  const [libTemplates,   setLibTemplates]   = useState([])
+  const [tplLoading,     setTplLoading]     = useState(false)
+
   useEffect(() => { fetchClients(); fetchAllUsers(); fetchIndustries() }, [])
 
   // Scoped (Client Admin) mode: auto-open the one client and never show the list
@@ -478,6 +483,39 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     loadContent()
   }
 
+  // ── Templates (per-client) ─────────────────────────────────────────────────────
+  async function loadClientTemplates(clientId = selectedClient?.id) {
+    if (!clientId) return
+    setTplLoading(true)
+    const [{ data: own }, { data: lib }] = await Promise.all([
+      supabase.from('templates').select('*').eq('client_id', clientId).order('phase_number').order('sort_order'),
+      supabase.from('templates').select('*').is('client_id', null).order('phase_number').order('sort_order'),
+    ])
+    setOwnTemplates(own ?? [])
+    setLibTemplates(lib ?? [])
+    setTplLoading(false)
+  }
+
+  async function cloneTemplateToClient(t) {
+    const { id, created_at, updated_at, ...rest } = t
+    const { error } = await supabase.from('templates').insert({ ...rest, client_id: selectedClient.id, title: `${t.title} (${selectedClient.name})` })
+    if (error) { window.alert(error.message); return }
+    loadClientTemplates()
+  }
+
+  async function promoteClientTemplate(t) {
+    if (!window.confirm(`Promote “${t.title}” to the global Templates library? Every current and future customer can use it.`)) return
+    const { error } = await supabase.from('templates').update({ client_id: null }).eq('id', t.id)
+    if (error) { window.alert(error.message); return }
+    loadClientTemplates()
+  }
+
+  async function deleteClientTemplate(id) {
+    if (!window.confirm('Delete this custom template? User responses to it will also be removed.')) return
+    await supabase.from('templates').delete().eq('id', id)
+    loadClientTemplates()
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────────────────
 
   // Modals are shared across both the client-list and client-detail views so they
@@ -713,7 +751,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway']]), ['content', '📚 Content'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
+          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway'], ['content', '📚 Content'], ['templates', '🧩 Templates']]), ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setClientTab(key)
@@ -723,6 +761,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                   loadPathway(1, pid)
                 }
                 if (key === 'content') loadContent(contentPhase, selectedClient.id)
+                if (key === 'templates') loadClientTemplates(selectedClient.id)
                 if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
                 if (key === 'progress') {
                   const pid = progressProject || projects[0]?.id || ''
@@ -1148,6 +1187,94 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                           </div>
                           <div className="shrink-0">
                             <button onClick={() => cloneLibToClient(item)} className="text-[11px] text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to customise</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TEMPLATES TAB ── */}
+        {clientTab === 'templates' && (
+          <div>
+            <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
+              <span className="font-semibold text-[#1F4E79]">Templates for {selectedClient.name}.</span>{' '}
+              <strong>Custom</strong> templates belong to this client. <strong>Global</strong> templates are shared with every
+              customer — clone one to make a client-specific version, or promote a custom template to the global library.
+              Full template building (columns) lives in <strong>Platform Admin → Templates</strong>.
+            </div>
+
+            {tplLoading ? (
+              <p className="text-sm text-slate-400">Loading…</p>
+            ) : (
+              <div className="space-y-6">
+                {/* Custom for this client */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">🏢 Custom for {selectedClient.name} · {ownTemplates.length}</p>
+                  {ownTemplates.length === 0 ? (
+                    <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-100">
+                      <p className="text-slate-400 text-sm">No custom templates yet.</p>
+                      <p className="text-slate-300 text-xs mt-1">Clone one from the global library below to tailor it.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {ownTemplates.map(t => (
+                        <div key={t.id} className={`bg-white border border-[#1F4E79]/20 rounded-xl p-4 ${!t.is_active ? 'opacity-50' : ''}`}>
+                          <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <p className="font-semibold text-slate-800 text-sm">{t.title}</p>
+                                <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Phase {String(t.phase_number).padStart(2,'0')}</span>
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 Custom</span>
+                              </div>
+                              {t.description && <p className="text-xs text-slate-500 mb-1">{t.description}</p>}
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {(t.columns ?? []).map((col, i) => (
+                                  <span key={i} className="text-[10px] font-medium bg-slate-50 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">{col.label}<span className="text-slate-400 ml-1">({col.type})</span></span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <button onClick={() => deleteClientTemplate(t.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                              {!lockedClientId && <button onClick={() => promoteClientTemplate(t)} className="text-[11px] text-emerald-600 hover:underline whitespace-nowrap">↑ Promote to library</button>}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Inherited global */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">🌐 Global library · {libTemplates.length}</p>
+                  {libTemplates.length === 0 ? (
+                    <p className="text-xs text-slate-400 px-1">No global templates yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {libTemplates.map(t => (
+                        <div key={t.id} className={`bg-slate-50 border border-slate-100 rounded-xl p-4 ${!t.is_active ? 'opacity-50' : ''}`}>
+                          <div className="flex items-start gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <p className="font-semibold text-slate-700 text-sm">{t.title}</p>
+                                <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Phase {String(t.phase_number).padStart(2,'0')}</span>
+                                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Global</span>
+                              </div>
+                              {t.description && <p className="text-xs text-slate-500 mb-1">{t.description}</p>}
+                              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                {(t.columns ?? []).map((col, i) => (
+                                  <span key={i} className="text-[10px] font-medium bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">{col.label}<span className="text-slate-400 ml-1">({col.type})</span></span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="shrink-0">
+                              <button onClick={() => cloneTemplateToClient(t)} className="text-[11px] text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to customise</button>
+                            </div>
                           </div>
                         </div>
                       ))}
