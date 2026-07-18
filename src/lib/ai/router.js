@@ -17,7 +17,7 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   const t0 = performance.now()
 
   // 1 ── Rules (grounded, $0, private)
-  const r = await runRules(text)
+  const r = await runRules(text, ctx)
   if (r.matched) {
     const latency = performance.now() - t0
     logUsage({ tier: 'rules', intent: r.intent, query: text, ok: true, escalated: false, latency_ms: latency, ctx })

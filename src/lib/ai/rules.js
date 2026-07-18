@@ -593,16 +593,78 @@ const RUNNERS = {
   readiness: runReadiness,
 }
 
+// ── Phrase learning ────────────────────────────────────────────────────────────
+// Teach the AI that your wording maps to a known action, so it adapts to how you ask.
+const FRIENDLY = { report: 'change report', at_risk: 'risks / at-risk', readiness: 'readiness',
+  progress: 'progress', heatmap: 'heat map', milestones: 'milestones', upcoming: 'upcoming',
+  people: 'people', clients: 'clients' }
+const TEACH_MAP = { 'report': 'report', 'change report': 'report', 'risk': 'at_risk', 'risks': 'at_risk',
+  'at risk': 'at_risk', 'readiness': 'readiness', 'progress': 'progress', 'heatmap': 'heatmap',
+  'heat map': 'heatmap', 'milestone': 'milestones', 'milestones': 'milestones', 'upcoming': 'upcoming',
+  'people': 'people', 'client': 'clients', 'clients': 'clients' }
+
+const normPhrase = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+
+// "teach: <phrase> = <target>" (also accepts means / -> / is)
+function parseTeach(text) {
+  const m = String(text ?? '').match(/^\s*teach\s*:?\s*(.+?)\s*(?:=|means|->|→|is)\s*([a-z \-]+?)\s*$/i)
+  if (!m) return null
+  const intent = TEACH_MAP[normPhrase(m[2])]
+  const phrase = m[1].trim()
+  return intent && phrase ? { phrase, intent } : { invalid: true, phrase: m[1].trim(), target: m[2].trim() }
+}
+
+let _phraseCache = null
+async function loadLearnedPhrases() {
+  if (_phraseCache) return _phraseCache
+  const { data } = await supabase.from('ai_intent_phrases').select('phrase, phrase_norm, intent')
+  _phraseCache = data ?? []
+  return _phraseCache
+}
+export function invalidatePhraseCache() { _phraseCache = null }
+
+async function learnPhrase(phrase, intent, userId) {
+  const phrase_norm = normPhrase(phrase)
+  if (!phrase_norm) return { error: { message: 'empty phrase' } }
+  const { error } = await supabase.from('ai_intent_phrases')
+    .upsert({ phrase, phrase_norm, intent, created_by: userId ?? null }, { onConflict: 'phrase_norm' })
+  _phraseCache = null
+  return { error }
+}
+
 // Public: try to answer with rules. Returns { matched, intent, descriptor } — descriptor is
 // null when no rule matched (router then escalates to the SLM).
-export async function runRules(text) {
+export async function runRules(text, ctx = {}) {
+  // 0 ── Teaching command: "teach: <phrase> = <action>"
+  const teach = parseTeach(text)
+  if (teach) {
+    if (teach.invalid) return { matched: true, intent: 'teach', descriptor: { type: 'narrative', title: "Couldn't learn that",
+      body: `I don't recognise "**${teach.target}**". Try one of: ${Object.values(FRIENDLY).join(', ')}. For example: "teach: monthly wrap-up = report".` } }
+    const { error } = await learnPhrase(teach.phrase, teach.intent, ctx.userId)
+    return { matched: true, intent: 'teach', descriptor: { type: 'narrative', title: error ? "Couldn't save" : 'Learned ✓',
+      body: error ? `Could not save that (${error.message}). Only Master Admins can teach phrases.`
+                  : `Got it — from now on I'll treat "**${teach.phrase}**" as a **${FRIENDLY[teach.intent]}** request.` } }
+  }
+
+  // 1 ── Deterministic intent match
   const hit = matchIntent(text)
   if (hit) {
     const descriptor = await RUNNERS[hit.intent](hit.params, text)
     return { matched: true, intent: hit.intent, descriptor }
   }
-  // Generic grounded fallback: does the question name anything we've captured — a client,
-  // project, person or stakeholder? If so, answer from that record. Everything stays in rules.
+
+  // 2 ── Learned phrasing: does the query contain a phrase you've taught?
+  const learned = await loadLearnedPhrases()
+  if (learned.length) {
+    const qn = ` ${normPhrase(text)} `
+    const lp = learned.find(p => RUNNERS[p.intent] && p.phrase_norm && qn.includes(` ${p.phrase_norm} `))
+    if (lp) {
+      const descriptor = await RUNNERS[lp.intent](null, text)
+      return { matched: true, intent: lp.intent, learned: true, descriptor }
+    }
+  }
+
+  // 3 ── Generic grounded fallback: does the question name a client, project, person or stakeholder?
   const resolved = await resolveEntity(text)
   if (resolved) return { matched: true, intent: `detail_${resolved.type}`, descriptor: resolved.descriptor }
   return { matched: false, intent: null, descriptor: null }
