@@ -488,6 +488,10 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
           .cf-print-ancestor{display:block !important;position:static !important;overflow:visible !important;height:auto !important;min-height:0 !important;max-height:none !important;margin:0 !important;padding:0 !important;background:#fff !important;border:0 !important;border-radius:0 !important;box-shadow:none !important}
           .cf-print{padding:14mm 13mm !important;background:#fff !important}
           .cf-no-print{display:none !important}
+          /* Keep a section together, and never leave a heading stranded at the foot of a page. */
+          .cf-print section{break-inside:avoid !important;page-break-inside:avoid !important}
+          .cf-print h1,.cf-print h2,.cf-print h3{break-after:avoid !important;page-break-after:avoid !important}
+          .cf-print table,.cf-print tr,.cf-print li{break-inside:avoid !important;page-break-inside:avoid !important}
           @page{margin:0}
         }
       `}</style>
