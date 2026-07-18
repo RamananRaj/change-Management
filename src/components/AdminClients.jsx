@@ -22,6 +22,22 @@ const PHASE_STATUS_DISPLAY = {
 
 const emptyClientForm  = { name: '', industry: '', contact_name: '', contact_email: '', notes: '', is_active: true }
 const emptyProjectForm = { name: '', description: '', status: 'planning' }
+const ARTIFACT_META = {
+  stakeholder_heatmap: { icon: '🔥', label: 'Stakeholder impact heat map', group: 'Stakeholder & impact' },
+  stakeholder_map:     { icon: '🗂️', label: 'Stakeholder map',             group: 'Stakeholder & impact' },
+  change_impact:       { icon: '🧭', label: 'Change impact assessment',    group: 'Stakeholder & impact' },
+  timeline:            { icon: '📅', label: 'Timeline',                    group: 'Delivery & timeline' },
+}
+const artMeta = t => ARTIFACT_META[t] || { icon: '✦', label: t, group: 'Other' }
+const LV_HEX = { vh: '#991B1B', h: '#DC2626', m: '#E8913A', l: '#16A34A', vl: '#86EFAC', none: '#E2E8F0' }
+const LV_NAME = { vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Very Low', none: 'None' }
+// Friendly provenance label from the stored `source`.
+function artSource(s) {
+  if (!s) return { label: 'generated', cls: 'bg-slate-100 text-slate-500' }
+  if (s === 'seed') return { label: 'from seed', cls: 'bg-emerald-100 text-emerald-700' }
+  if (/\.(xlsx|xls|csv|pptx|pdf|docx?)$/i.test(s)) return { label: `uploaded · ${s}`, cls: 'bg-amber-100 text-amber-700' }
+  return { label: s, cls: 'bg-purple-100 text-purple-700' }
+}
 const CONTENT_TYPES = [{ value: 'exercise', label: 'Exercise' }, { value: 'tool', label: 'Tool' }, { value: 'template', label: 'Template' }]
 const TYPE_COLOR = { exercise: 'bg-blue-100 text-blue-700', tool: 'bg-green-100 text-green-700', template: 'bg-purple-100 text-purple-700' }
 const emptyClientContentForm = { phase_number: 1, content_type: 'exercise', title: '', description: '', body: '', role: '', is_common: true, sort_order: 0 }
@@ -94,6 +110,11 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
   const [ownTemplates,   setOwnTemplates]   = useState([])
   const [libTemplates,   setLibTemplates]   = useState([])
   const [tplLoading,     setTplLoading]     = useState(false)
+
+  // Artifacts state (AI-captured / stored change_artifacts for this client)
+  const [artifacts,      setArtifacts]      = useState([])
+  const [artLoading,     setArtLoading]     = useState(false)
+  const [viewArtifact,   setViewArtifact]   = useState(null)
 
   useEffect(() => { fetchClients(); fetchAllUsers(); fetchIndustries() }, [])
 
@@ -516,6 +537,23 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     loadClientTemplates()
   }
 
+  // ── Artifacts (per-client) ───────────────────────────────────────────────────
+  async function loadArtifacts(clientId = selectedClient?.id) {
+    if (!clientId) return
+    setArtLoading(true)
+    const { data } = await supabase.from('change_artifacts')
+      .select('*').eq('client_id', clientId).order('type').order('version', { ascending: false })
+    setArtifacts(data ?? [])
+    setArtLoading(false)
+  }
+
+  async function deleteArtifact(a) {
+    if (!window.confirm(`Delete "${a.title}" (v${a.version})? This can't be undone.`)) return
+    await supabase.from('change_artifacts').delete().eq('id', a.id)
+    setViewArtifact(null)
+    loadArtifacts()
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────────────────
 
   // Modals are shared across both the client-list and client-detail views so they
@@ -631,6 +669,64 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
           </div>
         </>
       )}
+
+      {/* ── Artifact viewer modal ── */}
+      {viewArtifact && (() => {
+        const a = viewArtifact, meta = artMeta(a.type), isHeat = (a.data?.rows ?? []).some(r => r.cells)
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setViewArtifact(null)} />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-2xl max-h-[88vh] overflow-y-auto">
+                <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{meta.icon}</span>
+                    <div>
+                      <h3 className="font-bold text-slate-800 leading-tight">{a.title}</h3>
+                      <p className="text-[11px] text-slate-400">v{a.version} · current · {artSource(a.source).label}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setViewArtifact(null)} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">✕</button>
+                </div>
+                <div className="px-6 py-5">
+                  {isHeat ? (
+                    <div className="overflow-x-auto">
+                      <table className="border-separate" style={{ borderSpacing: '6px' }}>
+                        <thead><tr><th></th>{(a.data.cols ?? []).map(c => <th key={c} className="text-[11px] font-semibold text-slate-500 px-1 text-center whitespace-nowrap">{c}</th>)}</tr></thead>
+                        <tbody>
+                          {a.data.rows.map((r, i) => (
+                            <tr key={i}>
+                              <td className="text-[12px] font-semibold text-slate-700 pr-2 text-right whitespace-nowrap">{r.label}</td>
+                              {(r.cells ?? []).map((lv, j) => (
+                                <td key={j} className="text-center"><span title={LV_NAME[lv] ?? lv} className="inline-block w-[18px] h-[18px] rounded-full align-middle" style={{ background: LV_HEX[lv] ?? LV_HEX.none, boxShadow: '0 1px 3px rgba(0,0,0,.18)' }} /></td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div className="flex flex-wrap gap-2.5 mt-3 text-[10.5px] text-slate-400">
+                        {['vh', 'h', 'm', 'l', 'vl', 'none'].map(k => <span key={k} className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ background: LV_HEX[k] }} />{LV_NAME[k]}</span>)}
+                      </div>
+                    </div>
+                  ) : (
+                    <pre className="text-xs text-slate-600 bg-slate-50 border border-slate-100 rounded-xl p-4 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(a.data, null, 2)}</pre>
+                  )}
+                  {a.data?.commentary && (
+                    <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3.5">
+                      <p className="text-[10px] font-bold text-[#E8913A] uppercase tracking-widest mb-2">✦ AI insight</p>
+                      <p className="text-[13.5px] leading-relaxed text-slate-600">{a.data.commentary.replace(/\*\*/g, '')}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                  {!lockedClientId && <button onClick={() => deleteArtifact(a)} className="text-sm text-red-400 hover:text-red-600 px-4 py-2">Delete</button>}
+                  <button onClick={() => setViewArtifact(null)} className="text-sm text-slate-500 px-4 py-2">Close</button>
+                </div>
+              </div>
+            </div>
+          </>
+        )
+      })()}
 
       {/* ── Client content form modal ── */}
       {showContentForm && (
@@ -751,7 +847,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway'], ['content', '📚 Content'], ['templates', '🧩 Templates']]), ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
+          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway'], ['content', '📚 Content'], ['templates', '🧩 Templates']]), ['artifacts', '✦ Artifacts'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setClientTab(key)
@@ -762,6 +858,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                 }
                 if (key === 'content') loadContent(contentPhase, selectedClient.id)
                 if (key === 'templates') loadClientTemplates(selectedClient.id)
+                if (key === 'artifacts') loadArtifacts(selectedClient.id)
                 if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
                 if (key === 'progress') {
                   const pid = progressProject || projects[0]?.id || ''
@@ -1283,6 +1380,72 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── ARTIFACTS TAB ── */}
+        {clientTab === 'artifacts' && (
+          <div>
+            <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
+              <span className="font-semibold text-[#1F4E79]">Everything captured for {selectedClient.name}.</span>{' '}
+              Working artifacts the AI has generated or that were uploaded — heat maps, stakeholder maps, timelines. Loading one via
+              AI (e.g. "add the stakeholder heat map for {selectedClient.name}") makes it appear here, version-tracked.
+            </div>
+
+            {artLoading ? (
+              <p className="text-sm text-slate-400">Loading…</p>
+            ) : artifacts.filter(a => a.is_current).length === 0 ? (
+              <div className="text-center py-12 bg-slate-50 rounded-2xl border border-slate-100">
+                <p className="text-3xl mb-2">✦</p>
+                <p className="text-slate-400 text-sm">No artifacts captured yet.</p>
+                <p className="text-slate-300 text-xs mt-1">Ask the AI to add a heat map or stakeholder map for this client, and it'll show up here.</p>
+              </div>
+            ) : (() => {
+              const current = artifacts.filter(a => a.is_current)
+              const historyCount = t => artifacts.filter(a => a.type === t && !a.is_current).length
+              const groups = [...new Set(current.map(a => artMeta(a.type).group))]
+              const card = a => {
+                const meta = artMeta(a.type); const src = artSource(a.source)
+                const cells = (a.data?.rows ?? []).flatMap(r => r.cells ?? []).slice(0, 12)
+                return (
+                  <div key={a.id} className="bg-white border border-slate-100 rounded-2xl p-4 flex flex-col gap-2.5">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-[#1F4E79]/10 flex items-center justify-center text-lg shrink-0">{meta.icon}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-slate-800 text-sm leading-tight">{a.title}</p>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">v{a.version} · current</span>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${src.cls}`}>{src.label}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {cells.length > 0 && (
+                      <div className="grid gap-1.5 py-1" style={{ gridTemplateColumns: 'repeat(4, 14px)' }}>
+                        {cells.map((lv, i) => <span key={i} className="w-3.5 h-3.5 rounded-full" style={{ background: LV_HEX[lv] ?? LV_HEX.none }} />)}
+                      </div>
+                    )}
+                    {a.data?.commentary && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{a.data.commentary.replace(/\*\*/g, '')}</p>}
+                    <div className="flex items-center gap-3 pt-2.5 mt-auto border-t border-slate-100">
+                      <button onClick={() => setViewArtifact(a)} className="text-xs font-semibold text-[#1F4E79] hover:underline">View</button>
+                      {historyCount(a.type) > 0 && <span className="text-[11px] text-slate-400">History ({historyCount(a.type)})</span>}
+                      {!lockedClientId && <button onClick={() => deleteArtifact(a)} className="text-xs text-red-400 hover:underline ml-auto">Delete</button>}
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <div className="space-y-6">
+                  {groups.map(g => (
+                    <div key={g}>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">{g}</p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                        {current.filter(a => artMeta(a.type).group === g).map(card)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         )}
 
