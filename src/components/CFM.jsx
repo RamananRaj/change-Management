@@ -79,6 +79,7 @@ export default function CFM() {
   const panelRef = useRef(null)
   const drag = useRef(null)
   const fileRef = useRef(null)
+  const msgInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [aiThinking, setAiThinking] = useState(false)
@@ -319,7 +320,9 @@ export default function CFM() {
               onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = '' }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
               title="Attach a file" className="text-slate-500 hover:text-[#1F4E79] text-lg disabled:opacity-40">📎</button>
-            <input value={text} onChange={e => setText(e.target.value)} placeholder={uploading ? 'Uploading…' : 'Message · @cora to ask AI'}
+            <button type="button" onClick={() => { setText(t => /^@cora\b/i.test(t.trim()) ? t : `@cora ${t}`.trimStart()); msgInputRef.current?.focus() }}
+              title="Ask CORA" className="text-violet-500 hover:text-violet-700 text-base font-bold shrink-0">✦</button>
+            <input ref={msgInputRef} value={text} onChange={e => setText(e.target.value)} placeholder={uploading ? 'Uploading…' : 'Message · ✦ to ask CORA'}
               onPaste={e => { const f = [...e.clipboardData.files][0]; if (f) { e.preventDefault(); sendFile(f) } }}
               className="flex-1 bg-white rounded-full px-4 py-2 text-[13.5px] outline-none" />
             <button type="submit" disabled={uploading} className="w-10 h-10 rounded-full bg-[#1F4E79] text-white text-base shrink-0 disabled:opacity-50">➤</button>
