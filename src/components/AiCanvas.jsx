@@ -47,8 +47,8 @@ const RAG_DOT = { green: '#16A34A', amber: '#D97706', red: '#DC2626' }
 function Widget({ d, onRemove, onDrill, onNavigate, onConfirmDraft, canAct }) {
   const showAction = d.action && (!d.action.adminOnly || canAct)
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm mb-4 overflow-hidden animate-[fadeIn_.25s_ease]">
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100">
+    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm mb-4 animate-[fadeIn_.25s_ease]">
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-100 rounded-t-2xl">
         <div className="min-w-0">
           {d.query && <p className="text-[11px] text-slate-400 truncate">"{d.query}"</p>}
           <p className="font-bold text-slate-800 text-[15px]">{d.title}</p>
