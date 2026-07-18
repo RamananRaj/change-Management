@@ -79,7 +79,7 @@ export default function CFM() {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} title="Change Flow Messages"
-        className="fixed bottom-6 right-6 z-40 w-[62px] h-[62px] rounded-[20px] flex items-center justify-center shadow-xl"
+        className="fixed bottom-24 right-6 z-40 w-[62px] h-[62px] rounded-[20px] flex items-center justify-center shadow-xl"
         style={{ background: 'linear-gradient(150deg,#255a8a,#163a5c)' }}>
         <CfmMark />
         {chat.totalUnread > 0 && (
