@@ -52,6 +52,28 @@ export default function CFM() {
   }
   function hdrUp(e) { drag.current = null; try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* noop */ } }
 
+  // Draggable launcher icon — distinguishes a drag from a click (a plain click opens the panel).
+  const [launcherPos, setLauncherPos] = useState(null)
+  const ldrag = useRef(null)
+  function lDown(e) {
+    const r = e.currentTarget.getBoundingClientRect()
+    ldrag.current = { dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function lMove(e) {
+    const d = ldrag.current; if (!d) return
+    if (Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy) > 4) d.moved = true
+    if (!d.moved) return
+    const left = Math.max(6, Math.min(e.clientX - d.dx, window.innerWidth - 62 - 6))
+    const top  = Math.max(6, Math.min(e.clientY - d.dy, window.innerHeight - 62 - 6))
+    setLauncherPos({ left, top })
+  }
+  function lUp(e) {
+    const d = ldrag.current; ldrag.current = null
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* noop */ }
+    if (d && !d.moved) setOpen(true)   // it was a tap, not a drag → open
+  }
+
   const active = chat.channels.find(c => c.id === activeId) || null
 
   // Load the thread when a channel is opened, and refresh it whenever the channel list updates
@@ -96,9 +118,9 @@ export default function CFM() {
   // ── Collapsed launcher ──
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} title="Change Flow Messages"
-        className="fixed bottom-24 right-6 z-40 w-[62px] h-[62px] rounded-[20px] flex items-center justify-center shadow-xl"
-        style={{ background: 'linear-gradient(150deg,#255a8a,#163a5c)' }}>
+      <button onPointerDown={lDown} onPointerMove={lMove} onPointerUp={lUp} title="Change Flow Messages — drag to move"
+        className={`fixed z-40 w-[62px] h-[62px] rounded-[20px] flex items-center justify-center shadow-xl cursor-grab active:cursor-grabbing ${launcherPos ? '' : 'bottom-24 right-6'}`}
+        style={{ background: 'linear-gradient(150deg,#255a8a,#163a5c)', touchAction: 'none', ...(launcherPos ? { left: launcherPos.left, top: launcherPos.top } : {}) }}>
         <CfmMark />
         {chat.totalUnread > 0 && (
           <span className="absolute -top-1.5 -right-1.5 min-w-[24px] h-6 px-1.5 bg-[#E8913A] text-white text-[12.5px] font-extrabold rounded-full flex items-center justify-center border-[2.5px] border-slate-50">
