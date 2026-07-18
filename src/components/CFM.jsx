@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../hooks/useChat'
+import { ask } from '../lib/ai/router'
+
+// Turn a router descriptor into a concise chat-friendly answer for CORA.
+function descriptorToText(d) {
+  if (!d) return "I couldn't find an answer for that."
+  const strip = s => String(s ?? '').replace(/\*\*/g, '')
+  if (d.type === 'narrative') return strip(d.body)
+  if (d.type === 'insight') return [strip(d.lead), ...(d.areas ?? []).slice(0, 3).map(a => `${a.rank}. ${a.name}: ${strip(a.body)}`), d.move ? `The one move: ${strip(d.move)}` : ''].filter(Boolean).join('\n\n')
+  if (d.type === 'heatmap') return [strip(d.headline), ...(d.insights ?? []).slice(0, 3).map(s => `• ${strip(s)}`)].filter(Boolean).join('\n')
+  if (d.type === 'progress' || d.type === 'list') {
+    const rows = (d.rows ?? []).slice(0, 6).map(r => r.value != null ? `• ${r.label}: ${r.value}%` : `• ${r.name ?? r.label}${r.meta ? ` — ${r.meta}` : ''}${r.due ? ` (${r.due})` : ''}`)
+    return [strip(d.commentary || d.title || ''), ...rows].filter(Boolean).join('\n') || (d.empty ?? 'Nothing to show.')
+  }
+  if (d.type === 'report') return `Here's the ${d.title}. Open the AI canvas for the full report — I can summarise any section here if you ask.`
+  if (d.body) return strip(d.body)
+  return 'I can answer that in the AI canvas — ask me something more specific here and I\'ll try.'
+}
 
 // CFM — Change Flow Messages. A floating launcher (bottom-right) that expands into a WhatsApp-style
 // chat panel in the ChangeFlow blue. DMs + groups, live unread badge, read ticks.
@@ -64,6 +81,7 @@ export default function CFM() {
   const fileRef = useRef(null)
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [aiThinking, setAiThinking] = useState(false)
 
   function hdrDown(e) {
     if (e.target.closest('button')) return   // let header buttons work
@@ -126,7 +144,20 @@ export default function CFM() {
     e?.preventDefault()
     const t = text.trim(); if (!t || !activeId) return
     const rt = replyTo?.id ?? null
-    setText(''); setReplyTo(null); await chat.send(activeId, t, rt)
+    setText(''); setReplyTo(null)
+    await chat.send(activeId, t, rt)
+    // CORA: if the message calls @cora, answer it inline (grounded, role-scoped).
+    const m = t.match(/@cora\b[:,]?\s*(.*)/is)
+    if (m) {
+      const q = (m[1] || '').trim() || t.replace(/@cora/ig, '').trim()
+      setAiThinking(true)
+      try {
+        const d = await ask(q, { userId: user.id, clientId: profile?.client_id ?? null })
+        await chat.send(activeId, descriptorToText(d), null, null, true)
+      } catch {
+        await chat.send(activeId, "I couldn't work that out just now — try rephrasing.", null, null, true)
+      } finally { setAiThinking(false) }
+    }
     chat.loadMessages(activeId).then(setMessages)
   }
   async function sendFile(file) {
@@ -248,12 +279,13 @@ export default function CFM() {
             onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) sendFile(e.dataTransfer.files[0]) }}
             className={`flex-1 overflow-y-auto px-4 py-3 space-y-1.5 ${dragOver ? 'ring-2 ring-inset ring-[#1F4E79]' : ''}`} style={{ background: '#e9eef3' }}>
             {messages.map((m, i) => {
-              const mine = m.sender_id === user.id
-              const showName = active.isGroup && !mine && messages[i - 1]?.sender_id !== m.sender_id
+              const isAi = m.is_ai
+              const mine = !isAi && m.sender_id === user.id
+              const showName = active.isGroup && !mine && !isAi && messages[i - 1]?.sender_id !== m.sender_id
               const quoted = m.reply_to ? msgById[m.reply_to] : null
               return (
-                <div key={m.id} className={`group relative max-w-[78%] px-2.5 py-1.5 rounded-lg text-[13.5px] leading-snug shadow-sm ${mine ? 'ml-auto bg-[#d3e8fb] rounded-tr-sm' : 'mr-auto bg-white rounded-tl-sm'}`}>
-                  {showName && <p className="text-[11px] font-bold text-[#E8913A] mb-0.5">{senderName(m.sender_id)}</p>}
+                <div key={m.id} className={`group relative max-w-[80%] px-2.5 py-1.5 rounded-lg text-[13.5px] leading-snug shadow-sm ${isAi ? 'mr-auto bg-violet-50 border border-violet-100 rounded-tl-sm' : mine ? 'ml-auto bg-[#d3e8fb] rounded-tr-sm' : 'mr-auto bg-white rounded-tl-sm'}`}>
+                  {isAi ? <p className="text-[11px] font-bold text-violet-700 mb-0.5">✦ CORA</p> : showName && <p className="text-[11px] font-bold text-[#E8913A] mb-0.5">{senderName(m.sender_id)}</p>}
                   {quoted && (
                     <div className="border-l-2 border-[#1F4E79]/50 bg-black/[.045] rounded px-2 py-1 mb-1">
                       <p className="text-[10.5px] font-bold text-[#1F4E79] leading-tight">{senderName(quoted.sender_id)}</p>
@@ -261,14 +293,15 @@ export default function CFM() {
                     </div>
                   )}
                   {m.attachment && <Attachment a={m.attachment} />}
-                  {m.body && <span>{m.body}</span>}
+                  {m.body && <span className={isAi ? 'whitespace-pre-wrap' : ''}>{m.body}</span>}
                   <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">{fmtTime(m.created_at)}{mine && <span className="text-[#2f8fe0] ml-0.5">✓✓</span>}</span>
-                  <button onClick={() => setReplyTo(m)} title="Reply"
-                    className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[11px] flex items-center justify-center shadow-sm ${mine ? '-left-7' : '-right-7'}`}>↩</button>
+                  {!isAi && <button onClick={() => setReplyTo(m)} title="Reply"
+                    className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[11px] flex items-center justify-center shadow-sm ${mine ? '-left-7' : '-right-7'}`}>↩</button>}
                 </div>
               )
             })}
-            {messages.length === 0 && <p className="text-center text-xs text-slate-400 mt-6">No messages yet — say hello 👋</p>}
+            {aiThinking && <div className="mr-auto max-w-[80%] px-3 py-2 rounded-lg bg-violet-50 border border-violet-100 text-[12.5px] text-violet-600 animate-pulse">✦ CORA is thinking…</div>}
+            {messages.length === 0 && <p className="text-center text-xs text-slate-400 mt-6">No messages yet — say hello, or ask <span className="font-semibold text-violet-600">@cora</span> 👋</p>}
           </div>
           {replyTo && (
             <div className="bg-[#f0f2f5] px-3 pt-2 -mb-1">
@@ -286,7 +319,7 @@ export default function CFM() {
               onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = '' }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
               title="Attach a file" className="text-slate-500 hover:text-[#1F4E79] text-lg disabled:opacity-40">📎</button>
-            <input value={text} onChange={e => setText(e.target.value)} placeholder={uploading ? 'Uploading…' : 'Type a message'}
+            <input value={text} onChange={e => setText(e.target.value)} placeholder={uploading ? 'Uploading…' : 'Message · @cora to ask AI'}
               onPaste={e => { const f = [...e.clipboardData.files][0]; if (f) { e.preventDefault(); sendFile(f) } }}
               className="flex-1 bg-white rounded-full px-4 py-2 text-[13.5px] outline-none" />
             <button type="submit" disabled={uploading} className="w-10 h-10 rounded-full bg-[#1F4E79] text-white text-base shrink-0 disabled:opacity-50">➤</button>
@@ -360,11 +393,11 @@ export default function CFM() {
             <>
               <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5" style={{ background: '#e9eef3' }}>
                 {ovMessages.map((m, i) => {
-                  const showName = ovMessages[i - 1]?.sender_id !== m.sender_id
+                  const showName = ovMessages[i - 1]?.sender_id !== m.sender_id || ovMessages[i - 1]?.is_ai !== m.is_ai
                   const quoted = m.reply_to ? ovMessages.find(x => x.id === m.reply_to) : null
                   return (
-                    <div key={m.id} className="max-w-[80%] mr-auto bg-white rounded-lg rounded-tl-sm px-2.5 py-1.5 text-[13.5px] leading-snug shadow-sm">
-                      {showName && <p className="text-[11px] font-bold text-[#E8913A] mb-0.5">{ovSenderName(m.sender_id)}</p>}
+                    <div key={m.id} className={`max-w-[80%] mr-auto rounded-lg rounded-tl-sm px-2.5 py-1.5 text-[13.5px] leading-snug shadow-sm ${m.is_ai ? 'bg-violet-50 border border-violet-100' : 'bg-white'}`}>
+                      {showName && <p className={`text-[11px] font-bold mb-0.5 ${m.is_ai ? 'text-violet-700' : 'text-[#E8913A]'}`}>{m.is_ai ? '✦ CORA' : ovSenderName(m.sender_id)}</p>}
                       {quoted && <div className="border-l-2 border-[#1F4E79]/50 bg-black/[.045] rounded px-2 py-1 mb-1"><p className="text-[10.5px] font-bold text-[#1F4E79]">{ovSenderName(quoted.sender_id)}</p><p className="text-[11px] text-slate-500 truncate">{quoted.body}</p></div>}
                       {m.attachment && <Attachment a={m.attachment} />}
                       {m.body && <span>{m.body}</span>}

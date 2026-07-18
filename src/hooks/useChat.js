@@ -106,10 +106,10 @@ export function useChat(user, profile) {
     return { path, name: file.name, type: file.type, size: file.size }
   }
 
-  async function send(channelId, body, replyTo = null, attachment = null) {
+  async function send(channelId, body, replyTo = null, attachment = null, isAi = false) {
     const text = (body || '').trim()
     if (!text && !attachment) return
-    await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text, reply_to: replyTo, attachment })
+    await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text, reply_to: replyTo, attachment, is_ai: isAi })
     await supabase.from('chat_members').update({ last_read_at: new Date().toISOString() }).eq('channel_id', channelId).eq('user_id', uid)
     load()
   }

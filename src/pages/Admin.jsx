@@ -2000,7 +2000,7 @@ export default function Admin() {
       <button onClick={() => navigate('/canvas')}
         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-white border border-slate-200 rounded-full pl-4 pr-2 py-2 shadow-lg hover:shadow-xl transition-shadow">
         <span className="w-2.5 h-2.5 rounded-full bg-[#E8913A]" />
-        <span className="text-slate-500 text-sm">Ask ChangeFlow — admin…</span>
+        <span className="text-slate-500 text-sm">Ask CORA — admin…</span>
         <span className="w-8 h-8 rounded-full bg-[#FDECD8] text-[#E8913A] grid place-items-center font-bold text-sm">✦</span>
       </button>
     </div>

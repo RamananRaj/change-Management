@@ -464,7 +464,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
             </div>
 
             {total === 0 ? (
-              <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No AI queries logged yet. Try the AI Canvas.</div>
+              <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No CORA queries logged yet. Try asking CORA.</div>
             ) : (
               <>
                 {/* Tier split */}

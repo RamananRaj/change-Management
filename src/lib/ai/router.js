@@ -30,7 +30,7 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
       const out = await runSlm(text, ctx, onProgress)
       const latency = performance.now() - t0
       logUsage({ tier: 'slm', intent: 'freeform', query: text, ok: true, escalated: true, latency_ms: latency, model: out.model, tokens: out.tokens, ctx })
-      return { tier: 'slm', type: 'narrative', title: 'AI response', body: out.text }
+      return { tier: 'slm', type: 'narrative', title: 'CORA', body: out.text }
     } catch {
       // fall through to external
     }
@@ -40,5 +40,5 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   const ext = await runExternal(text, ctx)
   const latency = performance.now() - t0
   logUsage({ tier: 'external', intent: 'freeform', query: text, ok: !ext.error, escalated: true, latency_ms: latency, model: ext.model, ctx })
-  return { tier: 'external', type: 'narrative', title: 'AI response', body: ext.text, external: ext.configured !== false }
+  return { tier: 'external', type: 'narrative', title: 'CORA', body: ext.text, external: ext.configured !== false }
 }

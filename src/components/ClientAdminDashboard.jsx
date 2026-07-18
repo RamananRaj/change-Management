@@ -78,7 +78,7 @@ export default function ClientAdminDashboard() {
       <div className="bg-[#1F4E79] text-white px-8 py-8">
         <p className="text-xs font-semibold tracking-widest text-white/50 uppercase mb-1">Client Admin</p>
         <h1 className="text-2xl font-bold">{greeting}, {firstName}</h1>
-        <p className="text-white/70 text-sm mt-1">Ask AI about <strong>{client?.name ?? 'your programme'}</strong> — grounded in your data</p>
+        <p className="text-white/70 text-sm mt-1">Ask CORA about <strong>{client?.name ?? 'your programme'}</strong> — grounded in your data</p>
       </div>
 
       <div className="px-8 py-6">

@@ -580,8 +580,8 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
         )}
         {widgets.length === 0 && !thinking ? (
           <div className="h-full min-h-[36vh] flex flex-col items-center justify-center text-center gap-2 text-slate-400">
-            <p className="text-lg font-bold text-slate-700">Ask ChangeFlow AI</p>
-            <p className="max-w-md text-sm leading-relaxed">Answers are grounded in your real, role-scoped data. Tap a chip above or a suggestion below to begin.</p>
+            <p className="text-lg font-bold text-slate-700">Ask CORA</p>
+            <p className="max-w-md text-sm leading-relaxed"><span className="font-semibold text-slate-500">CORA — Change Orchestration &amp; Readiness Assistant.</span> Answers are grounded in your real, role-scoped data. Tap a chip above or a suggestion below to begin.</p>
           </div>
         ) : (
           widgets.map(w => <Widget key={w.key} d={w} onDrill={run} onNavigate={navigate} onConfirmDraft={confirmDraft} canAct={!!profile?.is_admin} onRemove={() => setWidgets(list => list.filter(x => x.key !== w.key))} />)
@@ -629,22 +629,22 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
                 </>
               )}
               <input value={input} onChange={e => setInput(e.target.value)} disabled={thinking}
-                placeholder={attachedFile ? 'e.g. add this template for Horizon Power, phase 2' : 'Ask AI anything — risks, readiness, progress, timelines…'}
+                placeholder={attachedFile ? 'e.g. add this template for Horizon Power, phase 2' : 'Ask CORA — risks, readiness, progress, timelines…'}
                 className="flex-1 outline-none text-[15px] text-slate-800 placeholder:text-slate-400 disabled:opacity-60" />
               <button type="submit" disabled={thinking || (!input.trim() && !attachedFile)}
                 className="bg-[#E8913A] text-white rounded-xl w-9 h-8 font-bold disabled:opacity-50 hover:brightness-95">↑</button>
             </form>
             <p className="text-center text-[10px] text-slate-300 tracking-widest mt-2 font-mono">
-              CHANGEFLOW · AI · GROUNDED &amp; ROLE-SCOPED{slmOptedIn() ? ' · ON-DEVICE SLM ON' : ''}
+              CORA · GROUNDED &amp; ROLE-SCOPED{slmOptedIn() ? ' · ON-DEVICE SLM ON' : ''}
             </p>
           </div>
         </div>
       ) : (
         <div className="shrink-0 flex justify-center py-4 bg-slate-50">
-          <button onClick={() => setDockOpen(true)} title="Open AI chat"
+          <button onClick={() => setDockOpen(true)} title="Ask CORA"
             className="flex items-center gap-3 bg-white border border-slate-200 rounded-full pl-4 pr-2 py-2 shadow-md hover:shadow-lg transition-shadow">
             <span className="w-2.5 h-2.5 rounded-full bg-[#E8913A] shrink-0" />
-            <span className="text-[15px] text-slate-400 pr-1">Ask AI anything…</span>
+            <span className="text-[15px] text-slate-400 pr-1">Ask CORA…</span>
             <span className="w-8 h-8 rounded-full bg-[#FDECD8] flex items-center justify-center text-[#E8913A] font-bold text-sm shrink-0">✦</span>
           </button>
         </div>
