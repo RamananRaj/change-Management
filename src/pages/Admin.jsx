@@ -814,33 +814,25 @@ export default function Admin() {
             ? items.filter(i => `${i.title ?? ''} ${i.description ?? ''}`.toLowerCase().includes(q))
             : items
 
-          const renderRow = item => (
-            <div key={item.id} className="flex items-start gap-4 bg-white border border-slate-200 rounded-xl p-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeColor[item.content_type]}`}>{item.content_type}</span>
-                  {!item.is_common && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Add-on</span>}
-                  {item.industry && (
-                    <span className="text-[10px] text-slate-400">
-                      {industries.find(i => i.code === item.industry)?.icon ?? ''} {item.industry}
-                    </span>
-                  )}
-                  {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
-                  {item.client_id
-                    ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 {clients.find(c => c.id === item.client_id)?.name ?? 'Client'}</span>
-                    : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Library</span>}
-                </div>
-                <p className="font-medium text-slate-800 text-sm">{item.title}</p>
-                {item.description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{item.description}</p>}
-              </div>
-              <div className="flex flex-col items-end gap-1.5 shrink-0">
-                <div className="flex gap-2">
-                  <button onClick={() => openEditContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                  <button onClick={() => handleContentDelete(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
-                </div>
+          const renderCard = item => (
+            <div key={item.id} className={`bg-white border rounded-2xl p-4 flex flex-col gap-2 ${item.client_id ? 'border-[#1F4E79]/25' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeColor[item.content_type]}`}>{item.content_type}</span>
                 {item.client_id
-                  ? <button onClick={() => promoteContent(item)} className="text-[11px] text-emerald-600 hover:underline whitespace-nowrap">↑ Promote to library</button>
-                  : <button onClick={() => openCloneContent(item)} className="text-[11px] text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to client</button>}
+                  ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 {clients.find(c => c.id === item.client_id)?.name ?? 'Client'}</span>
+                  : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Library</span>}
+                {!item.is_common && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Add-on</span>}
+                {item.industry && <span className="text-[10px] text-slate-400">{industries.find(i => i.code === item.industry)?.icon ?? ''} {item.industry}</span>}
+                {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
+              </div>
+              <p className="font-medium text-slate-800 text-sm leading-tight">{item.title}</p>
+              {item.description && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{item.description}</p>}
+              <div className="flex items-center gap-3 pt-2.5 mt-auto border-t border-slate-100">
+                <button onClick={() => openEditContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                <button onClick={() => handleContentDelete(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                {item.client_id
+                  ? <button onClick={() => promoteContent(item)} className="text-[11px] text-emerald-600 hover:underline whitespace-nowrap ml-auto">↑ Promote</button>
+                  : <button onClick={() => openCloneContent(item)} className="text-[11px] text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap ml-auto">⎘ Clone</button>}
               </div>
             </div>
           )
@@ -896,14 +888,14 @@ export default function Admin() {
                         </span>
                         <span className="text-xs font-semibold text-slate-400">{g.items.length}</span>
                       </button>
-                      {open && <div className="p-2 space-y-2 bg-white">{g.items.map(renderRow)}</div>}
+                      {open && <div className="p-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 bg-white">{g.items.map(renderCard)}</div>}
                     </div>
                   )
                 })}
               </div>
             </div>
           ) : (
-            <div className="space-y-2">{visibleItems.map(renderRow)}</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">{visibleItems.map(renderCard)}</div>
           )
           })()}
         </div>
@@ -1325,65 +1317,66 @@ export default function Admin() {
               <p className="text-slate-400 text-sm mb-3">No templates yet.</p>
               <button onClick={openNewTemplate} className="text-[#1F4E79] text-sm font-semibold hover:underline">+ Create the first template</button>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {templates.map(t => (
-                <div key={t.id} className={`bg-white border rounded-2xl p-5 transition-opacity ${!t.is_active ? 'opacity-50' : ''}`}>
-                  <div className="flex items-start gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className="font-semibold text-slate-800">{t.title}</p>
-                        <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                          Phase {String(t.phase_number).padStart(2, '0')}
-                        </span>
-                        {t.industry && (
-                          <span className="text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded-full">
-                            {industries.find(i => i.code === t.industry)?.icon} {t.industry}
-                          </span>
-                        )}
-                        {t.role && (
-                          <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                            {roles.find(r => r.code === t.role)?.label ?? t.role}
-                          </span>
-                        )}
-                        {t.client_id
-                          ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 {clients.find(c => c.id === t.client_id)?.name ?? 'Client'}</span>
-                          : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Global</span>}
-                        {!t.is_active && (
-                          <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>
-                        )}
-                      </div>
-                      {t.description && <p className="text-xs text-slate-500 mb-2">{t.description}</p>}
-                      {/* Column preview pills */}
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {(t.columns ?? []).map((col, i) => (
-                          <span key={i} className="text-[10px] font-medium bg-slate-50 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-                            {col.label}
-                            <span className="text-slate-400 ml-1">({col.type})</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <button onClick={() => toggleTemplateActive(t)}
-                        className={`text-xs font-semibold px-3 py-1 rounded-lg border transition-colors ${
-                          t.is_active
-                            ? 'text-slate-400 border-slate-200 hover:border-slate-300'
-                            : 'text-green-600 border-green-200 hover:bg-green-50'
-                        }`}>
-                        {t.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                      <button onClick={() => openEditTemplate(t)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                      <button onClick={() => handleTemplateDelete(t.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+          ) : (() => {
+            // Group by scope: one group per client that has templates, then Global.
+            const groups = []
+            clients.forEach(c => {
+              const items = templates.filter(t => t.client_id === c.id)
+              if (items.length) groups.push({ key: c.id, label: `🏢 ${c.name}`, items })
+            })
+            const globalItems = templates.filter(t => !t.client_id)
+            if (globalItems.length) groups.push({ key: '__global', label: '🌐 Global library', items: globalItems })
+
+            const card = t => (
+              <div key={t.id} className={`bg-white border rounded-2xl p-4 flex flex-col gap-2.5 transition-opacity ${t.client_id ? 'border-[#1F4E79]/25' : 'border-slate-100'} ${!t.is_active ? 'opacity-50' : ''}`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-[#1F4E79]/10 flex items-center justify-center text-lg shrink-0">📋</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-slate-800 text-sm leading-tight">{t.title}</p>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Phase {String(t.phase_number).padStart(2, '0')}</span>
                       {t.client_id
-                        ? <button onClick={() => promoteTemplate(t)} className="text-xs text-emerald-600 hover:underline whitespace-nowrap">↑ Promote</button>
-                        : <button onClick={() => openCloneTemplate(t)} className="text-xs text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone</button>}
+                        ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 {clients.find(c => c.id === t.client_id)?.name ?? 'Client'}</span>
+                        : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Global</span>}
+                      {t.industry && <span className="text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded-full">{industries.find(i => i.code === t.industry)?.icon} {t.industry}</span>}
+                      {t.role && <span className="text-[10px] font-medium bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{roles.find(r => r.code === t.role)?.label ?? t.role}</span>}
+                      {!t.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>}
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+                {t.description && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{t.description}</p>}
+                {(t.columns ?? []).length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {(t.columns ?? []).slice(0, 6).map((col, i) => (
+                      <span key={i} className="text-[10px] font-medium bg-slate-50 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">{col.label}<span className="text-slate-400 ml-1">({col.type})</span></span>
+                    ))}
+                    {(t.columns ?? []).length > 6 && <span className="text-[10px] text-slate-400 px-1 py-0.5">+{(t.columns ?? []).length - 6}</span>}
+                  </div>
+                )}
+                <div className="flex items-center gap-3 pt-2.5 mt-auto border-t border-slate-100">
+                  <button onClick={() => toggleTemplateActive(t)} className={`text-xs font-semibold hover:underline ${t.is_active ? 'text-slate-400' : 'text-green-600'}`}>{t.is_active ? 'Deactivate' : 'Activate'}</button>
+                  <button onClick={() => openEditTemplate(t)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                  <button onClick={() => handleTemplateDelete(t.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                  {t.client_id
+                    ? <button onClick={() => promoteTemplate(t)} className="text-xs text-emerald-600 hover:underline whitespace-nowrap ml-auto">↑ Promote</button>
+                    : <button onClick={() => openCloneTemplate(t)} className="text-xs text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap ml-auto">⎘ Clone</button>}
+                </div>
+              </div>
+            )
+
+            return (
+              <div className="space-y-6">
+                {groups.map(g => (
+                  <div key={g.key}>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2.5">{g.label} · {g.items.length}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                      {g.items.map(card)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
         </div>
       )}
 
