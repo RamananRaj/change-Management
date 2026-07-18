@@ -37,8 +37,29 @@ function secDocHTML(s) {
     const ins = (s.insights || []).length ? `<ul>${s.insights.map(i => `<li>${mdHtml(i)}</li>`).join('')}</ul>` : ''
     return `${h}<table>${head}${rows}</table>${s.headline ? `<p>${mdHtml(s.headline)}</p>` : ''}${ins}`
   }
-  if (s.type === 'projectTimeline') return h + `<p><i>Timeline is best viewed in the app or the PDF.</i></p>`
+  if (s.type === 'projectTimeline') return h + (s.gantt ? ganttDocHTML(s.gantt) : `<p><i>No dates scheduled yet — add phase dates to draw the timeline.</i></p>`)
   return h
+}
+
+// Month-bucketed gantt as a Word table: bars = coloured cell spans, milestones = ◆ markers.
+const BAR_CSS = { completed: '#16A34A', active: '#E8913A', locked: '#E2E8F0' }
+function ganttDocHTML(g) {
+  return g.projects.map(pr => {
+    const head = `<tr><th style="width:130px"></th>${g.months.map((m, i) => `<th style="font-size:8pt;text-align:center;${i === g.todayIdx ? 'background:#FEE2E2;' : ''}">${esc(m)}</th>`).join('')}</tr>`
+    const rows = pr.rows.map(r => {
+      const cells = g.months.map((_, i) => {
+        if (r.kind === 'bar' && i >= r.startIdx && i <= r.endIdx) {
+          const c = BAR_CSS[r.status] || BAR_CSS.locked
+          return `<td bgcolor="${c}" style="background:${c};padding:2px"></td>`
+        }
+        if (r.kind === 'point' && i === r.pointIdx) return `<td style="text-align:center;color:${r.color || '#1F4E79'};font-size:10pt">◆</td>`
+        return '<td></td>'
+      }).join('')
+      const lbl = r.kind === 'bar' ? `${esc(r.label)} <span style="color:#94a3b8">(${r.pct}%)</span>` : esc(r.label)
+      return `<tr><td style="font-size:9pt">${lbl}</td>${cells}</tr>`
+    }).join('')
+    return `<p style="font-weight:bold;color:#1F4E79;margin:10px 0 2px">${esc(pr.name)}</p><table style="table-layout:fixed">${head}${rows}</table>`
+  }).join('')
 }
 
 // ── PowerPoint (.pptx) ──────────────────────────────────────────────────────
@@ -79,9 +100,55 @@ export async function exportReportPptx(report) {
       sl.addTable([header, ...body], { x: 0.5, y: 1.1, w: 12.3, fontSize: 11 })
       if (s.headline) sl.addText(stripMd(s.headline), { x: 0.5, y: 5.5, w: 12.3, fontSize: 11, color: '475569' })
     } else if (s.type === 'projectTimeline') {
-      sl.addText('Timeline is best viewed in the app or the PDF.', { x: 0.5, y: 1.1, fontSize: 13, italic: true, color: '94A3B8' })
+      if (s.gantt) ganttPptx(sl, P, s.gantt)
+      else sl.addText('No dates scheduled yet — add phase dates to draw the timeline.', { x: 0.5, y: 1.1, fontSize: 13, italic: true, color: '94A3B8' })
     }
   })
 
   pptx.writeFile({ fileName: `${safe(report.title)}.pptx` })
+}
+
+// Draw the gantt as positioned shapes on a slide.
+const BAR_TRACK = { completed: '16A34A', active: 'FDE3C6', locked: 'E2E8F0' }
+const BAR_FILL  = { completed: '16A34A', active: 'E8913A', locked: 'E2E8F0' }
+function ganttPptx(sl, P, g) {
+  const X = 0.5, top = 1.15, labelW = 2.1, W = 12.3
+  const trackX = X + labelW, trackW = W - labelW
+  const colW = trackW / g.months.length
+  const rect = P.ShapeType?.rect ?? 'rect'
+  const diamond = P.ShapeType?.diamond ?? 'diamond'
+
+  g.months.forEach((m, i) => {
+    sl.addText(m, { x: trackX + i * colW, y: top, w: colW, h: 0.22, fontSize: 8, color: '94A3B8', align: 'center' })
+    sl.addShape(rect, { x: trackX + i * colW, y: top + 0.24, w: 0.008, h: 5.6, fill: { color: 'F1F5F9' } })
+  })
+  if (g.todayIdx != null) {
+    const tx = trackX + (g.todayIdx + 0.5) * colW
+    sl.addShape(rect, { x: tx, y: top + 0.24, w: 0.012, h: 5.6, fill: { color: 'EF4444' } })
+  }
+
+  let y = top + 0.32
+  g.projects.forEach(pr => {
+    sl.addText(pr.name, { x: X, y, w: W, h: 0.26, fontSize: 13, bold: true, color: '1F4E79' })
+    y += 0.32
+    pr.rows.forEach(r => {
+      if (y > 7.1) return
+      sl.addText(r.label, { x: X, y, w: labelW - 0.1, h: 0.24, fontSize: 9, color: '334155', valign: 'middle' })
+      if (r.kind === 'bar') {
+        const bx = trackX + r.startIdx * colW
+        const bw = Math.max((r.endIdx - r.startIdx + 1) * colW, 0.12)
+        sl.addShape(rect, { x: bx, y: y + 0.02, w: bw, h: 0.2, fill: { color: BAR_TRACK[r.status] || BAR_TRACK.locked }, line: { color: 'FFFFFF', width: 0.5 } })
+        if (r.status !== 'locked' && r.pct > 0) sl.addShape(rect, { x: bx, y: y + 0.02, w: Math.max(bw * (r.pct / 100), 0.04), h: 0.2, fill: { color: BAR_FILL[r.status] || BAR_FILL.active } })
+        if (bw >= 0.6) sl.addText(`${r.pct}%`, { x: bx, y: y + 0.02, w: bw, h: 0.2, fontSize: 8, bold: true, color: r.status === 'locked' ? '475569' : 'FFFFFF', align: 'center', valign: 'middle' })
+      } else if (r.kind === 'point') {
+        const px = trackX + (r.pointIdx + 0.5) * colW
+        sl.addShape(diamond, { x: px - 0.09, y: y + 0.02, w: 0.18, h: 0.2, fill: { color: (r.color || '#1F4E79').replace('#', '') } })
+        sl.addText(r.label, { x: px + 0.14, y, w: 2.4, h: 0.24, fontSize: 8, color: '1F4E79', valign: 'middle' })
+      }
+      y += 0.28
+    })
+    y += 0.12
+  })
+
+  sl.addText('■ Done   ■ In progress   ▨ Upcoming   ◆ Milestone   | Today', { x: X, y: 7.15, w: W, h: 0.25, fontSize: 8, color: '94A3B8' })
 }

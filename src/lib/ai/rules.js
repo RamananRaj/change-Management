@@ -216,6 +216,43 @@ async function runHeatmap(_params, text) {
 // Assemble a comprehensive change report for a client — snapshot, heat map, timeline,
 // needs-attention, upcoming, readiness, recommendations. Sections are mini-descriptors the
 // report widget renders with the existing renderers. Grounded; will grow over time.
+// Build an export-ready gantt (month-bucketed) from the report's already-loaded projects.
+// Bars = ChangeFlow phases (coloured by schedule/completion); points = delivery milestones.
+function buildReportGantt(cp) {
+  const dates = []
+  cp.forEach(p => {
+    p.phases.forEach(ph => { if (ph.planned_start) dates.push(ph.planned_start); if (ph.planned_end) dates.push(ph.planned_end) })
+    ;(p.milestones || []).forEach(m => { if (m.milestone_date) dates.push(m.milestone_date) })
+  })
+  if (!dates.length) return null
+  const ds = dates.map(s => new Date(s + 'T00:00:00'))
+  const min = new Date(Math.min(...ds)), max = new Date(Math.max(...ds))
+  const y0 = min.getFullYear(), m0 = min.getMonth()
+  const nMonths = (max.getFullYear() - y0) * 12 + (max.getMonth() - m0) + 1
+  const months = []
+  for (let i = 0; i < nMonths; i++) {
+    const d = new Date(y0, m0 + i, 1)
+    months.push(d.toLocaleDateString(undefined, { month: 'short' }) + (d.getMonth() === 0 ? ` ’${String(d.getFullYear()).slice(2)}` : ''))
+  }
+  const idx = s => { const d = new Date(s + 'T00:00:00'); return (d.getFullYear() - y0) * 12 + (d.getMonth() - m0) }
+  const today = new Date()
+  const projects = cp.map(p => {
+    const rows = []
+    p.phases.forEach(ph => {
+      if (!ph.planned_start && !ph.planned_end) return
+      const s = ph.planned_start || ph.planned_end, e = ph.planned_end || ph.planned_start
+      const startD = new Date(s + 'T00:00:00'), endD = new Date(e + 'T00:00:00')
+      const status = (ph.pct ?? 0) >= 100 ? 'completed' : (today >= startD || today > endD) ? 'active' : 'locked'
+      rows.push({ kind: 'bar', label: `0${ph.phase_number} ${ph.name}`, startIdx: idx(s), endIdx: idx(e), pct: ph.pct ?? 0, status })
+    })
+    ;(p.milestones || []).filter(m => m.milestone_date).forEach(m => rows.push({ kind: 'point', label: m.name, pointIdx: idx(m.milestone_date), color: m.color || null }))
+    return { name: p.name, rows }
+  }).filter(p => p.rows.length)
+  if (!projects.length) return null
+  const todayIdx = today >= min && today <= max ? (today.getFullYear() - y0) * 12 + (today.getMonth() - m0) : null
+  return { months, projects, todayIdx }
+}
+
 async function runReport(_params, text) {
   const data = await loadData()
   const t = (text ?? '').toLowerCase()
@@ -259,7 +296,7 @@ async function runReport(_params, text) {
   sections.push({ heading: 'Programme snapshot', type: 'progress', empty: 'No projects yet.',
     rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => a.value - b.value) })
   if (heatSection) sections.push(heatSection)
-  if (cp.length) sections.push({ heading: 'Delivery & change timeline', type: 'projectTimeline', projects: cp.map(p => ({ id: p.id, name: p.name })) })
+  if (cp.length) sections.push({ heading: 'Delivery & change timeline', type: 'projectTimeline', projects: cp.map(p => ({ id: p.id, name: p.name })), gantt: buildReportGantt(cp) })
   sections.push({ heading: 'Needs attention', type: 'list', rows: atRisk, empty: 'Everything is on track.' })
   sections.push({ heading: 'Upcoming (next 30 days)', type: 'list', rows: upcoming, empty: 'Nothing scheduled ahead.' })
   sections.push({ heading: 'Readiness', type: 'narrative', body: `Average readiness **${avg == null ? '—' : avg.toFixed(1)}** (${ragWord})${scores.length ? ` from ${scores.length} survey response${scores.length === 1 ? '' : 's'}` : ' — no survey responses captured yet'}.` })
