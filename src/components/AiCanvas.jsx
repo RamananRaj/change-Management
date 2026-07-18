@@ -485,7 +485,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
           *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
           html,body{background:#fff !important}
           .cf-hide-print{display:none !important}
-          .cf-print-ancestor{display:block !important;position:static !important;overflow:visible !important;height:auto !important;max-height:none !important;margin:0 !important;padding:0 !important;background:#fff !important}
+          .cf-print-ancestor{display:block !important;position:static !important;overflow:visible !important;height:auto !important;min-height:0 !important;max-height:none !important;margin:0 !important;padding:0 !important;background:#fff !important;border:0 !important;border-radius:0 !important;box-shadow:none !important}
           .cf-print{padding:14mm 13mm !important;background:#fff !important}
           .cf-no-print{display:none !important}
           @page{margin:0}
