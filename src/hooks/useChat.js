@@ -125,5 +125,38 @@ export function useChat(user, profile) {
     return chan.id
   }
 
-  return { channels, people, loading, totalUnread, reload: load, loadMessages, send, markRead, openOrCreateDm, createGroup }
+  // ── Master Admin oversight (read-only) ──────────────────────────────────────────
+  async function loadClients() {
+    const { data } = await supabase.from('clients').select('id, name').order('name')
+    return data ?? []
+  }
+
+  // All channels for a client (admin reads via RLS). DM names show both participants.
+  async function loadOversight(clientId) {
+    const { data: chans } = await supabase.from('chat_channels').select('*').eq('client_id', clientId).order('created_at', { ascending: false })
+    const ids = (chans ?? []).map(c => c.id)
+    if (!ids.length) return []
+    const [{ data: allMems }, { data: msgs }] = await Promise.all([
+      supabase.from('chat_members').select('channel_id, user_id').in('channel_id', ids),
+      supabase.from('chat_messages').select('channel_id, sender_id, body, created_at').in('channel_id', ids).order('created_at', { ascending: false }).limit(600),
+    ])
+    const uids = [...new Set((allMems ?? []).map(m => m.user_id))]
+    const { data: profs } = uids.length ? await supabase.from('profiles').select('id, full_name').in('id', uids) : { data: [] }
+    const profMap = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
+    const byChan = {}
+    ;(msgs ?? []).forEach(m => { (byChan[m.channel_id] ??= []).push(m) })
+    return (chans ?? []).map(c => {
+      const memberIds = (allMems ?? []).filter(m => m.channel_id === c.id).map(m => m.user_id)
+      const isGroup = c.type === 'group'
+      const name = isGroup ? (c.name || 'Group') : memberIds.map(id => profMap[id]?.full_name).filter(Boolean).join(' ↔ ')
+      const list = byChan[c.id] ?? []
+      return {
+        id: c.id, type: c.type, isGroup, name: name || 'Direct message', initials: initials(name),
+        members: memberIds, memberProfiles: memberIds.map(id => profMap[id]).filter(Boolean),
+        last: list[0] ?? null, lastAt: list[0] ? new Date(list[0].created_at).getTime() : new Date(c.created_at).getTime(),
+      }
+    }).sort((a, b) => b.lastAt - a.lastAt)
+  }
+
+  return { channels, people, loading, totalUnread, reload: load, loadMessages, send, markRead, openOrCreateDm, createGroup, loadClients, loadOversight }
 }

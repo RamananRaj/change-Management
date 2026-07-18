@@ -32,6 +32,12 @@ export default function CFM() {
   const [replyTo, setReplyTo] = useState(null)   // message being replied to
   const [groupName, setGroupName] = useState('')
   const [picked, setPicked] = useState([])
+  // Master Admin oversight (read-only)
+  const [ovClients, setOvClients] = useState([])
+  const [ovClient, setOvClient] = useState(null)
+  const [ovChannels, setOvChannels] = useState([])
+  const [ovActive, setOvActive] = useState(null)
+  const [ovMessages, setOvMessages] = useState([])
   const [pos, setPos] = useState(null)   // {left, top} once dragged; else docked bottom-right
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
@@ -109,6 +115,12 @@ export default function CFM() {
   }
   const togglePick = pid => setPicked(p => p.includes(pid) ? p.filter(x => x !== pid) : [...p, pid])
   const senderName = sid => active?.memberProfiles.find(p => p.id === sid)?.full_name ?? 'Someone'
+  const ovSenderName = sid => ovActive?.memberProfiles.find(p => p.id === sid)?.full_name ?? 'Someone'
+
+  async function openOversight() { setView('oversight'); setOvClient(null); setOvActive(null); setOvClients(await chat.loadClients()) }
+  async function pickOvClient(c) { setOvClient(c); setOvActive(null); setOvChannels(await chat.loadOversight(c.id)) }
+  async function openOvChannel(c) { setOvActive(c); setOvMessages(await chat.loadMessages(c.id)) }
+  function ovBack() { if (ovActive) setOvActive(null); else if (ovClient) setOvClient(null); else setView('list') }
 
   const dms = chat.channels.filter(c => !c.isGroup)
   const groups = chat.channels.filter(c => c.isGroup)
@@ -143,8 +155,8 @@ export default function CFM() {
       {/* Header (drag handle) */}
       <div onPointerDown={hdrDown} onPointerMove={hdrMove} onPointerUp={hdrUp}
         className="bg-[#1F4E79] text-white px-4 py-3 flex items-center gap-3 cursor-move select-none" style={{ touchAction: 'none' }}>
-        {view === 'thread' || view === 'new' || view === 'newgroup' ? (
-          <button onClick={() => setView('list')} className="text-white/90 text-lg leading-none">‹</button>
+        {view !== 'list' ? (
+          <button onClick={() => (view === 'oversight' ? ovBack() : setView('list'))} className="text-white/90 text-lg leading-none">‹</button>
         ) : (
           <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center"><CfmMark size={20} /></div>
         )}
@@ -156,10 +168,14 @@ export default function CFM() {
             </>
           ) : view === 'new' ? <p className="text-[15px] font-semibold">New chat</p>
             : view === 'newgroup' ? <p className="text-[15px] font-semibold">New group</p>
-            : <><p className="text-[15px] font-semibold leading-tight">CFM</p><p className="text-[11px] text-white/65">Change Flow Messages</p></>}
+            : view === 'oversight' ? (
+              <><p className="text-[15px] font-semibold leading-tight truncate">{ovActive?.name || ovClient?.name || 'Oversight'}</p>
+                <p className="text-[11px] text-white/65">{ovActive ? 'Read-only' : ovClient ? 'Conversations' : 'Pick a client'}</p></>
+            ) : <><p className="text-[15px] font-semibold leading-tight">CFM</p><p className="text-[11px] text-white/65">Change Flow Messages</p></>}
         </div>
         {view === 'list' && (
           <>
+            {profile?.is_admin && <button onClick={openOversight} title="Oversight (read-only)" className="text-white/90 text-base">🔎</button>}
             <button onClick={() => setView('newgroup')} title="New group" className="text-white/90 text-base">👥</button>
             <button onClick={() => setView('new')} title="New chat" className="text-white/90 text-base">✎</button>
           </>
@@ -267,6 +283,57 @@ export default function CFM() {
             className="mt-4 w-full bg-[#1F4E79] text-white text-sm font-semibold py-2.5 rounded-lg disabled:opacity-50">
             Create group
           </button>
+        </div>
+      )}
+
+      {view === 'oversight' && (
+        <div className="flex-1 overflow-y-auto flex flex-col">
+          {!ovClient ? (
+            /* 1 — pick a client */
+            <div className="p-2">
+              <p className="text-[10.5px] text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg mb-1">Read-only oversight — pick a client to view their conversations.</p>
+              {ovClients.length === 0 ? <p className="text-sm text-slate-400 p-4">No clients.</p> :
+                ovClients.map(c => (
+                  <button key={c.id} onClick={() => pickOvClient(c)} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-lg text-left">
+                    <div className="w-10 h-10 rounded-full bg-[#1F4E79] text-white font-bold text-[13px] flex items-center justify-center shrink-0">{c.name.charAt(0).toUpperCase()}</div>
+                    <span className="text-sm font-semibold text-slate-800">{c.name}</span>
+                    <span className="ml-auto text-slate-300">›</span>
+                  </button>
+                ))}
+            </div>
+          ) : !ovActive ? (
+            /* 2 — that client's conversations */
+            ovChannels.length === 0 ? (
+              <p className="text-sm text-slate-400 p-6 text-center">{ovClient.name} has no conversations yet.</p>
+            ) : (
+              <div>
+                {ovChannels.filter(c => !c.isGroup).length > 0 && <p className="text-[9.5px] font-bold text-slate-400 uppercase tracking-widest px-4 pt-3 pb-1">Direct messages</p>}
+                {ovChannels.filter(c => !c.isGroup).map(c => <ConvRow key={c.id} c={c} onClick={() => openOvChannel(c)} />)}
+                {ovChannels.filter(c => c.isGroup).length > 0 && <p className="text-[9.5px] font-bold text-slate-400 uppercase tracking-widest px-4 pt-3 pb-1">Groups</p>}
+                {ovChannels.filter(c => c.isGroup).map(c => <ConvRow key={c.id} c={c} onClick={() => openOvChannel(c)} />)}
+              </div>
+            )
+          ) : (
+            /* 3 — read-only thread */
+            <>
+              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5" style={{ background: '#e9eef3' }}>
+                {ovMessages.map((m, i) => {
+                  const showName = ovMessages[i - 1]?.sender_id !== m.sender_id
+                  const quoted = m.reply_to ? ovMessages.find(x => x.id === m.reply_to) : null
+                  return (
+                    <div key={m.id} className="max-w-[80%] mr-auto bg-white rounded-lg rounded-tl-sm px-2.5 py-1.5 text-[13.5px] leading-snug shadow-sm">
+                      {showName && <p className="text-[11px] font-bold text-[#E8913A] mb-0.5">{ovSenderName(m.sender_id)}</p>}
+                      {quoted && <div className="border-l-2 border-[#1F4E79]/50 bg-black/[.045] rounded px-2 py-1 mb-1"><p className="text-[10.5px] font-bold text-[#1F4E79]">{ovSenderName(quoted.sender_id)}</p><p className="text-[11px] text-slate-500 truncate">{quoted.body}</p></div>}
+                      <span>{m.body}</span>
+                      <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">{fmtTime(m.created_at)}</span>
+                    </div>
+                  )
+                })}
+                {ovMessages.length === 0 && <p className="text-center text-xs text-slate-400 mt-6">No messages.</p>}
+              </div>
+              <div className="bg-[#f0f2f5] px-4 py-3 text-center text-[11px] text-slate-400 italic">Read-only oversight — you're not a participant in this chat.</div>
+            </>
+          )}
         </div>
       )}
     </div>
