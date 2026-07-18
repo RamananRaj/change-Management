@@ -97,8 +97,14 @@ export async function exportReportPptx(report) {
     } else if (s.type === 'heatmap') {
       const header = [{ text: '', options: { fill: 'F1F5F9' } }, ...s.cols.map(c => ({ text: c, options: { bold: true, align: 'center', fill: 'F1F5F9', color: '475569' } }))]
       const body = s.rows.map(r => [{ text: r.label, options: { bold: true, color: '334155' } }, ...r.cells.map(lv => ({ text: LVL(lv), options: { fill: LV_HEX[lv] || LV_HEX.none, color: 'FFFFFF', align: 'center', fontSize: 9 } }))])
-      sl.addTable([header, ...body], { x: 0.5, y: 1.1, w: 12.3, fontSize: 11 })
-      if (s.headline) sl.addText(stripMd(s.headline), { x: 0.5, y: 5.5, w: 12.3, fontSize: 11, color: '475569' })
+      // Heat map on the left, the AI insight (headline + bullets) on the right — same content as the PDF.
+      sl.addTable([header, ...body], { x: 0.5, y: 1.1, w: 6.6, colW: [1.9, 1.175, 1.175, 1.175, 1.175].slice(0, s.cols.length + 1), rowH: 0.4, fontSize: 10, valign: 'middle' })
+      const insX = 7.4, insW = 5.4
+      if (s.headline) sl.addText(stripMd(s.headline), { x: insX, y: 1.1, w: insW, h: 1.6, fontSize: 12, bold: true, color: '1F4E79', valign: 'top' })
+      if (s.insights?.length) {
+        const items = s.insights.map(t => ({ text: stripMd(t), options: { bullet: { code: '2022' }, fontSize: 10, color: '334155', paraSpaceAfter: 6 } }))
+        sl.addText(items, { x: insX, y: 2.7, w: insW, h: 4.4, valign: 'top' })
+      }
     } else if (s.type === 'projectTimeline') {
       if (s.gantt) ganttPptx(sl, P, s.gantt)
       else sl.addText('No dates scheduled yet — add phase dates to draw the timeline.', { x: 0.5, y: 1.1, fontSize: 13, italic: true, color: '94A3B8' })
