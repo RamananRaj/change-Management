@@ -87,13 +87,29 @@ export function useChat(user, profile) {
 
   async function loadMessages(channelId) {
     const { data } = await supabase.from('chat_messages').select('*').eq('channel_id', channelId).order('created_at', { ascending: true })
-    return data ?? []
+    const msgs = data ?? []
+    const paths = msgs.filter(m => m.attachment?.path).map(m => m.attachment.path)
+    if (paths.length) {
+      const { data: signed } = await supabase.storage.from('chat-attachments').createSignedUrls(paths, 3600)
+      const urlMap = Object.fromEntries((signed ?? []).map(s => [s.path, s.signedUrl]))
+      msgs.forEach(m => { if (m.attachment?.path) m.attachment.url = urlMap[m.attachment.path] })
+    }
+    return msgs
   }
 
-  async function send(channelId, body, replyTo = null) {
+  // Upload a file into the channel's folder; returns the metadata to attach to a message.
+  async function uploadAttachment(channelId, file) {
+    const safe = (file.name || 'file').replace(/[^\w.\-]+/g, '_')
+    const path = `${channelId}/${crypto.randomUUID()}-${safe}`
+    const { error } = await supabase.storage.from('chat-attachments').upload(path, file, { contentType: file.type || 'application/octet-stream' })
+    if (error) throw error
+    return { path, name: file.name, type: file.type, size: file.size }
+  }
+
+  async function send(channelId, body, replyTo = null, attachment = null) {
     const text = (body || '').trim()
-    if (!text) return
-    await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text, reply_to: replyTo })
+    if (!text && !attachment) return
+    await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text, reply_to: replyTo, attachment })
     await supabase.from('chat_members').update({ last_read_at: new Date().toISOString() }).eq('channel_id', channelId).eq('user_id', uid)
     load()
   }
@@ -158,5 +174,5 @@ export function useChat(user, profile) {
     }).sort((a, b) => b.lastAt - a.lastAt)
   }
 
-  return { channels, people, loading, totalUnread, reload: load, loadMessages, send, markRead, openOrCreateDm, createGroup, loadClients, loadOversight }
+  return { channels, people, loading, totalUnread, reload: load, loadMessages, send, uploadAttachment, markRead, openOrCreateDm, createGroup, loadClients, loadOversight }
 }

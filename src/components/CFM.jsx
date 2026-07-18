@@ -12,6 +12,25 @@ const CfmMark = ({ size = 34 }) => (
   </svg>
 )
 
+const fmtSize = b => !b ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`
+const fileIcon = t => (t || '').includes('pdf') ? '📕' : /word|document/.test(t || '') ? '📘' : /sheet|excel|csv/.test(t || '') ? '📗' : /presentation|powerpoint/.test(t || '') ? '📙' : '📄'
+
+function Attachment({ a }) {
+  if (!a) return null
+  const isImg = (a.type || '').startsWith('image/')
+  if (isImg) return (
+    <a href={a.url || '#'} target="_blank" rel="noreferrer" className="block my-1">
+      {a.url ? <img src={a.url} alt={a.name} className="rounded-lg max-h-52 border border-black/5" /> : <div className="h-24 w-40 bg-black/5 rounded-lg animate-pulse" />}
+    </a>
+  )
+  return (
+    <a href={a.url || '#'} target="_blank" rel="noreferrer" className="flex items-center gap-2 my-1 bg-black/[.06] hover:bg-black/[.09] rounded-lg px-2.5 py-2 max-w-[240px]">
+      <span className="text-xl shrink-0">{fileIcon(a.type)}</span>
+      <span className="min-w-0"><span className="block text-[12.5px] font-semibold text-slate-700 truncate">{a.name}</span><span className="text-[10.5px] text-slate-400">{fmtSize(a.size)}</span></span>
+    </a>
+  )
+}
+
 const fmtTime = d => new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 const fmtWhen = d => {
   const dt = new Date(d), now = new Date()
@@ -42,6 +61,9 @@ export default function CFM() {
   const scrollRef = useRef(null)
   const panelRef = useRef(null)
   const drag = useRef(null)
+  const fileRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   function hdrDown(e) {
     if (e.target.closest('button')) return   // let header buttons work
@@ -106,6 +128,19 @@ export default function CFM() {
     const rt = replyTo?.id ?? null
     setText(''); setReplyTo(null); await chat.send(activeId, t, rt)
     chat.loadMessages(activeId).then(setMessages)
+  }
+  async function sendFile(file) {
+    if (!file || !activeId) return
+    if (file.size > 25 * 1024 * 1024) { window.alert('Files must be under 25 MB.'); return }
+    setUploading(true)
+    try {
+      const att = await chat.uploadAttachment(activeId, file)
+      await chat.send(activeId, text.trim(), replyTo?.id ?? null, att)
+      setText(''); setReplyTo(null)
+      chat.loadMessages(activeId).then(setMessages)
+    } catch (err) {
+      window.alert('Upload failed: ' + (err?.message || err))
+    } finally { setUploading(false) }
   }
   async function startDm(pid) { const id = await chat.openOrCreateDm(pid); if (id) openChannel(id) }
   async function makeGroup() {
@@ -209,7 +244,9 @@ export default function CFM() {
 
       {view === 'thread' && active && (
         <>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5" style={{ background: '#e9eef3' }}>
+          <div ref={scrollRef} onDragOver={e => { e.preventDefault(); setDragOver(true) }} onDragLeave={() => setDragOver(false)}
+            onDrop={e => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) sendFile(e.dataTransfer.files[0]) }}
+            className={`flex-1 overflow-y-auto px-4 py-3 space-y-1.5 ${dragOver ? 'ring-2 ring-inset ring-[#1F4E79]' : ''}`} style={{ background: '#e9eef3' }}>
             {messages.map((m, i) => {
               const mine = m.sender_id === user.id
               const showName = active.isGroup && !mine && messages[i - 1]?.sender_id !== m.sender_id
@@ -223,7 +260,8 @@ export default function CFM() {
                       <p className="text-[11px] text-slate-500 truncate">{quoted.body}</p>
                     </div>
                   )}
-                  <span>{m.body}</span>
+                  {m.attachment && <Attachment a={m.attachment} />}
+                  {m.body && <span>{m.body}</span>}
                   <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">{fmtTime(m.created_at)}{mine && <span className="text-[#2f8fe0] ml-0.5">✓✓</span>}</span>
                   <button onClick={() => setReplyTo(m)} title="Reply"
                     className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[11px] flex items-center justify-center shadow-sm ${mine ? '-left-7' : '-right-7'}`}>↩</button>
@@ -244,10 +282,14 @@ export default function CFM() {
             </div>
           )}
           <form onSubmit={submit} className="bg-[#f0f2f5] px-3 py-2.5 flex items-center gap-2.5">
-            <span title="Attachments coming later" className="text-slate-300 text-lg cursor-not-allowed">📎</span>
-            <input value={text} onChange={e => setText(e.target.value)} placeholder="Type a message"
+            <input ref={fileRef} type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt"
+              onChange={e => { const f = e.target.files?.[0]; if (f) sendFile(f); e.target.value = '' }} />
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+              title="Attach a file" className="text-slate-500 hover:text-[#1F4E79] text-lg disabled:opacity-40">📎</button>
+            <input value={text} onChange={e => setText(e.target.value)} placeholder={uploading ? 'Uploading…' : 'Type a message'}
+              onPaste={e => { const f = [...e.clipboardData.files][0]; if (f) { e.preventDefault(); sendFile(f) } }}
               className="flex-1 bg-white rounded-full px-4 py-2 text-[13.5px] outline-none" />
-            <button type="submit" className="w-10 h-10 rounded-full bg-[#1F4E79] text-white text-base shrink-0">➤</button>
+            <button type="submit" disabled={uploading} className="w-10 h-10 rounded-full bg-[#1F4E79] text-white text-base shrink-0 disabled:opacity-50">➤</button>
           </form>
         </>
       )}
@@ -324,7 +366,8 @@ export default function CFM() {
                     <div key={m.id} className="max-w-[80%] mr-auto bg-white rounded-lg rounded-tl-sm px-2.5 py-1.5 text-[13.5px] leading-snug shadow-sm">
                       {showName && <p className="text-[11px] font-bold text-[#E8913A] mb-0.5">{ovSenderName(m.sender_id)}</p>}
                       {quoted && <div className="border-l-2 border-[#1F4E79]/50 bg-black/[.045] rounded px-2 py-1 mb-1"><p className="text-[10.5px] font-bold text-[#1F4E79]">{ovSenderName(quoted.sender_id)}</p><p className="text-[11px] text-slate-500 truncate">{quoted.body}</p></div>}
-                      <span>{m.body}</span>
+                      {m.attachment && <Attachment a={m.attachment} />}
+                      {m.body && <span>{m.body}</span>}
                       <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">{fmtTime(m.created_at)}</span>
                     </div>
                   )
