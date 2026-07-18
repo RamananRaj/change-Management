@@ -256,12 +256,17 @@ function buildReportGantt(cp) {
 async function runReport(_params, text) {
   const data = await loadData()
   const t = (text ?? '').toLowerCase()
-  const client = data.clients.find(c => c.name && c.name.length >= 3 && t.includes(c.name.toLowerCase())) || (data.clients.length === 1 ? data.clients[0] : null)
+  let client = data.clients.find(c => c.name && c.name.length >= 3 && t.includes(c.name.toLowerCase())) || (data.clients.length === 1 ? data.clients[0] : null)
+  // Optional project scope: "...for RSR Program" narrows the whole report to one project.
+  const candidateProjects = data.projRollup.filter(p => !client || p.client_id === client.id)
+  const proj = candidateProjects.find(p => p.name && p.name.length >= 3 && t.includes(p.name.toLowerCase())) || null
+  if (proj && !client) client = data.clients.find(c => c.id === proj.client_id) || client   // infer client from the named project
   if (!client && data.clients.length > 1) {
     return { type: 'narrative', title: 'Which client?', body: `Name the client for the report, e.g. "build the change report for **${data.clients[0].name}**".` }
   }
   const cid = client?.id
-  const cp = data.projRollup.filter(p => !cid || p.client_id === cid)
+  const cp = proj ? [proj] : data.projRollup.filter(p => !cid || p.client_id === cid)
+  const scopeLabel = proj ? `${client?.name ?? ''} — ${proj.name}` : (client?.name ?? 'Programme')
   const memberIds = new Set(cp.flatMap(p => p.memberIds))
   const people = memberIds.size
   const done = cp.reduce((s, p) => s + p.done, 0), total = cp.reduce((s, p) => s + p.total, 0)
@@ -291,7 +296,7 @@ async function runReport(_params, text) {
 
   let sections = []
   sections.push({ heading: 'Executive summary', type: 'narrative', body:
-    `**${client?.name ?? 'Programme'}** — ${cp.length} project${cp.length === 1 ? '' : 's'}, ${people} ${people === 1 ? 'person' : 'people'}, **${pct}%** average completion. Readiness is **${ragWord}**.` +
+    `**${scopeLabel}** — ${proj ? '1 project' : `${cp.length} project${cp.length === 1 ? '' : 's'}`}, ${people} ${people === 1 ? 'person' : 'people'}, **${pct}%** average completion. Readiness is **${ragWord}**.` +
     (atRisk.length ? ` **${atRisk.length}** phase${atRisk.length === 1 ? ' is' : 's are'} overdue and need attention.` : ' No phases are currently overdue.') })
   sections.push({ heading: 'Programme snapshot', type: 'progress', empty: 'No projects yet.',
     rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => a.value - b.value) })
@@ -323,9 +328,9 @@ async function runReport(_params, text) {
     return s
   })
 
-  return { type: 'report', title: `Change report — ${client?.name ?? 'Programme'}`,
-    subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })} · grounded in live data`,
-    client_id: cid ?? null, client_name: client?.name ?? null, sections }
+  return { type: 'report', title: `Change report — ${scopeLabel}`,
+    subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })}${proj ? ' · project scope' : ''} · grounded in live data`,
+    client_id: cid ?? null, client_name: client?.name ?? null, project_id: proj?.id ?? null, sections }
 }
 
 async function runUpcoming() {
