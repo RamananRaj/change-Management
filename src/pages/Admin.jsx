@@ -6,6 +6,7 @@ import AdminSurveys from '../components/AdminSurveys'
 import AdminClients from '../components/AdminClients'
 import SystemAdmin from '../components/SystemAdmin'
 import AdminCockpit from '../components/AdminCockpit'
+import ClientPicker from '../components/ClientPicker'
 
 const PHASES = [
   { num: 1, label: '01 Diagnose' },
@@ -113,6 +114,9 @@ export default function Admin() {
   const [editId,         setEditId]         = useState(null)
   const [saving,         setSaving]         = useState(false)
   const [formError,      setFormError]      = useState(null)
+  const [cloneItem,      setCloneItem]      = useState(null)   // item pending clone-to-client
+  const [cloneTarget,    setCloneTarget]    = useState('')     // chosen client id
+  const [cloning,        setCloning]        = useState(false)
 
   // ── Phase Manager state ──
   const [allProjects,   setAllProjects]   = useState([])
@@ -286,20 +290,21 @@ export default function Admin() {
     fetchItems()
   }
 
-  // Clone an item for a specific client (leaves the original intact).
-  async function cloneContent(item) {
-    const target = window.prompt(
-      'Clone this item for which client? Type the client name exactly:\n\n' + clients.map(c => `• ${c.name}`).join('\n')
-    )
-    if (!target) return
-    const match = clients.find(c => c.name.toLowerCase() === target.trim().toLowerCase())
-    if (!match) { window.alert(`No client named “${target}”.`); return }
-    const { id, created_at, updated_at, ...rest } = item
+  // Clone an item for a specific client (leaves the original intact). Opens a picker modal.
+  function openCloneContent(item) { setCloneItem(item); setCloneTarget(''); }
+
+  async function confirmClone() {
+    if (!cloneTarget) return
+    const match = clients.find(c => c.id === cloneTarget)
+    if (!match) return
+    setCloning(true)
+    const { id, created_at, updated_at, ...rest } = cloneItem
     const { error } = await supabase.from('phase_content').insert({
-      ...rest, client_id: match.id, title: `${item.title} (${match.name})`,
+      ...rest, client_id: match.id, title: `${cloneItem.title} (${match.name})`,
     })
+    setCloning(false)
     if (error) { window.alert(error.message); return }
-    window.alert(`Cloned for ${match.name}.`)
+    setCloneItem(null)
     fetchItems()
   }
 
@@ -748,14 +753,11 @@ export default function Admin() {
                 {roles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
               </select>
             </div>
-            <div>
+            <div className="min-w-[190px]">
               <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Scope</label>
-              <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
-                className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1F4E79]">
-                <option value="">All scopes</option>
-                <option value="__global">🌐 Shared library</option>
-                {clients.map(c => <option key={c.id} value={c.id}>🏢 {c.name}</option>)}
-              </select>
+              <ClientPicker value={filterClient} onChange={setFilterClient} clients={clients}
+                specials={[{ value: '', label: 'All scopes' }, { value: '__global', label: '🌐 Shared library' }]}
+                placeholder="Search client…" />
             </div>
             <div className="flex-1 min-w-[200px]">
               <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Search</label>
@@ -803,7 +805,7 @@ export default function Admin() {
                 </div>
                 {item.client_id
                   ? <button onClick={() => promoteContent(item)} className="text-[11px] text-emerald-600 hover:underline whitespace-nowrap">↑ Promote to library</button>
-                  : <button onClick={() => cloneContent(item)} className="text-[11px] text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to client</button>}
+                  : <button onClick={() => openCloneContent(item)} className="text-[11px] text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to client</button>}
               </div>
             </div>
           )
@@ -1398,11 +1400,9 @@ export default function Admin() {
                 <label className="block text-xs font-semibold text-slate-600 mb-1">
                   Scope <span className="text-slate-400 font-normal">(who can use this)</span>
                 </label>
-                <select value={form.client_id} onChange={e => setForm({...form, client_id: e.target.value})}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]">
-                  <option value="">🌐 Shared library — available to every customer</option>
-                  {clients.map(c => <option key={c.id} value={c.id}>🏢 {c.name} only</option>)}
-                </select>
+                <ClientPicker value={form.client_id} onChange={v => setForm({...form, client_id: v})} clients={clients}
+                  specials={[{ value: '', label: '🌐 Shared library — available to every customer' }]}
+                  placeholder="Search client…" />
                 <p className="text-[10px] text-slate-400 mt-1">
                   {form.client_id
                     ? 'Authored for this client. You can promote it to the shared library later so future customers inherit it.'
@@ -1532,6 +1532,35 @@ export default function Admin() {
               <button onClick={handleContentSave} disabled={saving}
                 className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
                 {saving ? 'Saving…' : editId ? 'Save Changes' : 'Add Content'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CLONE-TO-CLIENT MODAL ── */}
+      {cloneItem && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-800">Clone to a client</h2>
+              <button onClick={() => setCloneItem(null)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <p className="text-sm text-slate-500">
+                Makes a client-specific copy of <span className="font-medium text-slate-700">“{cloneItem.title}”</span>. The shared-library
+                original is left untouched.
+              </p>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Clone for</label>
+                <ClientPicker value={cloneTarget} onChange={setCloneTarget} clients={clients} placeholder="Search client…" />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+              <button onClick={() => setCloneItem(null)} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Cancel</button>
+              <button onClick={confirmClone} disabled={!cloneTarget || cloning}
+                className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-50">
+                {cloning ? 'Cloning…' : 'Clone'}
               </button>
             </div>
           </div>
