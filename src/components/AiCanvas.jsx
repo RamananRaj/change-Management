@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ask } from '../lib/ai/router'
-import { loadSummary } from '../lib/ai/rules'
+import { loadSummary, noteCorrection } from '../lib/ai/rules'
 import { slmOptedIn } from '../lib/ai/slm'
 import { buildTemplateDraft, createTemplate } from '../lib/ai/templateDraft'
 import { saveReportEdits, promoteToStandard } from '../lib/ai/reportMemory'
@@ -389,6 +389,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
   const [progress, setProgress] = useState(null)
   const [input, setInput] = useState('')
   const [pendingFollowup, setPendingFollowup] = useState(null)   // e.g. 'report' — the last card asked a question
+  const lastMiss = useRef(null)   // last query that fell through to SLM/external — for silent self-correction
   const [attachedFile, setAttachedFile] = useState(null)   // admin: template file to turn into a workbook
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -422,11 +423,25 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
     if (pendingFollowup === 'report' && !/\breport\b/i.test(label) && !otherIntent) {
       q = `build the change report for ${label}`
     }
+    const rewritten = q !== label
     setPendingFollowup(null)
     setThinking(true); setProgress(null)
     try {
       const d = await ask(q, ctx, { onProgress: p => setProgress(p?.text ?? null) })
       if (d.followup) setPendingFollowup(d.followup)   // this card is itself asking a question
+      // Silent self-correction: a genuine (non-continuity) rules answer right after a miss on the
+      // same topic teaches the framework that the missed phrasing meant this intent.
+      const LEARNABLE = ['report', 'at_risk', 'readiness', 'progress', 'heatmap', 'milestones', 'upcoming', 'people', 'clients']
+      if (d.tier === 'rules' && LEARNABLE.includes(d.intent)) {
+        if (!rewritten && lastMiss.current && lastMiss.current !== label) {
+          noteCorrection(lastMiss.current, label, d.intent, ctx.userId)   // fire-and-forget
+        }
+        lastMiss.current = null
+      } else if (d.tier === 'slm' || d.tier === 'external') {
+        lastMiss.current = label
+      } else {
+        lastMiss.current = null   // detail / other — avoid cross-topic mis-learning
+      }
       // De-dupe: replace any existing card with the same title, moved fresh to the top.
       setWidgets(w => [{ ...d, query: label, key: Date.now() }, ...w.filter(x => x.title !== d.title)])
     } catch {

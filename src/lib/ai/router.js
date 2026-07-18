@@ -17,11 +17,11 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   const t0 = performance.now()
 
   // 1 ── Rules (grounded, $0, private)
-  const r = await runRules(text, ctx)
+  const r = await runRules(text)
   if (r.matched) {
     const latency = performance.now() - t0
     logUsage({ tier: 'rules', intent: r.intent, query: text, ok: true, escalated: false, latency_ms: latency, ctx })
-    return { tier: 'rules', ...r.descriptor }
+    return { tier: 'rules', intent: r.intent, ...r.descriptor }
   }
 
   // 2 ── Local SLM (on-device, $0, private) — only if opted in + WebGPU present

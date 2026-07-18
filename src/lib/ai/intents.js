@@ -7,7 +7,7 @@
 export const INTENTS = [
   { intent: 'my_readiness',        re: /(my readiness|my surveys?|my (rag|score)|how ready am i)/i },
   { intent: 'my_progress',         re: /(my progress|my journey|my phases|my steps|my completion|how am i doing|where am i)/i },
-  { intent: 'report',              re: /(report|build (a |the |me )?(change )?report|generate (a |the )?report)/i },
+  { intent: 'report',              re: /(report|wrap[- ]?up|status (report|update|pack)|exec(utive)?[- ]?(pack|summary|report|brief(ing)?)|board[- ]?pack|briefing[- ]?pack|change[- ]?pack|full (picture|rundown))/i },
   { intent: 'heatmap',             re: /(heat ?map|impact map|stakeholder map)/i },
   { intent: 'members_behind',      re: /(who('?s| is)?\s+behind|laggard|not (started|done|completed)|behind on|stuck on)/i },
   { intent: 'at_risk',             re: /(at risk|at-risk|overdue|slipping|needs? attention|red flags?|blockers?)/i },
