@@ -22,6 +22,9 @@ const PHASE_STATUS_DISPLAY = {
 
 const emptyClientForm  = { name: '', industry: '', contact_name: '', contact_email: '', notes: '', is_active: true }
 const emptyProjectForm = { name: '', description: '', status: 'planning' }
+const CONTENT_TYPES = [{ value: 'exercise', label: 'Exercise' }, { value: 'tool', label: 'Tool' }, { value: 'template', label: 'Template' }]
+const TYPE_COLOR = { exercise: 'bg-blue-100 text-blue-700', tool: 'bg-green-100 text-green-700', template: 'bg-purple-100 text-purple-700' }
+const emptyClientContentForm = { phase_number: 1, content_type: 'exercise', title: '', description: '', body: '', role: '', is_common: true, sort_order: 0 }
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function StatusDot({ status }) {
@@ -75,6 +78,17 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
 
   // Progress state
   const [progressData,   setProgressData]   = useState({ users: [], items: [], activities: [] })
+
+  // Content state (per-client authoring: custom items + inherited library)
+  const [contentPhase,   setContentPhase]   = useState(1)
+  const [ownContent,     setOwnContent]     = useState([])   // client_id = this client
+  const [libContent,     setLibContent]     = useState([])   // client_id IS NULL (inherited)
+  const [contentLoading, setContentLoading] = useState(false)
+  const [showContentForm, setShowContentForm] = useState(false)
+  const [contentForm,    setContentForm]    = useState(emptyClientContentForm)
+  const [contentEditId,  setContentEditId]  = useState(null)
+  const [contentSaving,  setContentSaving]  = useState(false)
+  const [contentFormError, setContentFormError] = useState(null)
 
   useEffect(() => { fetchClients(); fetchAllUsers(); fetchIndustries() }, [])
 
@@ -397,6 +411,73 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     return progressData.activities.find(a => a.user_id === userId && a.content_id === contentId)?.status ?? null
   }
 
+  // ── Content (per-client) ───────────────────────────────────────────────────────
+  async function loadContent(phase = contentPhase, clientId = selectedClient?.id) {
+    if (!clientId) return
+    setContentPhase(phase)
+    setContentLoading(true)
+    const [{ data: own }, { data: lib }] = await Promise.all([
+      supabase.from('phase_content').select('*').eq('phase_number', phase).eq('client_id', clientId).order('sort_order'),
+      supabase.from('phase_content').select('*').eq('phase_number', phase).is('client_id', null).order('sort_order'),
+    ])
+    setOwnContent(own ?? [])
+    setLibContent(lib ?? [])
+    setContentLoading(false)
+  }
+
+  function openNewClientContent() {
+    setContentForm({ ...emptyClientContentForm, phase_number: contentPhase })
+    setContentEditId(null); setContentFormError(null); setShowContentForm(true)
+  }
+
+  function openEditClientContent(item) {
+    setContentForm({
+      phase_number: item.phase_number, content_type: item.content_type, title: item.title,
+      description: item.description ?? '', body: item.body ?? '', role: item.role ?? '',
+      is_common: item.is_common ?? true, sort_order: item.sort_order ?? 0,
+    })
+    setContentEditId(item.id); setContentFormError(null); setShowContentForm(true)
+  }
+
+  async function saveClientContent() {
+    if (!contentForm.title.trim()) { setContentFormError('Title is required'); return }
+    setContentSaving(true)
+    const payload = {
+      ...contentForm, title: contentForm.title.trim(),
+      description: contentForm.description || null, body: contentForm.body || null,
+      role: contentForm.role || null, client_id: selectedClient.id,
+    }
+    let error
+    if (contentEditId) ({ error } = await supabase.from('phase_content').update(payload).eq('id', contentEditId))
+    else               ({ error } = await supabase.from('phase_content').insert(payload))
+    setContentSaving(false)
+    if (error) { setContentFormError(error.message); return }
+    setShowContentForm(false)
+    loadContent()
+  }
+
+  // Master-Admin only: promote a client item into the shared library (reusable for all).
+  async function promoteClientContent(item) {
+    if (!window.confirm(`Promote “${item.title}” to the shared library? Every current and future customer inherits it.`)) return
+    const { error } = await supabase.from('phase_content').update({ client_id: null }).eq('id', item.id)
+    if (error) { window.alert(error.message); return }
+    loadContent()
+  }
+
+  // Copy an inherited library item into this client as an editable custom version.
+  async function cloneLibToClient(item) {
+    const { id, created_at, updated_at, ...rest } = item
+    const { error } = await supabase.from('phase_content').insert({ ...rest, client_id: selectedClient.id })
+    if (error) { window.alert(error.message); return }
+    loadContent()
+  }
+
+  async function deleteClientContent(id) {
+    if (!window.confirm('Delete this custom item? (The shared-library version, if any, is unaffected.)')) return
+    await supabase.from('phase_content').delete().eq('id', id)
+    loadContent()
+  }
+
   // ── RENDER ────────────────────────────────────────────────────────────────────
 
   // Modals are shared across both the client-list and client-detail views so they
@@ -512,6 +593,87 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
           </div>
         </>
       )}
+
+      {/* ── Client content form modal ── */}
+      {showContentForm && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowContentForm(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-lg">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-bold text-slate-800">{contentEditId ? 'Edit Content' : 'Add Content'} · {selectedClient?.name}</h3>
+                <button onClick={() => setShowContentForm(false)} className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 text-xs">✕</button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Phase</label>
+                    <select value={contentForm.phase_number} onChange={e => setContentForm({...contentForm, phase_number: Number(e.target.value)})}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
+                      {PHASES.map(p => <option key={p} value={p}>{String(p).padStart(2,'0')} {PHASE_NAMES[p]}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Type</label>
+                    <select value={contentForm.content_type} onChange={e => setContentForm({...contentForm, content_type: e.target.value})}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
+                      {CONTENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Role <span className="text-slate-400 font-normal">(blank = all roles)</span></label>
+                  <select value={contentForm.role} onChange={e => setContentForm({...contentForm, role: e.target.value})}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] bg-white">
+                    <option value="">All roles</option>
+                    {allRoles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Title *</label>
+                  <input value={contentForm.title} onChange={e => setContentForm({...contentForm, title: e.target.value})}
+                    placeholder="e.g. Stakeholder Map — bespoke"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+                  <textarea value={contentForm.description} onChange={e => setContentForm({...contentForm, description: e.target.value})}
+                    rows={2} placeholder="What does this help the user achieve?"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Body <span className="text-slate-400 font-normal">(optional — shown in the user's drawer)</span></label>
+                  <textarea value={contentForm.body} onChange={e => setContentForm({...contentForm, body: e.target.value})}
+                    rows={5} placeholder="Use ## headings, - bullets, **bold**."
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#1F4E79] font-mono" />
+                </div>
+                <div className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={contentForm.is_common} onChange={e => setContentForm({...contentForm, is_common: e.target.checked})} className="w-4 h-4 accent-[#1F4E79]" />
+                    <span className="text-sm text-slate-700">Common <span className="text-slate-400 text-xs">(shown to all roles)</span></span>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-500">Order</label>
+                    <input type="number" value={contentForm.sort_order} onChange={e => setContentForm({...contentForm, sort_order: Number(e.target.value)})}
+                      className="w-16 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79] bg-white" />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Saved as <strong>custom for {selectedClient?.name}</strong>.{!lockedClientId && ' Promote it to the shared library later to reuse it for future customers.'}
+                </p>
+                {contentFormError && <p className="text-sm text-red-500">{contentFormError}</p>}
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button onClick={() => setShowContentForm(false)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
+                <button onClick={saveClientContent} disabled={contentSaving}
+                  className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+                  {contentSaving ? 'Saving…' : contentEditId ? 'Save Changes' : 'Add Content'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </>
   )
 
@@ -551,7 +713,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway']]), ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
+          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway']]), ['content', '📚 Content'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setClientTab(key)
@@ -560,6 +722,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                   setPathwayProject(pid)
                   loadPathway(1, pid)
                 }
+                if (key === 'content') loadContent(contentPhase, selectedClient.id)
                 if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
                 if (key === 'progress') {
                   const pid = progressProject || projects[0]?.id || ''
@@ -892,6 +1055,108 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
             </button>
           </div>
           )
+        )}
+
+        {/* ── CONTENT TAB ── */}
+        {clientTab === 'content' && (
+          <div>
+            <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
+              <span className="font-semibold text-[#1F4E79]">Content for {selectedClient.name}.</span>{' '}
+              <strong>Custom</strong> items belong to this client only. <strong>Inherited</strong> items come from the shared
+              library and are available to every customer — clone one to make a client-specific version.
+              {!lockedClientId && ' Promote a custom item to the library to reuse it for future customers.'}
+            </div>
+
+            {/* Phase selector */}
+            <div className="flex gap-2 mb-5 flex-wrap">
+              {PHASES.map(ph => (
+                <button key={ph} onClick={() => loadContent(ph)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+                    contentPhase === ph ? 'bg-[#1F4E79] text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}>
+                  {PHASE_ICONS[ph]} {String(ph).padStart(2,'0')} {PHASE_NAMES[ph]}
+                </button>
+              ))}
+            </div>
+
+            {contentLoading ? (
+              <p className="text-sm text-slate-400">Loading…</p>
+            ) : (
+              <div className="space-y-6">
+                {/* Custom for this client */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      🏢 Custom for {selectedClient.name} · {ownContent.length}
+                    </p>
+                    <button onClick={openNewClientContent}
+                      className="bg-[#E8913A] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#d07e2e] transition-colors">
+                      + Add Content
+                    </button>
+                  </div>
+                  {ownContent.length === 0 ? (
+                    <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-100">
+                      <p className="text-slate-400 text-sm">No custom content for this phase yet.</p>
+                      <p className="text-slate-300 text-xs mt-1">Add a bespoke item, or clone one from the library below.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {ownContent.map(item => (
+                        <div key={item.id} className="flex items-start gap-4 bg-white border border-[#1F4E79]/20 rounded-xl p-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TYPE_COLOR[item.content_type] ?? 'bg-slate-100 text-slate-600'}`}>{item.content_type}</span>
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 Custom</span>
+                              {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
+                            </div>
+                            <p className="font-medium text-slate-800 text-sm">{item.title}</p>
+                            {item.description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{item.description}</p>}
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            <div className="flex gap-2">
+                              <button onClick={() => openEditClientContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                              <button onClick={() => deleteClientContent(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                            </div>
+                            {!lockedClientId && (
+                              <button onClick={() => promoteClientContent(item)} className="text-[11px] text-emerald-600 hover:underline whitespace-nowrap">↑ Promote to library</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Inherited from library */}
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">🌐 Inherited from library · {libContent.length}</p>
+                  {libContent.length === 0 ? (
+                    <p className="text-xs text-slate-400 px-1">No shared-library content for this phase.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {libContent.map(item => (
+                        <div key={item.id} className="flex items-start gap-4 bg-slate-50 border border-slate-100 rounded-xl p-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${TYPE_COLOR[item.content_type] ?? 'bg-slate-100 text-slate-600'}`}>{item.content_type}</span>
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Library</span>
+                              {item.industry && <span className="text-[10px] text-slate-400">{item.industry}</span>}
+                              {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
+                            </div>
+                            <p className="font-medium text-slate-700 text-sm">{item.title}</p>
+                            {item.description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{item.description}</p>}
+                          </div>
+                          <div className="shrink-0">
+                            <button onClick={() => cloneLibToClient(item)} className="text-[11px] text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to customise</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── TIMELINE TAB ── */}
