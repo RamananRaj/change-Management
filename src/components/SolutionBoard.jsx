@@ -21,6 +21,7 @@ export default function SolutionBoard() {
   const [title, setTitle] = useState('')
   const [detail, setDetail] = useState('')
   const [saving, setSaving] = useState(false)
+  const [confirmId, setConfirmId] = useState(null)   // in-app delete confirm
   const titleRef = useRef(null)
 
   const allowed = ALLOW.includes((user?.email || '').toLowerCase())
@@ -50,9 +51,9 @@ export default function SolutionBoard() {
     setItems(prev => prev.map(i => i.id === id ? { ...i, status } : i))
   }
   async function remove(id) {
-    if (!window.confirm('Delete this enhancement?')) return
     await supabase.from('solution_enhancements').delete().eq('id', id)
     setItems(prev => prev.filter(i => i.id !== id))
+    setConfirmId(null)
   }
   const fmt = ts => new Date(ts).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })
   const openCount = items.filter(i => i.status !== 'done').length
@@ -97,7 +98,14 @@ export default function SolutionBoard() {
                 <div key={it.id} className="bg-slate-50 border border-slate-100 rounded-lg p-3 group">
                   <div className="flex items-start gap-2">
                     <p className="text-[13px] font-semibold text-slate-800 flex-1 leading-snug">{it.title}</p>
-                    <button onClick={() => remove(it.id)} className="text-[10px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 shrink-0">Delete</button>
+                    {confirmId === it.id ? (
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        <button onClick={() => remove(it.id)} className="text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded">Delete</button>
+                        <button onClick={() => setConfirmId(null)} className="text-[10px] text-slate-400 hover:text-slate-600">Cancel</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => setConfirmId(it.id)} className="text-[10px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 shrink-0">Delete</button>
+                    )}
                   </div>
                   {it.detail && <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed whitespace-pre-wrap">{it.detail}</p>}
                   <div className="flex items-center gap-2 mt-2">

@@ -32,7 +32,25 @@ export default function CFM() {
   const [replyTo, setReplyTo] = useState(null)   // message being replied to
   const [groupName, setGroupName] = useState('')
   const [picked, setPicked] = useState([])
+  const [pos, setPos] = useState(null)   // {left, top} once dragged; else docked bottom-right
   const scrollRef = useRef(null)
+  const panelRef = useRef(null)
+  const drag = useRef(null)
+
+  function hdrDown(e) {
+    if (e.target.closest('button')) return   // let header buttons work
+    const r = panelRef.current.getBoundingClientRect()
+    drag.current = { dx: e.clientX - r.left, dy: e.clientY - r.top }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  function hdrMove(e) {
+    if (!drag.current) return
+    const w = panelRef.current.offsetWidth, h = panelRef.current.offsetHeight
+    const left = Math.max(6, Math.min(e.clientX - drag.current.dx, window.innerWidth - w - 6))
+    const top  = Math.max(6, Math.min(e.clientY - drag.current.dy, window.innerHeight - h - 6))
+    setPos({ left, top })
+  }
+  function hdrUp(e) { drag.current = null; try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* noop */ } }
 
   const active = chat.channels.find(c => c.id === activeId) || null
 
@@ -98,10 +116,11 @@ export default function CFM() {
   )
 
   return (
-    <div className="fixed bottom-6 right-6 z-40 w-[380px] h-[560px] rounded-[18px] overflow-hidden bg-white flex flex-col"
-      style={{ boxShadow: '0 18px 50px rgba(15,40,70,.28)' }}>
-      {/* Header */}
-      <div className="bg-[#1F4E79] text-white px-4 py-3 flex items-center gap-3">
+    <div ref={panelRef} className={`fixed z-40 w-[380px] h-[560px] rounded-[18px] overflow-hidden bg-white flex flex-col ${pos ? '' : 'bottom-24 right-6'}`}
+      style={{ boxShadow: '0 18px 50px rgba(15,40,70,.28)', ...(pos ? { left: pos.left, top: pos.top } : {}) }}>
+      {/* Header (drag handle) */}
+      <div onPointerDown={hdrDown} onPointerMove={hdrMove} onPointerUp={hdrUp}
+        className="bg-[#1F4E79] text-white px-4 py-3 flex items-center gap-3 cursor-move select-none" style={{ touchAction: 'none' }}>
         {view === 'thread' || view === 'new' || view === 'newgroup' ? (
           <button onClick={() => setView('list')} className="text-white/90 text-lg leading-none">‹</button>
         ) : (
