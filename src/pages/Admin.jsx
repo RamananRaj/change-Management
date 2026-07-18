@@ -950,31 +950,25 @@ export default function Admin() {
               <button onClick={openNewRole} className="text-[#1F4E79] text-sm font-semibold hover:underline">+ Add the first role</button>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {roles.map(role => (
-                <div key={role.id} className={`flex items-center gap-4 bg-white border rounded-2xl px-5 py-4 transition-opacity ${!role.is_active ? 'opacity-50' : ''}`}>
-                  <span className="text-2xl shrink-0">{role.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="font-semibold text-slate-800 text-sm">{role.label}</p>
+                <div key={role.id} className={`bg-white border border-slate-200 rounded-2xl p-4 flex flex-col ${!role.is_active ? 'opacity-60' : ''}`}>
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <span className="text-2xl shrink-0">{role.icon}</span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 text-sm truncate">{role.label}</p>
                       <code className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">{role.code}</code>
-                      {!role.is_active && (
-                        <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>
-                      )}
                     </div>
-                    {role.description && <p className="text-xs text-slate-500 truncate">{role.description}</p>}
+                    {!role.is_active && <span className="ml-auto text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold shrink-0">Inactive</span>}
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  {role.description && <p className="text-xs text-slate-500 line-clamp-2 mb-3 flex-1">{role.description}</p>}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-auto">
                     <button onClick={() => toggleRoleActive(role)}
-                      className={`text-xs font-semibold px-3 py-1 rounded-lg border transition-colors ${
-                        role.is_active
-                          ? 'text-slate-400 border-slate-200 hover:border-slate-300'
-                          : 'text-green-600 border-green-200 hover:bg-green-50'
-                      }`}>
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors ${role.is_active ? 'text-slate-400 border-slate-200 hover:border-slate-300' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
                       {role.is_active ? 'Deactivate' : 'Activate'}
                     </button>
-                    <button onClick={() => openEditRole(role)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                    <button onClick={() => handleRoleDelete(role.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                    <button onClick={() => openEditRole(role)} className="text-xs font-semibold text-[#1F4E79] hover:underline ml-auto">Edit</button>
+                    <button onClick={() => handleRoleDelete(role.id)} className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
                   </div>
                 </div>
               ))}
@@ -1004,31 +998,25 @@ export default function Admin() {
               <button onClick={openNewIndustry} className="text-[#1F4E79] text-sm font-semibold hover:underline">+ Add the first industry</button>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {industries.map(ind => (
-                <div key={ind.id} className={`flex items-center gap-4 bg-white border rounded-2xl px-5 py-4 transition-opacity ${!ind.is_active ? 'opacity-50' : ''}`}>
-                  <span className="text-2xl shrink-0">{ind.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="font-semibold text-slate-800 text-sm">{ind.label}</p>
+                <div key={ind.id} className={`bg-white border border-slate-200 rounded-2xl p-4 flex flex-col ${!ind.is_active ? 'opacity-60' : ''}`}>
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <span className="text-2xl shrink-0">{ind.icon}</span>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 text-sm truncate">{ind.label}</p>
                       <code className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono">{ind.code}</code>
-                      {!ind.is_active && (
-                        <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>
-                      )}
                     </div>
-                    {ind.detail && <p className="text-xs text-slate-500 truncate">{ind.detail}</p>}
+                    {!ind.is_active && <span className="ml-auto text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold shrink-0">Inactive</span>}
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  {ind.detail && <p className="text-xs text-slate-500 line-clamp-2 mb-3 flex-1">{ind.detail}</p>}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-auto">
                     <button onClick={() => toggleIndustryActive(ind)}
-                      className={`text-xs font-semibold px-3 py-1 rounded-lg border transition-colors ${
-                        ind.is_active
-                          ? 'text-slate-400 border-slate-200 hover:border-slate-300'
-                          : 'text-green-600 border-green-200 hover:bg-green-50'
-                      }`}>
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-lg border transition-colors ${ind.is_active ? 'text-slate-400 border-slate-200 hover:border-slate-300' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
                       {ind.is_active ? 'Deactivate' : 'Activate'}
                     </button>
-                    <button onClick={() => openEditIndustry(ind)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                    <button onClick={() => handleIndustryDelete(ind.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                    <button onClick={() => openEditIndustry(ind)} className="text-xs font-semibold text-[#1F4E79] hover:underline ml-auto">Edit</button>
+                    <button onClick={() => handleIndustryDelete(ind.id)} className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
                   </div>
                 </div>
               ))}
@@ -1060,23 +1048,21 @@ export default function Admin() {
               <p className="text-slate-400 text-xs mt-1">Add stakeholders so users can pick who's impacted.</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {stakeholders.map(s => (
-                <div key={s.id} className="bg-white border border-slate-100 rounded-xl px-4 py-3 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-xs font-bold text-[#1F4E79] shrink-0">
-                    {(s.name ?? '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-slate-800 text-sm">{s.name}</p>
-                      {!s.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                <div key={s.id} className={`bg-white border border-slate-200 rounded-2xl p-4 flex flex-col ${!s.is_active ? 'opacity-60' : ''}`}>
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <div className="w-9 h-9 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-xs font-bold text-[#1F4E79] shrink-0">
+                      {(s.name ?? '?').charAt(0).toUpperCase()}
                     </div>
-                    {s.detail && <p className="text-xs text-slate-400">{s.detail}</p>}
+                    <p className="font-semibold text-slate-800 text-sm truncate">{s.name}</p>
+                    {!s.is_active && <span className="ml-auto text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold shrink-0">Inactive</span>}
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  {s.detail && <p className="text-xs text-slate-500 line-clamp-2 mb-3 flex-1">{s.detail}</p>}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-auto">
                     <button onClick={() => { setStakeholderForm({ name: s.name, detail: s.detail ?? '', is_active: s.is_active }); setStakeholderEditId(s.id); setStakeholderError(null); setShowStakeholderForm(true) }}
-                      className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                    <button onClick={() => deleteStakeholder(s.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                      className="text-xs font-semibold text-[#1F4E79] hover:underline ml-auto">Edit</button>
+                    <button onClick={() => deleteStakeholder(s.id)} className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
                   </div>
                 </div>
               ))}
@@ -1155,23 +1141,21 @@ export default function Admin() {
               <p className="text-slate-400 text-xs mt-1">Add roles so users can pick them in templates.</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {roleMaps.map(r => (
-                <div key={r.id} className="bg-white border border-slate-100 rounded-xl px-4 py-3 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-xs font-bold text-[#1F4E79] shrink-0">
-                    {(r.name ?? '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-slate-800 text-sm">{r.name}</p>
-                      {!r.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                <div key={r.id} className={`bg-white border border-slate-200 rounded-2xl p-4 flex flex-col ${!r.is_active ? 'opacity-60' : ''}`}>
+                  <div className="flex items-center gap-2.5 mb-2">
+                    <div className="w-9 h-9 rounded-full bg-[#1F4E79]/10 flex items-center justify-center text-xs font-bold text-[#1F4E79] shrink-0">
+                      {(r.name ?? '?').charAt(0).toUpperCase()}
                     </div>
-                    {r.detail && <p className="text-xs text-slate-400">{r.detail}</p>}
+                    <p className="font-semibold text-slate-800 text-sm truncate">{r.name}</p>
+                    {!r.is_active && <span className="ml-auto text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold shrink-0">Inactive</span>}
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  {r.detail && <p className="text-xs text-slate-500 line-clamp-2 mb-3 flex-1">{r.detail}</p>}
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-50 mt-auto">
                     <button onClick={() => { setRoleMapForm({ name: r.name, detail: r.detail ?? '', is_active: r.is_active }); setRoleMapEditId(r.id); setRoleMapError(null); setShowRoleMapForm(true) }}
-                      className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                    <button onClick={() => deleteRoleMap(r.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                      className="text-xs font-semibold text-[#1F4E79] hover:underline ml-auto">Edit</button>
+                    <button onClick={() => deleteRoleMap(r.id)} className="text-xs font-semibold text-red-400 hover:underline">Delete</button>
                   </div>
                 </div>
               ))}
