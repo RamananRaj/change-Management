@@ -138,8 +138,9 @@ function ReportBody({ d, onDrill, onNavigate }) {
         {canEdit && <p className="cf-no-print text-[11px] text-[#E8913A] mt-1">✎ Narrative sections are editable — your changes flow into the exports.</p>}
       </div>
 
-      {/* Floating action toolbar — fixed above the prompt pill, always reachable */}
-      <div className="cf-no-print fixed bottom-24 left-1/2 -translate-x-1/2 z-30 w-fit max-w-[92vw] flex flex-wrap items-center justify-center gap-2 bg-white/95 backdrop-blur border border-slate-200 shadow-xl rounded-2xl px-3 py-2">
+      {/* Action toolbar — sticky at the top of the report, scrolls with content so it never
+          covers the prompt bar. Hidden in print. */}
+      <div className="cf-no-print sticky top-2 z-20 flex flex-wrap items-center gap-2 bg-white/95 backdrop-blur border border-slate-200 shadow-sm rounded-2xl px-3 py-2 mb-4">
         {canEdit && d.client_id && (
           <button onClick={teachAI} disabled={saving} className="text-sm font-semibold text-white bg-[#E8913A] rounded-lg px-4 py-2 hover:brightness-95 disabled:opacity-60">
             {saving ? 'Saving…' : '✦ Save & teach AI'}
