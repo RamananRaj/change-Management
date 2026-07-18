@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { usePresence } from '../hooks/usePresence'
-import AdminNotes from '../components/AdminNotes'
+import SolutionBoard from '../components/SolutionBoard'
 import CFM from '../components/CFM'
 
 // Full-page layout. No left rail — content uses the whole width. Navigation lives in two
@@ -150,7 +150,7 @@ export default function AppLayout() {
         </button>
       </div>
 
-      <AdminNotes />
+      <SolutionBoard />
       <CFM />
     </div>
   )

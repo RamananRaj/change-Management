@@ -29,6 +29,7 @@ export default function CFM() {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [view, setView] = useState('list')   // 'list' | 'thread' | 'new' | 'newgroup'
+  const [replyTo, setReplyTo] = useState(null)   // message being replied to
   const [groupName, setGroupName] = useState('')
   const [picked, setPicked] = useState([])
   const scrollRef = useRef(null)
@@ -50,12 +51,14 @@ export default function CFM() {
   }, [messages, view])
 
   function openChannel(id) {
-    setActiveId(id); setView('thread'); chat.markRead(id)
+    setActiveId(id); setView('thread'); setReplyTo(null); chat.markRead(id)
   }
+  const msgById = Object.fromEntries(messages.map(m => [m.id, m]))
   async function submit(e) {
     e?.preventDefault()
     const t = text.trim(); if (!t || !activeId) return
-    setText(''); await chat.send(activeId, t)
+    const rt = replyTo?.id ?? null
+    setText(''); setReplyTo(null); await chat.send(activeId, t, rt)
     chat.loadMessages(activeId).then(setMessages)
   }
   async function startDm(pid) { const id = await chat.openOrCreateDm(pid); if (id) openChannel(id) }
@@ -153,16 +156,36 @@ export default function CFM() {
             {messages.map((m, i) => {
               const mine = m.sender_id === user.id
               const showName = active.isGroup && !mine && messages[i - 1]?.sender_id !== m.sender_id
+              const quoted = m.reply_to ? msgById[m.reply_to] : null
               return (
-                <div key={m.id} className={`max-w-[78%] px-2.5 py-1.5 rounded-lg text-[13.5px] leading-snug shadow-sm ${mine ? 'ml-auto bg-[#d3e8fb] rounded-tr-sm' : 'mr-auto bg-white rounded-tl-sm'}`}>
+                <div key={m.id} className={`group relative max-w-[78%] px-2.5 py-1.5 rounded-lg text-[13.5px] leading-snug shadow-sm ${mine ? 'ml-auto bg-[#d3e8fb] rounded-tr-sm' : 'mr-auto bg-white rounded-tl-sm'}`}>
                   {showName && <p className="text-[11px] font-bold text-[#E8913A] mb-0.5">{senderName(m.sender_id)}</p>}
+                  {quoted && (
+                    <div className="border-l-2 border-[#1F4E79]/50 bg-black/[.045] rounded px-2 py-1 mb-1">
+                      <p className="text-[10.5px] font-bold text-[#1F4E79] leading-tight">{senderName(quoted.sender_id)}</p>
+                      <p className="text-[11px] text-slate-500 truncate">{quoted.body}</p>
+                    </div>
+                  )}
                   <span>{m.body}</span>
                   <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">{fmtTime(m.created_at)}{mine && <span className="text-[#2f8fe0] ml-0.5">✓✓</span>}</span>
+                  <button onClick={() => setReplyTo(m)} title="Reply"
+                    className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[11px] flex items-center justify-center shadow-sm ${mine ? '-left-7' : '-right-7'}`}>↩</button>
                 </div>
               )
             })}
             {messages.length === 0 && <p className="text-center text-xs text-slate-400 mt-6">No messages yet — say hello 👋</p>}
           </div>
+          {replyTo && (
+            <div className="bg-[#f0f2f5] px-3 pt-2 -mb-1">
+              <div className="bg-white border-l-[3px] border-[#1F4E79] rounded px-3 py-1.5 flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-[#1F4E79] leading-tight">Reply to {senderName(replyTo.sender_id)}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{replyTo.body}</p>
+                </div>
+                <button onClick={() => setReplyTo(null)} className="text-slate-400 hover:text-slate-600 text-sm shrink-0">✕</button>
+              </div>
+            </div>
+          )}
           <form onSubmit={submit} className="bg-[#f0f2f5] px-3 py-2.5 flex items-center gap-2.5">
             <span title="Attachments coming later" className="text-slate-300 text-lg cursor-not-allowed">📎</span>
             <input value={text} onChange={e => setText(e.target.value)} placeholder="Type a message"

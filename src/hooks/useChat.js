@@ -90,10 +90,10 @@ export function useChat(user, profile) {
     return data ?? []
   }
 
-  async function send(channelId, body) {
+  async function send(channelId, body, replyTo = null) {
     const text = (body || '').trim()
     if (!text) return
-    await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text })
+    await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text, reply_to: replyTo })
     await supabase.from('chat_members').update({ last_read_at: new Date().toISOString() }).eq('channel_id', channelId).eq('user_id', uid)
     load()
   }
