@@ -917,27 +917,43 @@ export default function Admin() {
               {/* User selector */}
               <div className="mb-6">
                 <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-2">Select User</label>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                   {allProjects.map(proj => {
                     const name     = proj.profiles?.full_name ?? 'Unknown'
                     const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
                     const isSelected = selectedUser === proj.id
+                    const roleLbl = roles.find(r => r.code === proj.profiles?.role)?.label ?? proj.profiles?.role ?? '—'
                     return (
                       <button
                         key={proj.id}
                         onClick={() => setSelectedUser(proj.id)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                        className={`text-left flex items-center gap-3 p-4 rounded-2xl border transition-all ${
                           isSelected
                             ? 'bg-[#1F4E79] text-white border-[#1F4E79] shadow-md'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#1F4E79]/40'
+                            : 'bg-white text-slate-700 border-slate-100 hover:border-[#1F4E79]/40'
                         }`}
                       >
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                           isSelected ? 'bg-white/20 text-white' : 'bg-[#1F4E79] text-white'
                         }`}>
                           {initials}
                         </div>
-                        {name}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm leading-tight truncate">{name}</p>
+                          <p className={`text-[11px] mt-0.5 truncate ${isSelected ? 'text-white/70' : 'text-slate-400'}`}>{roleLbl}</p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          {[1,2,3,4,5].map(n => {
+                            const ph = proj.phases.find(p => p.phase_number === n)
+                            return (
+                              <div key={n} className={`w-1.5 h-1.5 rounded-full ${
+                                ph?.status === 'completed' ? (isSelected ? 'bg-green-300' : 'bg-green-400') :
+                                ph?.status === 'active'    ? (isSelected ? 'bg-[#E8913A]' : 'bg-[#1F4E79]') :
+                                                             (isSelected ? 'bg-white/30' : 'bg-slate-200')
+                              }`} />
+                            )
+                          })}
+                        </div>
                       </button>
                     )
                   })}

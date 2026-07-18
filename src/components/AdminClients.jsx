@@ -1426,34 +1426,37 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
           <p className="text-slate-400 text-xs mt-1">Create a client to manage their projects, users, pathways and progress.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {clients.map(client => {
             const userCount = allUsers.filter(u => u.client_id === client.id).length
             return (
               <div key={client.id}
-                className="bg-white border border-slate-100 rounded-2xl px-5 py-4 flex items-center gap-4 hover:shadow-sm transition-all cursor-pointer group"
+                className={`bg-white border border-slate-100 rounded-2xl p-4 flex flex-col gap-2 hover:shadow-sm hover:border-[#1F4E79]/25 transition-all cursor-pointer group ${!client.is_active ? 'opacity-60' : ''}`}
                 onClick={() => openClient(client)}>
-                <div className="w-10 h-10 rounded-xl bg-[#1F4E79]/10 flex items-center justify-center font-bold text-[#1F4E79] shrink-0">
-                  {client.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-slate-800 text-sm">{client.name}</p>
-                    {!client.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#1F4E79]/10 flex items-center justify-center font-bold text-[#1F4E79] shrink-0">
+                    {client.name.charAt(0).toUpperCase()}
                   </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {client.industry ? `${industryLabel(client.industry)} · ` : ''}{userCount} user{userCount !== 1 ? 's' : ''}
-                    {client.contact_name ? ` · ${client.contact_name}` : ''}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-slate-800 text-sm leading-tight">{client.name}</p>
+                      {!client.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                    </div>
+                    {client.industry && <p className="text-[11px] text-slate-400 mt-0.5">{industryLabel(client.industry)}</p>}
+                  </div>
+                  <svg className="w-4 h-4 text-slate-300 group-hover:text-[#1F4E79] transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
                 </div>
-                <div className="flex gap-2 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                <p className="text-xs text-slate-500">
+                  {userCount} user{userCount !== 1 ? 's' : ''}{client.contact_name ? ` · ${client.contact_name}` : ''}
+                </p>
+                <div className="flex gap-3 pt-2.5 mt-auto border-t border-slate-100" onClick={e => e.stopPropagation()}>
                   <button onClick={() => { setClientForm({ name: client.name, industry: client.industry ?? '', contact_name: client.contact_name ?? '', contact_email: client.contact_email ?? '', notes: client.notes ?? '', is_active: client.is_active }); setClientEditId(client.id); setClientError(null); setShowClientForm(true) }}
                     className="text-xs text-[#1F4E79] hover:underline">Edit</button>
                   <button onClick={() => deleteClient(client.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                  <button onClick={() => openClient(client)} className="text-xs text-slate-400 hover:text-[#1F4E79] hover:underline ml-auto">Open →</button>
                 </div>
-                <svg className="w-4 h-4 text-slate-300 group-hover:text-[#1F4E79] transition-colors shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
               </div>
             )
           })}

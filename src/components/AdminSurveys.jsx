@@ -596,45 +596,28 @@ export default function AdminSurveys({ roles }) {
           <button onClick={openNewSurvey} className="text-[#1F4E79] text-sm font-semibold hover:underline">+ Create the first survey</button>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {surveys.map(s => (
-            <div key={s.id} className={`bg-white border rounded-2xl p-5 transition-opacity ${!s.is_active ? 'opacity-50' : ''}`}>
-              <div className="flex items-start gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <p className="font-semibold text-slate-800">{s.title}</p>
-                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                      Phase {String(s.phase_number).padStart(2,'0')}
-                    </span>
-                    {s.target_role && (
-                      <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                        {roles.find(r => r.code === s.target_role)?.label ?? s.target_role}
-                      </span>
-                    )}
-                    {!s.is_active && (
-                      <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>
-                    )}
-                    {s.ai_insight && (
-                      <span className="text-[10px] font-semibold bg-[#1F4E79]/10 text-[#1F4E79] px-2 py-0.5 rounded-full">✦ Insight ready</span>
-                    )}
+            <div key={s.id} className={`bg-white border border-slate-100 rounded-2xl p-4 flex flex-col gap-2 ${!s.is_active ? 'opacity-50' : ''}`}>
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-[#1F4E79]/10 flex items-center justify-center text-lg shrink-0">📊</div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-slate-800 text-sm leading-tight">{s.title}</p>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">Phase {String(s.phase_number).padStart(2,'0')}</span>
+                    {s.target_role && <span className="text-[10px] font-semibold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{roles.find(r => r.code === s.target_role)?.label ?? s.target_role}</span>}
+                    {s.ai_insight && <span className="text-[10px] font-semibold bg-[#1F4E79]/10 text-[#1F4E79] px-2 py-0.5 rounded-full">✦ Insight</span>}
+                    {!s.is_active && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full font-semibold">Inactive</span>}
                   </div>
-                  {s.description && <p className="text-xs text-slate-500 mb-1">{s.description}</p>}
-                  <p className="text-[11px] text-slate-400">
-                    RAG thresholds: Green ≥ {s.rag_green_threshold} · Amber ≥ {s.rag_amber_threshold}
-                  </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                  <button onClick={() => viewResults(s)}
-                    className="text-xs font-semibold text-[#E8913A] border border-[#E8913A]/30 hover:bg-[#E8913A]/5 px-3 py-1.5 rounded-lg transition-colors">
-                    View Results
-                  </button>
-                  <button onClick={() => toggleActive(s)}
-                    className={`text-xs font-semibold px-3 py-1 rounded-lg border transition-colors ${s.is_active ? 'text-slate-400 border-slate-200 hover:border-slate-300' : 'text-green-600 border-green-200 hover:bg-green-50'}`}>
-                    {s.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
-                  <button onClick={() => openEditSurvey(s)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                  <button onClick={() => handleDelete(s.id)} className="text-xs text-red-400 hover:underline">Delete</button>
-                </div>
+              </div>
+              {s.description && <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{s.description}</p>}
+              <p className="text-[11px] text-slate-400">RAG: Green ≥ {s.rag_green_threshold} · Amber ≥ {s.rag_amber_threshold}</p>
+              <div className="flex items-center gap-3 pt-2.5 mt-auto border-t border-slate-100">
+                <button onClick={() => viewResults(s)} className="text-xs font-semibold text-[#E8913A] hover:underline">View Results</button>
+                <button onClick={() => toggleActive(s)} className={`text-xs font-semibold hover:underline ${s.is_active ? 'text-slate-400' : 'text-green-600'}`}>{s.is_active ? 'Deactivate' : 'Activate'}</button>
+                <button onClick={() => openEditSurvey(s)} className="text-xs text-[#1F4E79] hover:underline ml-auto">Edit</button>
+                <button onClick={() => handleDelete(s.id)} className="text-xs text-red-400 hover:underline">Delete</button>
               </div>
             </div>
           ))}
