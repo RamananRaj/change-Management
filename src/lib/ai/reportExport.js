@@ -32,10 +32,12 @@ function secDocHTML(s) {
   if (s.type === 'progress') return h + `<table><tr><th>Item</th><th>Detail</th><th>Progress</th></tr>${(s.rows || []).map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.sub || '')}</td><td>${r.value}%</td></tr>`).join('')}</table>`
   if (s.type === 'list') return h + ((s.rows || []).length ? `<table><tr><th>Item</th><th>Detail</th><th>Status</th></tr>${s.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.meta || '')}</td><td>${esc(r.due || '')}</td></tr>`).join('')}</table>` : `<p style="color:#94a3b8">${esc(s.empty || '—')}</p>`)
   if (s.type === 'heatmap') {
-    const head = `<tr><th></th>${s.cols.map(c => `<th>${esc(c)}</th>`).join('')}</tr>`
-    const rows = s.rows.map(r => `<tr><td><b>${esc(r.label)}</b></td>${r.cells.map(lv => `<td bgcolor="${LV_CSS[lv] || LV_CSS.none}" style="background:${LV_CSS[lv] || LV_CSS.none};color:#fff;text-align:center">${LVL(lv)}</td>`).join('')}</tr>`).join('')
+    const head = `<tr><th></th>${s.cols.map(c => `<th style="text-align:center;font-size:9pt">${esc(c)}</th>`).join('')}</tr>`
+    const dot = lv => `<span style="color:${LV_CSS[lv] || LV_CSS.none};font-size:16pt;line-height:1">&#9679;</span>`
+    const rows = s.rows.map(r => `<tr><td style="border:none"><b>${esc(r.label)}</b></td>${r.cells.map(lv => `<td style="border:none;text-align:center" title="${LVL(lv)}">${dot(lv)}</td>`).join('')}</tr>`).join('')
+    const legend = `<p style="font-size:8pt;color:#64748b">${['vh', 'h', 'm', 'l', 'vl', 'none'].map(k => `${dot(k).replace('16pt', '11pt')} ${LVL(k)}`).join('&nbsp;&nbsp;')}</p>`
     const ins = (s.insights || []).length ? `<ul>${s.insights.map(i => `<li>${mdHtml(i)}</li>`).join('')}</ul>` : ''
-    return `${h}<table>${head}${rows}</table>${s.headline ? `<p>${mdHtml(s.headline)}</p>` : ''}${ins}`
+    return `${h}<table style="border-collapse:collapse">${head}${rows}</table>${legend}${s.headline ? `<p>${mdHtml(s.headline)}</p>` : ''}${ins}`
   }
   if (s.type === 'projectTimeline') return h + (s.gantt ? ganttDocHTML(s.gantt) : `<p><i>No dates scheduled yet — add phase dates to draw the timeline.</i></p>`)
   return h
@@ -95,10 +97,8 @@ export async function exportReportPptx(report) {
       const src = (s.rows || []).length ? s.rows.map(r => [r.name, r.meta || '', r.due || '']) : [[s.empty || '—', '', '']]
       sl.addTable([[{ text: 'Item', options: { bold: true } }, { text: 'Detail', options: { bold: true } }, { text: 'Status', options: { bold: true } }], ...src], { x: 0.5, y: 1.1, w: 12.3, fontSize: 12, border: { pt: 0.5, color: 'E2E8F0' }, color: '334155' })
     } else if (s.type === 'heatmap') {
-      const header = [{ text: '', options: { fill: 'F1F5F9' } }, ...s.cols.map(c => ({ text: c, options: { bold: true, align: 'center', fill: 'F1F5F9', color: '475569' } }))]
-      const body = s.rows.map(r => [{ text: r.label, options: { bold: true, color: '334155' } }, ...r.cells.map(lv => ({ text: LVL(lv), options: { fill: LV_HEX[lv] || LV_HEX.none, color: 'FFFFFF', align: 'center', fontSize: 9 } }))])
-      // Heat map on the left, the AI insight (headline + bullets) on the right — same content as the PDF.
-      sl.addTable([header, ...body], { x: 0.5, y: 1.1, w: 6.6, colW: [1.9, 1.175, 1.175, 1.175, 1.175].slice(0, s.cols.length + 1), rowH: 0.4, fontSize: 10, valign: 'middle' })
+      // Dot matrix on the left (matches the app/PDF), AI insight on the right.
+      heatmapDotsPptx(sl, P, s)
       const insX = 7.4, insW = 5.4
       if (s.headline) sl.addText(stripMd(s.headline), { x: insX, y: 1.1, w: insW, h: 1.6, fontSize: 12, bold: true, color: '1F4E79', valign: 'top' })
       if (s.insights?.length) {
@@ -112,6 +112,33 @@ export async function exportReportPptx(report) {
   })
 
   pptx.writeFile({ fileName: `${safe(report.title)}.pptx` })
+}
+
+// Draw the heat map as a grid of coloured dots (matches the app + PDF).
+function heatmapDotsPptx(sl, P, s) {
+  const oval = P.ShapeType?.ellipse ?? 'ellipse'
+  const X = 0.5, top = 1.15, labelW = 2.2
+  const nCols = s.cols.length
+  const colW = Math.min((6.8 - labelW) / Math.max(nCols, 1), 1.1)
+  const rowH = Math.min((6.0 - 0.4) / Math.max(s.rows.length, 1), 0.55)
+  const D = 0.26
+  s.cols.forEach((c, j) => sl.addText(c, { x: X + labelW + j * colW, y: top, w: colW, h: 0.3, fontSize: 9, bold: true, color: '475569', align: 'center' }))
+  s.rows.forEach((r, i) => {
+    const ry = top + 0.4 + i * rowH
+    sl.addText(r.label, { x: X, y: ry, w: labelW - 0.1, h: rowH, fontSize: 9, color: '334155', align: 'right', valign: 'middle' })
+    r.cells.forEach((lv, j) => {
+      const cx = X + labelW + j * colW + colW / 2
+      sl.addShape(oval, { x: cx - D / 2, y: ry + rowH / 2 - D / 2, w: D, h: D, fill: { color: LV_HEX[lv] || LV_HEX.none }, line: { color: 'FFFFFF', width: 0.75 } })
+    })
+  })
+  // Legend under the matrix.
+  const ly = top + 0.4 + s.rows.length * rowH + 0.15
+  let lx = X
+  ;['vh', 'h', 'm', 'l', 'vl', 'none'].forEach(k => {
+    sl.addShape(oval, { x: lx, y: ly + 0.02, w: 0.14, h: 0.14, fill: { color: LV_HEX[k] } })
+    sl.addText(LVL(k), { x: lx + 0.18, y: ly - 0.04, w: 1.0, h: 0.22, fontSize: 8, color: '94A3B8', valign: 'middle' })
+    lx += 0.18 + Math.min(LVL(k).length * 0.062 + 0.3, 1.2)
+  })
 }
 
 // Draw the gantt as positioned shapes on a slide.
