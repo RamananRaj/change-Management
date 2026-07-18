@@ -262,7 +262,8 @@ async function runReport(_params, text) {
   const proj = candidateProjects.find(p => p.name && p.name.length >= 3 && t.includes(p.name.toLowerCase())) || null
   if (proj && !client) client = data.clients.find(c => c.id === proj.client_id) || client   // infer client from the named project
   if (!client && data.clients.length > 1) {
-    return { type: 'narrative', title: 'Which client?', body: `Name the client for the report, e.g. "build the change report for **${data.clients[0].name}**".` }
+    return { type: 'narrative', title: 'Which client?', followup: 'report',
+      body: `Name the client for the report — just reply with a name: ${data.clients.map(c => `**${c.name}**`).join(', ')}. You can also add a project, e.g. "**${data.clients[0].name} · ${(data.projRollup.find(p => p.client_id === data.clients[0].id)?.name) || 'a project'}**".` }
   }
   const cid = client?.id
   const cp = proj ? [proj] : data.projRollup.filter(p => !cid || p.client_id === cid)

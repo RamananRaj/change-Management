@@ -388,6 +388,7 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
   const [thinking, setThinking] = useState(false)
   const [progress, setProgress] = useState(null)
   const [input, setInput] = useState('')
+  const [pendingFollowup, setPendingFollowup] = useState(null)   // e.g. 'report' — the last card asked a question
   const [attachedFile, setAttachedFile] = useState(null)   // admin: template file to turn into a workbook
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -411,13 +412,23 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function run(q) {
-    if (!q?.trim() || thinking) return
+  async function run(rawQ) {
+    if (!rawQ?.trim() || thinking) return
+    const label = rawQ.trim()
+    // Continuity: if the previous card asked a follow-up (e.g. the report asked "Which client?"),
+    // treat a bare reply as its answer instead of a brand-new query.
+    let q = label
+    const otherIntent = /\b(risk|readiness|progress|heat ?map|timeline|milestone|behind|upcoming|people|survey)\b/i.test(label)
+    if (pendingFollowup === 'report' && !/\breport\b/i.test(label) && !otherIntent) {
+      q = `build the change report for ${label}`
+    }
+    setPendingFollowup(null)
     setThinking(true); setProgress(null)
     try {
       const d = await ask(q, ctx, { onProgress: p => setProgress(p?.text ?? null) })
+      if (d.followup) setPendingFollowup(d.followup)   // this card is itself asking a question
       // De-dupe: replace any existing card with the same title, moved fresh to the top.
-      setWidgets(w => [{ ...d, query: q, key: Date.now() }, ...w.filter(x => x.title !== d.title)])
+      setWidgets(w => [{ ...d, query: label, key: Date.now() }, ...w.filter(x => x.title !== d.title)])
     } catch {
       setWidgets(w => [{ type: 'narrative', title: 'Something went wrong', body: 'That query could not be answered. Please try again.', query: q, key: Date.now() }, ...w])
     } finally {
