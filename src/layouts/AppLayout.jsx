@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { usePresence } from '../hooks/usePresence'
 import AdminNotes from '../components/AdminNotes'
+import CFM from '../components/CFM'
 
 // Full-page layout. No left rail — content uses the whole width. Navigation lives in two
 // places: a slim top bar (brand + admin + user/logout, top-right as icons) and a floating
@@ -150,6 +151,7 @@ export default function AppLayout() {
       </div>
 
       <AdminNotes />
+      <CFM />
     </div>
   )
 }
