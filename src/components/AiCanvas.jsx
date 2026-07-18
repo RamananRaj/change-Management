@@ -125,10 +125,36 @@ function ReportBody({ d, onDrill, onNavigate }) {
     setNote(err ? `Could not promote: ${err.message}` : '★ Promoted to the standard — all clients inherit this wording unless they override it.')
     if (!err) originals.current = { ...originals.current, ...edits }
   }
+  // Export with visible feedback — an async export that silently rejects looks like "nothing
+  // happened", so we surface success and any error in the toolbar note.
+  async function doExport(kind) {
+    setNote(kind === 'pptx' ? 'Building PowerPoint…' : 'Building Word…')
+    try {
+      if (kind === 'pptx') await exportReportPptx(report)
+      else await exportReportDoc(report)
+      setNote(kind === 'pptx' ? '✓ PowerPoint downloaded.' : '✓ Word downloaded.')
+    } catch (e) {
+      console.error('[report export]', e)
+      setNote(`Export failed: ${e?.message || e}. Check pop-up/download settings and try again.`)
+    }
+  }
+  // Print only the report: hide the app shell so there's no trailing blank space, and drop the
+  // browser's own header/footer via @page margin 0 (content margins come from .cf-print padding).
   const doPrint = () => {
     const el = ref.current; if (!el) return
-    el.classList.add('cf-print'); window.print()
-    setTimeout(() => el.classList.remove('cf-print'), 500)
+    const added = []
+    el.classList.add('cf-print'); added.push([el, 'cf-print'])
+    let node = el
+    while (node && node.parentElement && node !== document.body) {
+      const parent = node.parentElement
+      parent.classList.add('cf-print-ancestor'); added.push([parent, 'cf-print-ancestor'])
+      for (const ch of Array.from(parent.children)) {
+        if (ch !== node) { ch.classList.add('cf-hide-print'); added.push([ch, 'cf-hide-print']) }
+      }
+      node = parent
+    }
+    window.print()
+    setTimeout(() => added.forEach(([n, c]) => n.classList.remove(c)), 800)
   }
   return (
     <div ref={ref} className="cf-report">
@@ -159,8 +185,8 @@ function ReportBody({ d, onDrill, onNavigate }) {
           </button>
         )}
         <button onClick={doPrint} className="text-sm font-semibold text-white bg-[#1F4E79] rounded-lg px-4 py-2 hover:bg-[#163a5c]">🖨 PDF</button>
-        <button onClick={() => exportReportPptx(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📊 PowerPoint</button>
-        <button onClick={() => exportReportDoc(report)} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📄 Word</button>
+        <button onClick={() => doExport('pptx')} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📊 PowerPoint</button>
+        <button onClick={() => doExport('doc')} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 rounded-lg px-4 py-2 hover:bg-slate-50">📄 Word</button>
         {note && <span className="text-xs text-slate-500 basis-full">{note}</span>}
       </div>
 
@@ -456,11 +482,12 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
         @media print{
           *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
-          body *{visibility:hidden !important}
-          .cf-print,.cf-print *{visibility:visible !important}
-          .cf-print{position:absolute !important;left:0;top:0;width:100% !important;padding:6mm !important;background:#fff !important}
+          html,body{background:#fff !important}
+          .cf-hide-print{display:none !important}
+          .cf-print-ancestor{display:block !important;position:static !important;overflow:visible !important;height:auto !important;max-height:none !important;margin:0 !important;padding:0 !important;background:#fff !important}
+          .cf-print{padding:14mm 13mm !important;background:#fff !important}
           .cf-no-print{display:none !important}
-          @page{margin:14mm}
+          @page{margin:0}
         }
       `}</style>
 
