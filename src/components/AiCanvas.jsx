@@ -7,6 +7,7 @@ import { slmOptedIn } from '../lib/ai/slm'
 import { buildTemplateDraft, createTemplate } from '../lib/ai/templateDraft'
 import { saveReportEdits, promoteToStandard } from '../lib/ai/reportMemory'
 import { rewriteReportNarratives } from '../lib/ai/reportStyle'
+import { exportReportDoc, exportReportPptx } from '../lib/ai/reportExport'
 import ProjectTimeline from './ProjectTimeline'
 
 // ChangeFlow · reusable AI Canvas experience.
