@@ -262,6 +262,35 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
     )
   }
 
+  if (d.type === 'insight') {
+    const chipCls = c => /impact/i.test(c) ? 'bg-red-50 text-red-800' : /readiness/i.test(c) ? 'bg-indigo-50 text-indigo-700' : /overdue/i.test(c) ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'
+    return (
+      <div>
+        {d.lead && <p className="text-[14px] leading-relaxed text-slate-700 mb-4"><Bold text={d.lead} /></p>}
+        <div className="space-y-3">
+          {(d.areas ?? []).map(a => (
+            <div key={a.rank} className={`border rounded-xl px-4 py-3.5 ${a.rank === 1 ? 'border-l-[3px] border-l-red-400 bg-red-50/40 border-slate-100' : 'border-l-[3px] border-l-[#E8913A] border-slate-100'}`}>
+              <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+                <span className="w-5 h-5 rounded-full bg-[#1F4E79] text-white text-[11px] font-bold flex items-center justify-center shrink-0">{a.rank}</span>
+                <span className="font-bold text-slate-800 text-[14px]">{a.name}</span>
+                <div className="flex flex-wrap gap-1.5 sm:ml-auto">
+                  {(a.chips ?? []).map((c, i) => <span key={i} className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${chipCls(c)}`}>{c}</span>)}
+                </div>
+              </div>
+              <p className="text-[13px] leading-relaxed text-slate-600"><Bold text={a.body} /></p>
+              {a.evidence && <p className="text-[11px] text-slate-400 mt-2 pt-2 border-t border-dashed border-slate-200"><span className="font-semibold text-slate-500">Evidence:</span> {a.evidence}</p>}
+            </div>
+          ))}
+        </div>
+        {d.move && (
+          <div className="mt-4 rounded-xl bg-[#1F4E79]/5 border border-[#1F4E79]/15 px-4 py-3.5">
+            <p className="text-[13px] leading-relaxed text-slate-600"><span className="font-bold text-[#1F4E79]">The one move: </span><Bold text={d.move} /></p>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   if (d.type === 'heatmap') {
     if (!d.rows?.length) return <p className="text-sm text-slate-400">No heat map data.</p>
     const LV = { vh: '#991B1B', h: '#DC2626', m: '#E8913A', l: '#16A34A', vl: '#86EFAC', none: '#E2E8F0' }

@@ -40,6 +40,16 @@ function secDocHTML(s) {
     return `${h}<table style="border-collapse:collapse">${head}${rows}</table>${legend}${s.headline ? `<p>${mdHtml(s.headline)}</p>` : ''}${ins}`
   }
   if (s.type === 'projectTimeline') return h + (s.gantt ? ganttDocHTML(s.gantt) : `<p><i>No dates scheduled yet — add phase dates to draw the timeline.</i></p>`)
+  if (s.type === 'insight') {
+    const lead = s.lead ? `<p>${mdHtml(s.lead)}</p>` : ''
+    const areas = (s.areas || []).map(a => `<table style="margin:8px 0"><tr><td style="border-left:3px solid ${a.rank === 1 ? '#DC2626' : '#E8913A'};padding:6px 10px">
+      <p><b>${a.rank}. ${esc(a.name)}</b>&nbsp; ${(a.chips || []).map(c => `<span style="font-size:8pt;color:#64748b">[${esc(c)}]</span>`).join(' ')}</p>
+      <p style="font-size:10pt">${mdHtml(a.body)}</p>
+      ${a.evidence ? `<p style="font-size:8pt;color:#94a3b8"><b>Evidence:</b> ${esc(a.evidence)}</p>` : ''}
+    </td></tr></table>`).join('')
+    const move = s.move ? `<p style="background:#eef2f7;padding:8px 10px"><b style="color:#1F4E79">The one move:</b> ${mdHtml(s.move)}</p>` : ''
+    return h + lead + areas + move
+  }
   return h
 }
 
@@ -108,6 +118,16 @@ export async function exportReportPptx(report) {
     } else if (s.type === 'projectTimeline') {
       if (s.gantt) ganttPptx(sl, P, s.gantt)
       else sl.addText('No dates scheduled yet — add phase dates to draw the timeline.', { x: 0.5, y: 1.1, fontSize: 13, italic: true, color: '94A3B8' })
+    } else if (s.type === 'insight') {
+      const rows = []
+      if (s.lead) rows.push({ text: stripMd(s.lead), options: { fontSize: 12, color: '334155', paraSpaceAfter: 10 } })
+      ;(s.areas || []).forEach(a => {
+        rows.push({ text: `${a.rank}. ${a.name}   [${(a.chips || []).join('] [')}]`, options: { bold: true, fontSize: 12, color: a.rank === 1 ? '991B1B' : '1F4E79', paraSpaceBefore: 6 } })
+        rows.push({ text: stripMd(a.body), options: { fontSize: 11, color: '334155' } })
+        if (a.evidence) rows.push({ text: `Evidence: ${a.evidence}`, options: { fontSize: 8.5, italic: true, color: '94A3B8', paraSpaceAfter: 4 } })
+      })
+      if (s.move) rows.push({ text: `The one move: ${stripMd(s.move)}`, options: { bold: true, fontSize: 11.5, color: '1F4E79', paraSpaceBefore: 10 } })
+      sl.addText(rows, { x: 0.5, y: 1.1, w: 12.3, h: 5.9, valign: 'top' })
     }
   })
 

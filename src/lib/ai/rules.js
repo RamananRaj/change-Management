@@ -253,6 +253,47 @@ function buildReportGantt(cp) {
   return { months, projects, todayIdx }
 }
 
+// Integrated insight: correlate the heat map (per-group impact) with programme progress, risk,
+// readiness and upcoming milestones into a ranked list of focus areas. Fully grounded — every
+// claim cites the artifact it came from. Deepens on its own as more data is captured.
+const LV_W = { vh: 5, h: 4, m: 3, l: 2, vl: 1, none: 0 }
+const LV_LABEL = { vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Very Low', none: 'None' }
+function buildIntegratedInsight(heat, { pct, atRisk, avg, ragWord, upcoming }) {
+  if (!heat?.rows?.length) return null
+  const cols = heat.cols || []
+  const scored = heat.rows.map(r => {
+    const cells = r.cells || []
+    const total = cells.reduce((s, lv) => s + (LV_W[lv] || 0), 0)
+    let domIdx = 0, domW = -1, maxLv = 'none'
+    cells.forEach((lv, i) => { const w = LV_W[lv] || 0; if (w > domW) { domW = w; domIdx = i } if (w > (LV_W[maxLv] || 0)) maxLv = lv })
+    return { name: r.label, total, maxLv, dom: cols[domIdx] || 'impact', highCount: cells.filter(lv => lv === 'vh' || lv === 'h').length }
+  }).sort((a, b) => b.total - a.total)
+
+  const readinessUnknown = avg == null
+  const top = scored.slice(0, 3)
+  const areas = top.map((g, i) => {
+    const chips = [`Impact ${LV_LABEL[g.maxLv]}`]
+    if (i === 0) chips.push(atRisk.length ? `${atRisk.length} phase${atRisk.length === 1 ? '' : 's'} overdue` : `${pct}% complete`)
+    if (readinessUnknown && i < 2) chips.push('Readiness —')
+    let body
+    if (i === 0) body = `**${g.name}** peaks ${LV_LABEL[g.maxLv]} (strongest on ${g.dom}) with ${g.highCount} high-impact domain${g.highCount === 1 ? '' : 's'} — the pivot of this change. ${readinessUnknown ? 'With no readiness data yet, run the phase survey here first and stand up its change champions.' : `Readiness is ${ragWord}; concentrate engagement and comms here.`}`
+    else if (i === 1) body = `**${g.name}** is broadly exposed (${g.highCount} high-impact domain${g.highCount === 1 ? '' : 's'}, strongest on ${g.dom}). Sequence engagement right after ${top[0].name}${upcoming.length ? `, using "${upcoming[0].name}" (${upcoming[0].due}) as the forcing point` : ''}.`
+    else body = g.total <= 4 ? `**${g.name}** — lightest touch; keep informed and redirect capacity to the groups above.` : `**${g.name}** — moderate impact (strongest on ${g.dom}); monitor and support as the programme moves.`
+    const evidence = `heat map${heat.version ? ` v${heat.version}` : ''} (${g.name} row)` +
+      (i === 0 ? ` · snapshot (${pct}%)${readinessUnknown ? ' · readiness (0 responses)' : ''}` : (i === 1 && upcoming.length ? ` · upcoming "${upcoming[0].name}"` : ''))
+    return { rank: i + 1, name: g.name, level: g.maxLv, chips, body, evidence }
+  })
+
+  const lead = `Independent signals converge on the same place. The **stakeholder heat map** flags **${top.slice(0, 2).map(g => g.name).join('** and **')}** as the highest-impact groups; **delivery** is at **${pct}%**${atRisk.length ? ` with ${atRisk.length} phase${atRisk.length === 1 ? '' : 's'} overdue` : ''}; and **readiness** is **${readinessUnknown ? 'unmeasured' : ragWord}**. Where impact is high and progress or readiness is weak is where the programme is most exposed — effort there de-risks the most.`
+  const move = readinessUnknown
+    ? `Get the phase readiness survey out to ${top.slice(0, 2).map(g => g.name).join(' and ')} this week — it's the missing signal on your highest-risk groups.`
+    : atRisk.length
+    ? `Clear the ${atRisk.length} overdue phase${atRisk.length === 1 ? '' : 's'} concentrated around ${top[0].name} — they gate go-live.`
+    : `Focus engagement on ${top[0].name} first — highest impact and the greatest point of leverage right now.`
+
+  return { heading: 'Where to focus', type: 'insight', lead, areas, move }
+}
+
 async function runReport(_params, text) {
   const data = await loadData()
   const t = (text ?? '').toLowerCase()
@@ -295,10 +336,13 @@ async function runReport(_params, text) {
     if (a) { heatInsights = analyseHeatmap(a.data); heatSection = { heading: 'Change impact heat map', type: 'heatmap', cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, headline: a.data.commentary, insights: heatInsights } }
   }
 
+  const integrated = heatSection ? buildIntegratedInsight(heatSection, { pct, atRisk, avg, ragWord, upcoming }) : null
+
   let sections = []
   sections.push({ heading: 'Executive summary', type: 'narrative', body:
     `**${scopeLabel}** — ${proj ? '1 project' : `${cp.length} project${cp.length === 1 ? '' : 's'}`}, ${people} ${people === 1 ? 'person' : 'people'}, **${pct}%** average completion. Readiness is **${ragWord}**.` +
     (atRisk.length ? ` **${atRisk.length}** phase${atRisk.length === 1 ? ' is' : 's are'} overdue and need attention.` : ' No phases are currently overdue.') })
+  if (integrated) sections.push(integrated)
   sections.push({ heading: 'Programme snapshot', type: 'progress', empty: 'No projects yet.',
     rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => a.value - b.value) })
   if (heatSection) sections.push(heatSection)
