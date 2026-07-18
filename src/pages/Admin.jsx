@@ -69,6 +69,7 @@ const emptyContentForm = {
   template_id: '',
   pathway_step: '',
   is_featured: false,
+  client_id: '',   // '' = shared library (global); set = authored for one client
 }
 
 const emptyRoleForm = {
@@ -101,6 +102,8 @@ export default function Admin() {
   const [filterPhase,    setFilterPhase]    = useState(1)
   const [filterIndustry, setFilterIndustry] = useState('')
   const [filterRole,     setFilterRole]     = useState('')
+  const [filterClient,   setFilterClient]   = useState('')   // '', '__global', or a client id
+  const [clients,        setClients]        = useState([])
   const [contentSearch,  setContentSearch]  = useState('')
   const [openGroups,     setOpenGroups]     = useState({})   // industry-group collapse when "All industries"
   const [items,          setItems]          = useState([])
@@ -177,6 +180,7 @@ export default function Admin() {
     fetchRoles()
     fetchIndustries()
     fetchTemplates()
+    fetchClients()
   }, [])
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
@@ -188,7 +192,7 @@ export default function Admin() {
     if (section === 'Stakeholders')     fetchStakeholders()
     if (section === 'Impacted Roles')   fetchRoleMaps()
     if (section === 'Templates')        fetchTemplates()
-  }, [section, filterPhase, filterIndustry, filterRole])
+  }, [section, filterPhase, filterIndustry, filterRole, filterClient])
 
   // ── User Roles ──
   async function fetchRoleMaps() {
@@ -253,6 +257,11 @@ export default function Admin() {
   }
 
   // ── Content Manager ──
+  async function fetchClients() {
+    const { data } = await supabase.from('clients').select('id, name').order('name')
+    setClients(data ?? [])
+  }
+
   async function fetchItems() {
     setContentLoading(true)
     let query = supabase
@@ -262,13 +271,41 @@ export default function Admin() {
       .order('sort_order', { ascending: true })
     if (filterIndustry) query = query.eq('industry', filterIndustry)
     if (filterRole)     query = query.eq('role', filterRole)
+    if (filterClient === '__global') query = query.is('client_id', null)
+    else if (filterClient)           query = query.eq('client_id', filterClient)
     const { data } = await query
     setItems(data ?? [])
     setContentLoading(false)
   }
 
+  // Promote a client-authored item into the shared library so future customers inherit it.
+  async function promoteContent(item) {
+    if (!window.confirm(`Promote “${item.title}” to the shared library? It becomes available to every future customer.`)) return
+    const { error } = await supabase.from('phase_content').update({ client_id: null }).eq('id', item.id)
+    if (error) { window.alert(error.message); return }
+    fetchItems()
+  }
+
+  // Clone an item for a specific client (leaves the original intact).
+  async function cloneContent(item) {
+    const target = window.prompt(
+      'Clone this item for which client? Type the client name exactly:\n\n' + clients.map(c => `• ${c.name}`).join('\n')
+    )
+    if (!target) return
+    const match = clients.find(c => c.name.toLowerCase() === target.trim().toLowerCase())
+    if (!match) { window.alert(`No client named “${target}”.`); return }
+    const { id, created_at, updated_at, ...rest } = item
+    const { error } = await supabase.from('phase_content').insert({
+      ...rest, client_id: match.id, title: `${item.title} (${match.name})`,
+    })
+    if (error) { window.alert(error.message); return }
+    window.alert(`Cloned for ${match.name}.`)
+    fetchItems()
+  }
+
   function openNewContent() {
-    setForm({ ...emptyContentForm, phase_number: filterPhase, industry: filterIndustry, role: filterRole })
+    setForm({ ...emptyContentForm, phase_number: filterPhase, industry: filterIndustry, role: filterRole,
+      client_id: filterClient && filterClient !== '__global' ? filterClient : '' })
     setEditId(null)
     setFormError(null)
     setShowForm(true)
@@ -289,6 +326,7 @@ export default function Admin() {
       template_id:  item.template_id ?? '',
       pathway_step: item.pathway_step ?? '',
       is_featured:  item.is_featured ?? false,
+      client_id:    item.client_id ?? '',
     })
     setEditId(item.id)
     setFormError(null)
@@ -307,6 +345,7 @@ export default function Admin() {
       template_id:  form.template_id  || null,
       pathway_step: form.pathway_step !== '' ? Number(form.pathway_step) : null,
       is_featured:  form.is_featured  ?? false,
+      client_id:    form.client_id    || null,
     }
     let error
     if (editId) {
@@ -709,6 +748,15 @@ export default function Admin() {
                 {roles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
               </select>
             </div>
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Scope</label>
+              <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-[#1F4E79]">
+                <option value="">All scopes</option>
+                <option value="__global">🌐 Shared library</option>
+                {clients.map(c => <option key={c.id} value={c.id}>🏢 {c.name}</option>)}
+              </select>
+            </div>
             <div className="flex-1 min-w-[200px]">
               <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Search</label>
               <input value={contentSearch} onChange={e => setContentSearch(e.target.value)}
@@ -741,13 +789,21 @@ export default function Admin() {
                     </span>
                   )}
                   {item.role && <span className="text-[10px] text-slate-400">· {item.role.toUpperCase()}</span>}
+                  {item.client_id
+                    ? <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#1F4E79]/10 text-[#1F4E79]">🏢 {clients.find(c => c.id === item.client_id)?.name ?? 'Client'}</span>
+                    : <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">🌐 Library</span>}
                 </div>
                 <p className="font-medium text-slate-800 text-sm">{item.title}</p>
                 {item.description && <p className="text-xs text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{item.description}</p>}
               </div>
-              <div className="flex gap-2 shrink-0">
-                <button onClick={() => openEditContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
-                <button onClick={() => handleContentDelete(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <div className="flex gap-2">
+                  <button onClick={() => openEditContent(item)} className="text-xs text-[#1F4E79] hover:underline">Edit</button>
+                  <button onClick={() => handleContentDelete(item.id)} className="text-xs text-red-400 hover:underline">Delete</button>
+                </div>
+                {item.client_id
+                  ? <button onClick={() => promoteContent(item)} className="text-[11px] text-emerald-600 hover:underline whitespace-nowrap">↑ Promote to library</button>
+                  : <button onClick={() => cloneContent(item)} className="text-[11px] text-slate-400 hover:text-[#1F4E79] hover:underline whitespace-nowrap">⎘ Clone to client</button>}
               </div>
             </div>
           )
@@ -1337,6 +1393,21 @@ export default function Admin() {
                     {roles.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  Scope <span className="text-slate-400 font-normal">(who can use this)</span>
+                </label>
+                <select value={form.client_id} onChange={e => setForm({...form, client_id: e.target.value})}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]">
+                  <option value="">🌐 Shared library — available to every customer</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>🏢 {c.name} only</option>)}
+                </select>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {form.client_id
+                    ? 'Authored for this client. You can promote it to the shared library later so future customers inherit it.'
+                    : 'Part of the shared library — inherited by all current and future customers.'}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Title *</label>
