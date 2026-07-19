@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { slmOptedIn, setSlmOptedIn, webgpuSupported } from '../lib/ai/slm'
 
@@ -86,10 +86,26 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   // ── System Health ──────────────────────────────────────────────────────────
   const [health, setHealth] = useState({ ran: false, running: false, checks: [], dbPing: null, at: null })
   const [healthHistory, setHealthHistory] = useState([])
+  const [expandedRun, setExpandedRun] = useState(null)   // health_runs.id expanded to show per-check detail
+  const [hsched, setHsched] = useState(null)             // { active, interval_minutes, cron } | null
+  const [hschedBusy, setHschedBusy] = useState(false)
+  const HEALTH_INTERVALS = [[0, 'Off'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [60, 'Hourly']]
 
   async function loadHealthHistory() {
     const { data } = await supabase.from('health_runs').select('*').order('ran_at', { ascending: false }).limit(20)
     setHealthHistory(data ?? [])
+  }
+  async function loadSchedule() {
+    const { data, error } = await supabase.rpc('get_health_schedule')
+    setHsched(error ? null : (data?.[0] ?? { active: false, interval_minutes: null, cron: null }))
+  }
+  async function saveSchedule(minutes) {
+    setHschedBusy(true); setNote(null)
+    const { data, error } = await supabase.rpc('set_health_schedule', { p_minutes: minutes })
+    setHschedBusy(false)
+    if (error) { setNote({ type: 'err', text: error.message.includes('health_cron_config') ? 'Schedule store not set up yet — run add_health_schedule.sql and insert the URL + secret.' : error.message }); return }
+    setNote({ type: 'ok', text: data ?? 'Schedule updated.' })
+    loadSchedule()
   }
 
   async function runHealth() {
@@ -217,7 +233,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {subtabs.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage() }}
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage() }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -386,6 +402,30 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
             </button>
           </div>
 
+          {/* Automated schedule — configurable interval (server-side pg_cron) */}
+          {!scoped && (
+            <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-4 mb-6">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800">Automated checks</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {hsched == null ? 'Loading schedule…'
+                    : hsched.interval_minutes
+                      ? `Runs every ${hsched.interval_minutes < 60 ? `${hsched.interval_minutes} min` : 'hour'} on the server. Each run is recorded below.`
+                      : 'Not scheduled — checks only run when you click “Run checks”.'}
+                </p>
+              </div>
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                {HEALTH_INTERVALS.map(([m, l]) => {
+                  const active = hsched && (hsched.interval_minutes ?? 0) === m
+                  return (
+                    <button key={m} onClick={() => saveSchedule(m)} disabled={hschedBusy}
+                      className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${active ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Status cards */}
           <div className="grid grid-cols-4 gap-3 mb-6">
             {[
@@ -441,28 +481,52 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                     </p>
                   )}
                 </div>
+                <p className="text-[11px] text-slate-400 mb-2">Click a run to see the detail of every check it executed.</p>
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-                        <th className="py-2 px-3">Time</th><th className="py-2 px-3">Source</th>
-                        <th className="py-2 px-3">Passed</th><th className="py-2 px-3">Failed</th><th className="py-2 px-3">Pass rate</th>
+                        <th className="py-2 px-3 w-6"></th><th className="py-2 px-3">Time</th><th className="py-2 px-3">Source</th>
+                        <th className="py-2 px-3">Passed</th><th className="py-2 px-3">Failed</th><th className="py-2 px-3">Pass rate</th><th className="py-2 px-3">Duration</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {healthHistory.map(r => (
-                        <tr key={r.id} className="border-t border-slate-100">
-                          <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
-                          <td className="py-2 px-3">
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.source === 'scheduled' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{r.source}</span>
-                          </td>
-                          <td className="py-2 px-3 text-green-600 font-medium">{r.passed}</td>
-                          <td className={`py-2 px-3 font-medium ${r.failed > 0 ? 'text-red-600' : 'text-slate-300'}`}>{r.failed}</td>
-                          <td className="py-2 px-3">
-                            <span className={`text-xs font-semibold ${rate(r) === 100 ? 'text-green-600' : 'text-[#E8913A]'}`}>{rate(r)}%</span>
-                          </td>
-                        </tr>
-                      ))}
+                      {healthHistory.map(r => {
+                        const open = expandedRun === r.id
+                        const checks = Array.isArray(r.checks) ? r.checks : []
+                        return (
+                          <React.Fragment key={r.id}>
+                            <tr onClick={() => setExpandedRun(open ? null : r.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50/60">
+                              <td className="py-2 px-3 text-slate-400 text-xs">{open ? '▾' : '▸'}</td>
+                              <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                              <td className="py-2 px-3">
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${r.source === 'scheduled' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>{r.source}</span>
+                              </td>
+                              <td className="py-2 px-3 text-green-600 font-medium">{r.passed}</td>
+                              <td className={`py-2 px-3 font-medium ${r.failed > 0 ? 'text-red-600' : 'text-slate-300'}`}>{r.failed}</td>
+                              <td className="py-2 px-3"><span className={`text-xs font-semibold ${rate(r) === 100 ? 'text-green-600' : 'text-[#E8913A]'}`}>{rate(r)}%</span></td>
+                              <td className="py-2 px-3 text-slate-400 text-xs whitespace-nowrap">{r.duration_ms != null ? `${r.duration_ms}ms` : '—'}</td>
+                            </tr>
+                            {open && (
+                              <tr className="bg-slate-50/60"><td /><td colSpan={6} className="px-3 py-3">
+                                {checks.length === 0 ? <p className="text-xs text-slate-400">No per-check detail recorded for this run.</p> : (
+                                  <div className="grid gap-1 sm:grid-cols-2">
+                                    {checks.map((c, i) => (
+                                      <div key={i} className="flex items-center justify-between gap-2 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5">
+                                        <span className="flex items-center gap-2 text-[12px] text-slate-700 min-w-0">
+                                          <span className={`w-2 h-2 rounded-full shrink-0 ${c.ok ? 'bg-green-500' : 'bg-red-500'}`} />
+                                          <span className="truncate">{c.name}{c.group ? <span className="text-slate-300"> · {c.group}</span> : ''}</span>
+                                        </span>
+                                        <span className={`text-[11px] whitespace-nowrap ${c.ok ? 'text-slate-400' : 'text-red-500 font-medium'}`}>{c.detail}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td></tr>
+                            )}
+                          </React.Fragment>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
