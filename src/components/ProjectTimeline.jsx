@@ -9,6 +9,7 @@ const STATUS = {
   locked:    { fill: '#e2e8f0', track: '#e2e8f0', text: '#475569' },
 }
 const MONTHW = 90
+const ROW_H  = 33          // row height + hairline border — one step of a vertical drag
 
 const toDate = s => (s ? new Date(s + 'T00:00:00') : null)
 const iso    = d => d.toISOString().slice(0, 10)
@@ -35,7 +36,8 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     setLoading(true)
     const [{ data: ph }, { data: ms }] = await Promise.all([
       supabase.from('project_phases').select('*').eq('project_id', project.id).order('phase_number'),
-      supabase.from('project_milestones').select('*').eq('project_id', project.id).order('milestone_date'),
+      supabase.from('project_milestones').select('*').eq('project_id', project.id)
+        .order('sort_order', { ascending: true }).order('milestone_date', { ascending: true }),
     ])
     const byNum = new Map((ph ?? []).map(p => [p.phase_number, p]))
     setPhases(PHASES.map(n => byNum.get(n) ?? { phase_number: n, status: 'locked', planned_start: null, planned_end: null }))
@@ -139,15 +141,37 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       id: item.id ?? item.phase_number, mode, table,
       s: item.starts_on ?? item.planned_start ?? item.milestone_date,
       e: item.ends_on ?? item.planned_end ?? null,
-      x0: ev.clientX, dx: 0, name: item.name ?? PHASE_NAMES[item.phase_number],
+      x0: ev.clientX, dx: 0, y0: ev.clientY, dy: 0,
+      lane: item.lane, name: item.name ?? PHASE_NAMES[item.phase_number],
     }
     bump()
-    const move = e2 => { if (dragRef.current) { dragRef.current.dx = e2.clientX - dragRef.current.x0; bump() } }
+    const move = e2 => {
+      if (!dragRef.current) return
+      dragRef.current.dx = e2.clientX - dragRef.current.x0
+      dragRef.current.dy = e2.clientY - dragRef.current.y0
+      bump()
+    }
     const up = async () => {
       window.removeEventListener('pointermove', move)
       const d = dragRef.current
       dragRef.current = null; bump()
-      if (!d || !d.dx) return
+      if (!d) return
+
+      // Vertical drag reorders the row within its lane. Phases keep their fixed 1–5 sequence.
+      const steps = Math.round(d.dy / ROW_H)
+      if (steps && d.table === 'project_milestones' && d.mode === 'move') {
+        const lane = (d.lane === 'change' ? changeItems : deliveryItems).slice()
+        const from = lane.findIndex(x => x.id === d.id)
+        const to = Math.max(0, Math.min(lane.length - 1, from + steps))
+        if (from !== -1 && from !== to) {
+          const [moved] = lane.splice(from, 1)
+          lane.splice(to, 0, moved)
+          await Promise.all(lane.map((x, i) =>
+            supabase.from('project_milestones').update({ sort_order: i }).eq('id', x.id)))
+        }
+      }
+
+      if (!d.dx) { if (steps) load(); return }
       const p = dragPreview({ ...d })
       if (!p) return
       if (d.table === 'project_phases') {
@@ -173,9 +197,12 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     const p = dragPreview(d)
     if (!p) return null
     const txt = p.e ? `${fmtLong(toDate(p.s))} → ${fmtLong(toDate(p.e))}` : fmtLong(toDate(p.s))
+    const steps = Math.round(d.dy / ROW_H)
+    const rowMove = (steps && d.table === 'project_milestones' && d.mode === 'move')
+      ? ` · ${steps > 0 ? '↓' : '↑'} ${Math.abs(steps)} row${Math.abs(steps) === 1 ? '' : 's'}` : ''
     return (
       <div className="absolute -top-5 z-20 bg-[#1F4E79] text-white text-[10px] font-semibold px-2 py-0.5 rounded whitespace-nowrap pointer-events-none"
-        style={{ left: Math.max(posOf(p.s), 0) }}>{txt}</div>
+        style={{ left: Math.max(posOf(p.s), 0) }}>{txt}{rowMove}</div>
     )
   }
 
