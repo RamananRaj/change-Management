@@ -61,6 +61,9 @@ function Widget({ d, onRemove, onDrill, onNavigate, onConfirmDraft, canAct }) {
         </div>
       </div>
       <div className="p-5">
+        {d.intro && (
+          <p className="mb-4 text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap"><Bold text={d.intro} /></p>
+        )}
         <WidgetBody d={d} onDrill={onDrill} onNavigate={onNavigate} onConfirmDraft={onConfirmDraft} onCancel={onRemove} />
         {d.commentary && (
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3 text-[13.5px] leading-relaxed text-slate-600">

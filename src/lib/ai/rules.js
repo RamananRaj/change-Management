@@ -540,26 +540,66 @@ async function runClientDetail(client, data) {
   cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue++ }))
   const nextMs = cp.flatMap(p => p.milestones).filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
     .sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
-  const commentary = `**${client.name}** — ${clientRag ? `**${RAG_WORD[clientRag]}** · ` : ''}${cp.length} project${cp.length === 1 ? '' : 's'} · ${people} ${people === 1 ? 'person' : 'people'} · **${pct}%** average completion.` +
-    (overdue ? ` ${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue.` : '') +
-    (nextMs ? ` Next milestone: ${nextMs.name} on ${new Date(nextMs.milestone_date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}.` : '')
-  return { type: 'progress', title: client.name, rows, empty: `${client.name} has no projects yet.`, commentary }
+  // Human narrative first: how many programmes, which are active, people, readiness, then the table.
+  const active = cp.filter(p => p.phases.some(x => x.planned_start && new Date(x.planned_start) <= today) || p.pct > 0)
+  const idle = cp.filter(p => !active.includes(p))
+  const activeBit = cp.length === 0 ? '' :
+    active.length === 0 ? ` None have started yet — they're set up but no phase dates or progress are in place.` :
+    active.length === cp.length ? ` All ${cp.length} are underway.` :
+    ` Of these, ${active.length === 1 ? 'only ' : ''}**${active.map(p => p.name).join('** and **')}** ${active.length === 1 ? 'is' : 'are'} actively progressing${idle.length ? `; **${idle.map(p => p.name).join('** and **')}** ${idle.length === 1 ? "hasn't" : "haven't"} started yet` : ''}.`
+  const readyBit = clientRag ? ` Readiness is currently **${RAG_WORD[clientRag]}**.` : ' Readiness has not been measured yet (no survey responses).'
+  const intro =
+    `**${client.name}** has **${cp.length}** programme${cp.length === 1 ? '' : 's'} set up, run by **${people}** ${people === 1 ? 'person' : 'people'}, at **${pct}%** average completion.${activeBit}${readyBit}` +
+    (overdue ? ` ${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue and need attention.` : '') +
+    (nextMs ? ` The next milestone is **${nextMs.name}** on ${new Date(nextMs.milestone_date).toLocaleDateString('en', { day: 'numeric', month: 'short' })}.` : '') +
+    `\n\nHere's how each programme is tracking:`
+  return { type: 'progress', title: client.name, rows, empty: `${client.name} has no projects yet.`, intro }
 }
 
 const fmtDate = d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short' })
 
-// Detail for a single project — phase-by-phase completion, current phase, overdue, next milestone.
-function runProjectDetail(p, data) {
-  const { today } = data
+// Detail for a single project — a human narrative (people, current phase, the change functions in
+// each phase) followed by phase-by-phase completion.
+async function runProjectDetail(p, data) {
+  const { today, profiles } = data
+  const memberNames = p.memberIds.map(id => profiles.find(u => u.id === id)?.full_name).filter(Boolean)
+
+  // The change functions (pathway content) configured per phase.
+  const { data: pw } = await supabase.from('project_pathways').select('phase_number, content_id').eq('project_id', p.id)
+  const cids = [...new Set((pw ?? []).map(r => r.content_id))]
+  const { data: cont } = cids.length ? await supabase.from('phase_content').select('id, title').in('id', cids) : { data: [] }
+  const titleOf = id => (cont ?? []).find(c => c.id === id)?.title
+  const fnByPhase = {}
+  ;(pw ?? []).forEach(r => { const t = titleOf(r.content_id); if (t) (fnByPhase[r.phase_number] ??= []).push(t) })
+
   const rows = p.phases.map(ph => ({ label: ph.name, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet', value: ph.pct }))
   const current = p.phases.find(ph => ph.planned_start && ph.planned_end && new Date(ph.planned_start) <= today && today <= new Date(ph.planned_end))
+    || p.phases.find(ph => ph.planned_start && new Date(ph.planned_start) <= today)
   const overdue = p.phases.filter(ph => ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0).length
   const nextMs = (p.milestones ?? []).filter(m => m.milestone_date && new Date(m.milestone_date) >= today).sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
-  const commentary = `**${p.name}**${p.clientName ? ` · ${p.clientName}` : ''} — ${p.members} ${p.members === 1 ? 'person' : 'people'} · **${p.pct}%** complete.` +
-    (current ? ` Currently in **${current.name}**.` : '') +
+
+  const withFns = p.phases.filter(ph => (fnByPhase[ph.phase_number] || []).length)
+  const withoutFns = p.phases.filter(ph => !(fnByPhase[ph.phase_number] || []).length)
+  const curBit = current ? ` It's currently in the **${current.name}** phase.` : ' No phase is active yet — dates haven\'t been set.'
+  const peopleBit = memberNames.length ? ` The people working on it are **${memberNames.join('** and **')}**.` : ' No members are assigned yet.'
+  let fnBit
+  if (withFns.length) {
+    fnBit = ' ' + withFns.map(ph => {
+      const fns = fnByPhase[ph.phase_number]
+      const list = fns.length <= 4 ? fns.join(', ') : `${fns.slice(0, 4).join(', ')} +${fns.length - 4} more`
+      return `**${ph.name}** has ${fns.length} change function${fns.length === 1 ? '' : 's'} to complete (${ph.done}/${ph.total} done): ${list}`
+    }).join('. ') + '.'
+    if (withoutFns.length) fnBit += ` The remaining phase${withoutFns.length === 1 ? '' : 's'} (${withoutFns.map(x => x.name).join(', ')}) ${withoutFns.length === 1 ? "doesn't" : "don't"} have a pathway configured yet.`
+  } else {
+    fnBit = ' No change functions have been added to the pathway yet, so there\'s nothing for the team to work through so far.'
+  }
+  const intro =
+    `**${p.name}**${p.clientName ? ` (${p.clientName})` : ''} is **${p.pct}%** complete with **${p.members}** ${p.members === 1 ? 'person' : 'people'}.${curBit}${peopleBit}` +
+    fnBit +
     (overdue ? ` ${overdue} phase${overdue === 1 ? ' is' : 's are'} overdue.` : '') +
-    (nextMs ? ` Next milestone: ${nextMs.name} on ${fmtDate(nextMs.milestone_date)}.` : '')
-  return { type: 'progress', title: p.name, rows, empty: 'No phases set up yet.', commentary }
+    (nextMs ? ` The next milestone is **${nextMs.name}** on ${fmtDate(nextMs.milestone_date)}.` : '') +
+    `\n\nHere's the phase-by-phase progress:`
+  return { type: 'progress', title: p.name, rows, empty: 'No phases set up yet.', intro }
 }
 
 // Detail for a person — their projects with their own per-phase completion.
@@ -616,7 +656,7 @@ async function resolveEntity(text) {
 
   let descriptor
   if (m.type === 'client')      descriptor = await runClientDetail(data.clients.find(c => c.id === m.id), data)
-  else if (m.type === 'project')     descriptor = runProjectDetail(data.projRollup.find(p => p.id === m.id), data)
+  else if (m.type === 'project')     descriptor = await runProjectDetail(data.projRollup.find(p => p.id === m.id), data)
   else if (m.type === 'person')      descriptor = runPersonDetail(m.id, data)
   else                               descriptor = runStakeholderDetail(m)
   return { type: m.type, descriptor }
