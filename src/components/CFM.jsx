@@ -324,7 +324,16 @@ export default function CFM() {
                   )}
                   {m.attachment && <Attachment a={m.attachment} />}
                   {m.body && <span className={isAi ? 'whitespace-pre-wrap' : ''}>{m.body}</span>}
-                  <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">{fmtTime(m.created_at)}{mine && <span className="text-[#2f8fe0] ml-0.5">✓✓</span>}</span>
+                  <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">
+                    {fmtTime(m.created_at)}
+                    {mine && (() => {
+                      // Read once every other participant's last_read_at is at/after this message.
+                      const readAt = active?.othersReadAt
+                      const seen = !!readAt && new Date(readAt).getTime() >= new Date(m.created_at).getTime()
+                      return <span className={`ml-0.5 ${seen ? 'text-[#1F4E79] font-bold' : 'text-slate-400'}`}
+                        title={seen ? `Read ${fmtTime(readAt)}` : 'Sent'}>✓✓</span>
+                    })()}
+                  </span>
                   {!isAi && <button onClick={() => setReplyTo(m)} title="Reply"
                     className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[11px] flex items-center justify-center shadow-sm ${mine ? '-left-7' : '-right-7'}`}>↩</button>}
                 </div>

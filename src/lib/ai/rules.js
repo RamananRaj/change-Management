@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -687,18 +687,22 @@ async function resolveEntity(text, ctx = {}) {
 // yet. Rather than let a model invent generic consulting boilerplate, CORA drafts it FROM the
 // client's real picture: impacted groups (heat map), phase dates, milestones and named owners.
 // Deterministic, grounded, $0. The admin edits from there.
-const APPROACH_TOPICS = [
-  { key: 'ttt',      re: /(train[- ]?the[- ]?trainer|trainer the trainer|ttt)/i, label: 'Train-the-Trainer Approach' },
-  { key: 'comms',    re: /(comms|communication)/i,                               label: 'Communications Approach' },
-  { key: 'cutover',  re: /(cutover|go[- ]?live)/i,                               label: 'Cutover Approach' },
-  { key: 'training', re: /training/i,                                            label: 'Training Approach' },
-]
-
 async function runApproach(_params, text, ctx) {
   const data = await loadData()
   const scope = resolveScope(text, ctx, data)
   const cp = scopedProjects(data, scope)
-  const topic = APPROACH_TOPICS.find(t => t.re.test(text ?? '')) ?? APPROACH_TOPICS[1]
+
+  // Load the knowledge base up-front: it decides both WHICH subject this is and what to say.
+  let allRules = []
+  try {
+    const { data: rows } = await supabase.from('ai_knowledge')
+      .select('id, topic, title, body, gaps, triggers, client_id, industry, source, status')
+      .eq('status', 'active')
+    allRules = rows ?? []
+  } catch { /* best effort */ }
+
+  const matched = matchKnowledgeRule(text, allRules)
+  const topic = { key: matched?.topic ?? 'comms', label: matched?.title ?? 'Approach' }
 
   // Which client are we drafting for?
   let client = scope.client
@@ -766,21 +770,19 @@ async function runApproach(_params, text, ctx) {
   }
 
   // Rule lookup: client-specific → industry → global. Whichever wins is rendered with live data.
-  let practice = null, practiceSource = 'none', ruleTitle = null
-  try {
-    const { data: rules } = await supabase.from('ai_knowledge')
-      .select('id, body, title, client_id, industry, source, status')
-      .eq('topic', topic.key).eq('status', 'active')
-    const pick = (rules ?? []).sort((a, b) => {
-      const rank = r => (r.client_id === client.id ? 0 : r.industry && r.industry === client.industry ? 1 : !r.client_id && !r.industry ? 2 : 3)
-      return rank(a) - rank(b)
-    })[0]
-    if (pick) {
-      practice = renderTemplate(pick.body, tokens)
-      practiceSource = pick.source === 'slm' ? 'slm_rule' : pick.client_id ? 'rule_client' : pick.industry ? 'rule_industry' : 'rule_global'
-      ruleTitle = pick.title
-    }
-  } catch { /* rule lookup is best-effort */ }
+  // Same topic, most specific scope wins: this client's rule > their industry's > the global one.
+  let practice = null, practiceSource = 'none', ruleTitle = null, ruleGaps = null
+  const sameTopic = allRules.filter(r => r.topic === topic.key)
+  const pick = sameTopic.sort((a, b) => {
+    const rank = r => (r.client_id === client.id ? 0 : r.industry && r.industry === client.industry ? 1 : !r.client_id && !r.industry ? 2 : 3)
+    return rank(a) - rank(b)
+  })[0]
+  if (pick) {
+    practice = renderTemplate(pick.body, tokens)
+    practiceSource = pick.source === 'slm' ? 'slm_rule' : pick.client_id ? 'rule_client' : pick.industry ? 'rule_industry' : 'rule_global'
+    ruleTitle = pick.title
+    ruleGaps = pick.gaps
+  }
 
   // No rule yet → ask the on-device model, then WRITE IT BACK so the next ask is instant.
   if (!practice && await slmAvailable()) {
@@ -792,9 +794,12 @@ async function runApproach(_params, text, ctx) {
       if (out && out.trim()) {
         practice = renderTemplate(out.trim(), tokens)
         practiceSource = 'slm_new'
-        // Enrich the rule store (admin-only by RLS; silently skipped for other roles).
+        // Enrich the rule store (admin-only by RLS; silently skipped for other roles). Triggers are
+        // derived from the question so the new rule is findable next time without a code change.
+        const trigs = [...new Set(distinctiveTokens(text ?? '').filter(w => w.length >= 4))].slice(0, 6)
         supabase.from('ai_knowledge').insert({
-          topic: topic.key, title: topic.label, body: out.trim(), source: 'slm', status: 'draft',
+          topic: topic.key || (trigs[0] ?? 'general'), title: topic.label, body: out.trim(),
+          triggers: trigs.length ? trigs : null, source: 'slm', status: 'draft',
         }).then(() => {}, () => {})
       }
     } catch { /* leave practice null — the honesty note explains */ }
@@ -829,13 +834,9 @@ async function runApproach(_params, text, ctx) {
     scored.length ? `${scored.length} readiness survey response${scored.length === 1 ? '' : 's'}` : null,
   ].filter(Boolean)
 
-  const GAPS = {
-    comms: ['a key-message library or comms calendar', 'audience channel preferences (what each group actually reads)', 'a sponsor engagement roadmap'],
-    training: ['a training needs analysis — what each role does today, what changes, and the capability gap', 'a curriculum or course list mapped to roles', 'trainer availability and delivery capacity', 'completion or assessment data'],
-    cutover: ['a cutover runbook with sequenced tasks and durations', 'agreed go/no-go criteria and rollback triggers', 'environment, data-migration and support-model detail'],
-    ttt: ['trainer nominations and their current capability', 'cascade capacity — how many sessions each trainer can realistically run', 'a trainer pack and certification standard'],
-  }
-  const missing = GAPS[topic.key]
+  // Gaps come from the rule itself, so each subject declares what ChangeFlow doesn't hold for it.
+  const missing = (ruleGaps && ruleGaps.length) ? ruleGaps
+    : ['structured detail for this subject — no gaps are recorded on the rule yet']
 
   const disc = topic.label.replace(' Approach', '').toLowerCase()
   const sourceNote = {

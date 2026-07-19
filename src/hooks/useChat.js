@@ -24,7 +24,7 @@ export function useChat(user, profile) {
 
     const [{ data: chans }, { data: allMems }, { data: msgs }] = await Promise.all([
       supabase.from('chat_channels').select('*').in('id', ids),
-      supabase.from('chat_members').select('channel_id, user_id').in('channel_id', ids),
+      supabase.from('chat_members').select('channel_id, user_id, last_read_at').in('channel_id', ids),
       supabase.from('chat_messages').select('channel_id, sender_id, body, created_at').in('channel_id', ids).order('created_at', { ascending: false }).limit(600),
     ])
     const memberUids = [...new Set((allMems ?? []).map(m => m.user_id))]
@@ -47,6 +47,15 @@ export function useChat(user, profile) {
       return {
         id: c.id, type: c.type, isGroup, name, initials: initials(name),
         members: memberIds, memberProfiles: memberIds.map(id => profMap[id]).filter(Boolean),
+        // Read receipts: the EARLIEST read time among everyone else. A message counts as read once
+        // every other participant has read past it (matches the familiar blue-tick behaviour).
+        othersReadAt: others.length
+          ? (allMems ?? []).filter(m => m.channel_id === c.id && m.user_id !== uid)
+              .reduce((min, m) => {
+                if (!m.last_read_at) return null                       // someone has never read → not read
+                return min === null ? null : (min === undefined || m.last_read_at < min ? m.last_read_at : min)
+              }, undefined) ?? null
+          : null,
         last, unread, lastReadAt: lastRead[c.id],
         lastAt: last ? new Date(last.created_at).getTime() : new Date(c.created_at).getTime(),
       }
@@ -77,6 +86,11 @@ export function useChat(user, profile) {
     const ch = supabase.channel('cfm:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, payload => {
         if (chanIds.current.includes(payload.new.channel_id)) load()
+      })
+      // Someone marking a channel read updates their last_read_at — refresh so the sender's
+      // ticks turn from grey to blue without needing a reload.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_members' }, payload => {
+        if (chanIds.current.includes(payload.new?.channel_id)) load()
       })
       .subscribe()
     return () => { supabase.removeChannel(ch) }
@@ -152,7 +166,7 @@ export function useChat(user, profile) {
     const ids = (chans ?? []).map(c => c.id)
     if (!ids.length) return []
     const [{ data: allMems }, { data: msgs }] = await Promise.all([
-      supabase.from('chat_members').select('channel_id, user_id').in('channel_id', ids),
+      supabase.from('chat_members').select('channel_id, user_id, last_read_at').in('channel_id', ids),
       supabase.from('chat_messages').select('channel_id, sender_id, body, created_at').in('channel_id', ids).order('created_at', { ascending: false }).limit(600),
     ])
     const uids = [...new Set((allMems ?? []).map(m => m.user_id))]
@@ -168,6 +182,15 @@ export function useChat(user, profile) {
       return {
         id: c.id, type: c.type, isGroup, name: name || 'Direct message', initials: initials(name),
         members: memberIds, memberProfiles: memberIds.map(id => profMap[id]).filter(Boolean),
+        // Read receipts: the EARLIEST read time among everyone else. A message counts as read once
+        // every other participant has read past it (matches the familiar blue-tick behaviour).
+        othersReadAt: others.length
+          ? (allMems ?? []).filter(m => m.channel_id === c.id && m.user_id !== uid)
+              .reduce((min, m) => {
+                if (!m.last_read_at) return null                       // someone has never read → not read
+                return min === null ? null : (min === undefined || m.last_read_at < min ? m.last_read_at : min)
+              }, undefined) ?? null
+          : null,
         last: list[0] ?? null, lastAt: list[0] ? new Date(list[0].created_at).getTime() : new Date(c.created_at).getTime(),
       }
     }).sort((a, b) => b.lastAt - a.lastAt)

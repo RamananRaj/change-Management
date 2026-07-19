@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule } from './analysis'
 
 const heat = {
   version: 1,
@@ -223,3 +223,35 @@ describe('phrase tokeniser', () => {
     expect(learned.every(tok => query.has(tok))).toBe(true)
   })
 })
+
+describe('matchKnowledgeRule', () => {
+  const rules = [
+    { topic: 'training', title: 'Training Approach', triggers: ['training', 'learning'] },
+    { topic: 'ttt', title: 'Train-the-Trainer Approach', triggers: ['train the trainer', 'ttt', 'cascade'] },
+    { topic: 'comms', title: 'Communications Approach', triggers: ['comms', 'communication'] },
+  ]
+
+  it('routes a question to the rule whose trigger it contains', () => {
+    expect(matchKnowledgeRule('Define Training Approach', rules).topic).toBe('training')
+    expect(matchKnowledgeRule('what is our comms plan', rules).topic).toBe('comms')
+  })
+
+  it('prefers the longest matching trigger, so specific beats general', () => {
+    // "train the trainer" also contains "train"; the longer trigger must win over 'training'
+    expect(matchKnowledgeRule('train the trainer approach', rules).topic).toBe('ttt')
+  })
+
+  it('returns null when nothing matches, so grounded tiers stay in control', () => {
+    expect(matchKnowledgeRule('what is at risk this week', rules)).toBeNull()
+    expect(matchKnowledgeRule('', rules)).toBeNull()
+  })
+
+  it('tolerates rules with no triggers', () => {
+    expect(matchKnowledgeRule('training', [{ topic: 'x' }, ...rules]).topic).toBe('training')
+  })
+})
+
+import { matchIntent } from './intents'
+
+// Pure intent-matching tests — no Supabase, no network. Guards the router's first tier:
+// these phrasings must resolve to the right grounded intent (and stay out of the model).

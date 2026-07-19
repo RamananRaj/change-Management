@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchIntent } from './intents'
-
-// Pure intent-matching tests — no Supabase, no network. Guards the router's first tier:
-// these phrasings must resolve to the right grounded intent (and stay out of the model).
+import { matchIntent } from './rules'
 
 describe('matchIntent', () => {
   const cases = [

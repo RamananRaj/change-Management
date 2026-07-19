@@ -128,6 +128,22 @@ export function buildPhaseDrill({ projectName, phaseName, orderedContentIds, con
   return { type: 'progress', title: `${projectName} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
 }
 
+// ── Knowledge-rule routing ────────────────────────────────────────────────────────
+// Which rule answers this question? Rules declare their own trigger phrases in the database, so a
+// new subject is an INSERT rather than a code change. The longest matching trigger wins, so a
+// specific rule ("train the trainer") beats a general one ("training").
+export function matchKnowledgeRule(text, rules = []) {
+  const t = (text ?? '').toLowerCase()
+  let best = null, bestLen = 0
+  for (const r of rules || []) {
+    for (const trig of r?.triggers ?? []) {
+      const term = String(trig).toLowerCase()
+      if (term && t.includes(term) && term.length > bestLen) { best = r; bestLen = term.length }
+    }
+  }
+  return best
+}
+
 // ── Knowledge-rule rendering ──────────────────────────────────────────────────────
 // Guidance lives in the ai_knowledge table as templates with {{tokens}}; CORA fills them from the
 // client's live picture. Pure so the substitution is unit-testable. Unknown tokens are replaced
