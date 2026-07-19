@@ -525,6 +525,52 @@ async function runProjectDetail(p, data) {
   return { type: 'progress', title: p.name, rows, empty: 'No phases set up yet.', intro }
 }
 
+// Which phase is the question about? "phase 2" or a phase name.
+function detectPhase(text) {
+  const t = (text ?? '').toLowerCase()
+  const m = t.match(/phase\s*([1-5])/)
+  if (m) return Number(m[1])
+  for (const [n, name] of Object.entries(PHASE_NAMES)) if (t.includes(name.toLowerCase())) return Number(n)
+  return null
+}
+
+// Drill into one phase of a project: every activity/task/exercise in its pathway, the team who
+// own them, and per-activity progress (who's completed each). Grounded, deterministic — no model.
+async function runPhaseDetail(p, phaseNumber, data) {
+  const { profiles } = data
+  const phaseName = PHASE_NAMES[phaseNumber]
+  const nameOf = id => profiles.find(u => u.id === id)?.full_name ?? 'Someone'
+  const memberIds = p.memberIds || []
+
+  const { data: pw } = await supabase.from('project_pathways')
+    .select('content_id, pathway_step').eq('project_id', p.id).eq('phase_number', phaseNumber).order('pathway_step')
+  const cids = (pw ?? []).map(r => r.content_id)
+  if (!cids.length) {
+    return { type: 'narrative', title: `${p.name} · ${phaseName}`,
+      body: `**${phaseName}** in **${p.name}** has no activities configured yet. Set its pathway (Pathway tab) to add the exercises, tools and templates for the team to work through.` }
+  }
+  const { data: cont } = await supabase.from('phase_content').select('id, title, content_type').in('id', cids)
+  const { data: acts } = memberIds.length
+    ? await supabase.from('user_activities').select('user_id, content_id, status').in('user_id', memberIds).in('content_id', cids).eq('status', 'completed')
+    : { data: [] }
+
+  const rows = cids.map(cid => {
+    const c = (cont ?? []).find(x => x.id === cid)
+    const doneIds = (acts ?? []).filter(a => a.content_id === cid).map(a => a.user_id)
+    const pct = memberIds.length ? Math.round((doneIds.length / memberIds.length) * 100) : 0
+    const doneNames = doneIds.map(nameOf)
+    const sub = `${c?.content_type ?? 'activity'} · ${doneIds.length}/${memberIds.length} done${doneNames.length ? ` · ${doneNames.join(', ')}` : ' · not started'}`
+    return { label: c?.title ?? 'Activity', sub, value: pct }
+  })
+  const owners = memberIds.map(nameOf)
+  const fullyDone = rows.filter(r => r.value >= 100).length
+  const intro =
+    `**${phaseName}** in **${p.name}** has **${cids.length}** activit${cids.length === 1 ? 'y' : 'ies'} for the team to work through` +
+    (owners.length ? `, owned by **${owners.join('** and **')}**` : ' (no members assigned yet)') + '. ' +
+    `**${fullyDone}/${cids.length}** ${fullyDone === 1 ? 'is' : 'are'} fully complete across the team so far.\n\nHere's each activity, its owners and progress:`
+  return { type: 'progress', title: `${p.name} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
+}
+
 // Detail for a person — their projects with their own per-phase completion.
 function runPersonDetail(userId, data) {
   const { projRollup, profiles } = data
@@ -575,6 +621,16 @@ async function resolveEntity(text) {
       ? [{ id: m.id, name: m.name }]
       : data.projRollup.filter(p => p.client_id === m.id).map(p => ({ id: p.id, name: p.name }))
     return { type: 'timeline', descriptor: { type: 'projectTimeline', title: `${m.name} — timeline${projects.length === 1 ? '' : 's'}`, projects } }
+  }
+
+  // Phase drill: "check under Diagnose", "what's in the Design phase" → that phase's activities,
+  // owners and per-activity progress for the resolved project (or the client's active project).
+  const phaseNum = detectPhase(text)
+  if (phaseNum && (m.type === 'project' || m.type === 'client')) {
+    const proj = m.type === 'project'
+      ? data.projRollup.find(p => p.id === m.id)
+      : (data.projRollup.filter(p => p.client_id === m.id).find(p => p.memberIds.length) || data.projRollup.find(p => p.client_id === m.id))
+    if (proj) return { type: 'project', descriptor: await runPhaseDetail(proj, phaseNum, data) }
   }
 
   let descriptor
