@@ -10,7 +10,7 @@
 //          VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (mailto:you@domain)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import * as webpush from 'https://esm.sh/@negrel/webpush@0.3.0'
+// Web Push (VAPID) is wired in Stage 2 — the sender lib is added then so email can ship first.
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -64,16 +64,9 @@ Deno.serve(async (req) => {
 
     // Set up delivery clients (each optional).
     const resendKey = Deno.env.get('RESEND_API_KEY'); const from = Deno.env.get('NOTIFY_FROM'); const appUrl = Deno.env.get('NOTIFY_APP_URL') ?? ''
-    const vapidPub = Deno.env.get('VAPID_PUBLIC_KEY'); const vapidPriv = Deno.env.get('VAPID_PRIVATE_KEY'); const vapidSub = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@changeflow.app'
-    let appServer: any = null
-    if (cfg.push_enabled && vapidPub && vapidPriv) {
-      try {
-        appServer = await webpush.ApplicationServer.new({
-          contactInformation: vapidSub,
-          vapidKeys: await webpush.importVapidKeys({ publicKey: vapidPub, privateKey: vapidPriv }, { extractable: false }),
-        })
-      } catch (_) { appServer = null }
-    }
+    // Web Push is delivered in Stage 2 (VAPID sender added then). Subscriptions are still collected
+    // now so they're ready when push is switched on.
+    const appServer: any = null
     const { data: subs } = cfg.push_enabled ? await admin.from('push_subscriptions').select('user_id, endpoint, p256dh, auth') : { data: [] }
 
     const memberUsers = [...new Set((members ?? []).map((m: any) => m.user_id))]
