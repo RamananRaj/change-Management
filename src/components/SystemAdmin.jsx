@@ -9,7 +9,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const scoped = !!clientId
   const subtabs = scoped
     ? ['User Management', 'Pending Invites', 'AI Usage']
-    : ['User Management', 'Pending Invites', 'System Health', 'AI Usage']
+    : ['User Management', 'Pending Invites', 'System Health', 'AI Usage', 'Notifications']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -204,6 +204,32 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     setHistBusy(false)
   }
 
+  // ── Notifications (admin config) ──────────────────────────────────────────────
+  const [notif, setNotif] = useState(null)
+  const [notifBusy, setNotifBusy] = useState(false)
+  async function loadNotif() {
+    const { data } = await supabase.from('notification_config').select('*').eq('id', true).single()
+    setNotif(data ?? { trigger: 'mentions', cadence: 'digest', digest_minutes: 15, email_enabled: true, push_enabled: true, vapid_public: '' })
+  }
+  async function saveNotif(patch) {
+    const next = { ...notif, ...patch }
+    setNotif(next); setNotifBusy(true); setNote(null)
+    const { error } = await supabase.from('notification_config').update({
+      trigger: next.trigger, cadence: next.cadence, digest_minutes: Number(next.digest_minutes) || 15,
+      email_enabled: next.email_enabled, push_enabled: next.push_enabled, vapid_public: next.vapid_public || null,
+      updated_at: new Date().toISOString(),
+    }).eq('id', true)
+    setNotifBusy(false)
+    setNote(error ? { type: 'err', text: error.message } : { type: 'ok', text: 'Notification settings saved.' })
+  }
+  async function setNotifySchedule(minutes) {
+    setNotifBusy(true); setNote(null)
+    const { data, error } = await supabase.rpc('set_notify_schedule', { p_minutes: minutes })
+    setNotifBusy(false)
+    if (error) setNote({ type: 'err', text: error.message.includes('notify_cron_config') ? 'Delivery store not set up — run add_chat_notifications.sql and insert the URL + secret.' : error.message })
+    else setNote({ type: 'ok', text: data ?? 'Delivery schedule updated.' })
+  }
+
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
   const projNameOf = id => projects.find(p => p.id === id)?.name ?? '—'
   const toggleSlm  = () => setSlmOn(setSlmOptedIn(!slmOn))
@@ -233,7 +259,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {subtabs.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage() }}
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage(); if (t === 'Notifications' && notif === null) loadNotif() }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -751,6 +777,79 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           </div>
         )
       })()}
+
+      {/* ── NOTIFICATIONS ── */}
+      {tab === 'Notifications' && (
+        notif === null ? <div className="space-y-2">{[1,2,3].map(n => <div key={n} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div> : (
+        <div className="space-y-5 max-w-2xl">
+          <p className="text-xs text-slate-400">Control when CFM chat notifications are sent and how they’re delivered. Applies platform-wide.</p>
+
+          {/* Trigger */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-800 mb-1">Notify on</p>
+            <p className="text-[11px] text-slate-400 mb-3">Which messages generate a notification.</p>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+              {[['off', 'Off'], ['mentions', 'Mentions & DMs'], ['all', 'All messages']].map(([v, l]) => (
+                <button key={v} onClick={() => saveNotif({ trigger: v })} disabled={notifBusy}
+                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${notif.trigger === v ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cadence */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-800 mb-1">Cadence</p>
+            <p className="text-[11px] text-slate-400 mb-3">Send immediately, or batch into a periodic digest per person.</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+                {[['immediate', 'Immediate'], ['digest', 'Digest']].map(([v, l]) => (
+                  <button key={v} onClick={() => saveNotif({ cadence: v })} disabled={notifBusy}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${notif.cadence === v ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+                ))}
+              </div>
+              {notif.cadence === 'digest' && (
+                <label className="text-xs text-slate-500 flex items-center gap-2">every
+                  <input type="number" min="5" max="240" value={notif.digest_minutes ?? 15}
+                    onChange={e => setNotif(n => ({ ...n, digest_minutes: e.target.value }))}
+                    onBlur={e => saveNotif({ digest_minutes: e.target.value })}
+                    className="w-16 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" /> min
+                </label>
+              )}
+            </div>
+          </div>
+
+          {/* Channels */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-800 mb-3">Channels</p>
+            {[['email_enabled', 'Email', 'Sends via your Resend key even when the app is closed.'], ['push_enabled', 'Browser push', 'Instant desktop notifications while the browser runs (needs a VAPID key below).']].map(([k, label, hint]) => (
+              <div key={k} className="flex items-center justify-between gap-4 py-2 border-t border-slate-50 first:border-0">
+                <div><p className="text-[13px] text-slate-700">{label}</p><p className="text-[11px] text-slate-400">{hint}</p></div>
+                <button role="switch" aria-checked={!!notif[k]} onClick={() => saveNotif({ [k]: !notif[k] })} disabled={notifBusy}
+                  className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${notif[k] ? 'bg-[#1F4E79]' : 'bg-slate-300'} disabled:opacity-50`}>
+                  <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${notif[k] ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+            ))}
+            <div className="mt-3">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">VAPID public key (for push)</label>
+              <input value={notif.vapid_public ?? ''} onChange={e => setNotif(n => ({ ...n, vapid_public: e.target.value }))} onBlur={e => saveNotif({ vapid_public: e.target.value })}
+                placeholder="Base64 URL-safe public key" className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-[#1F4E79]" />
+            </div>
+          </div>
+
+          {/* Delivery schedule */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-slate-800 mb-1">Delivery check</p>
+            <p className="text-[11px] text-slate-400 mb-3">How often the server scans for unread messages to deliver. Per-person cadence above still applies.</p>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
+              {[[0, 'Off'], [1, '1 min'], [5, '5 min'], [15, '15 min']].map(([m, l]) => (
+                <button key={m} onClick={() => setNotifySchedule(m)} disabled={notifBusy}
+                  className="px-3 py-1 rounded-md text-xs font-semibold text-slate-500 hover:text-slate-700 disabled:opacity-50">{l}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
 
       {/* Edit modal */}
       {editing && (

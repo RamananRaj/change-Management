@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { useChat } from '../hooks/useChat'
 import { ask } from '../lib/ai/router'
 import { fmtSize, fileIcon, chatCoraContext } from '../lib/chat/helpers'
+import { pushSupported, pushStatus, enablePush, disablePush } from '../lib/chat/push'
 import { supabase } from '../lib/supabase'
 
 // Turn a router descriptor into a concise chat-friendly answer for CORA.
@@ -82,7 +83,15 @@ export default function CFM() {
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [aiThinking, setAiThinking] = useState(false)
+  const [push, setPush] = useState('off')   // 'unsupported' | 'denied' | 'on' | 'off'
   const entityNames = useRef([])   // known client/project/person names, longest-first — for CORA context
+
+  // Reflect the device's push-subscription state when the panel opens.
+  useEffect(() => { if (open) pushStatus().then(setPush) }, [open])
+  async function togglePush() {
+    try { setPush(push === 'on' ? await disablePush() : await enablePush()) }
+    catch (e) { window.alert(e?.message || 'Could not change notifications.') }
+  }
 
   // Load entity names once so @cora answers carry the channel's context (same memory as the canvas).
   useEffect(() => {
@@ -258,6 +267,10 @@ export default function CFM() {
         </div>
         {view === 'list' && (
           <>
+            {push !== 'unsupported' && (
+              <button onClick={togglePush} title={push === 'on' ? 'Notifications on — click to turn off' : push === 'denied' ? 'Notifications blocked in browser settings' : 'Enable push notifications'}
+                className="text-white/90 text-base">{push === 'on' ? '🔔' : '🔕'}</button>
+            )}
             {profile?.is_admin && <button onClick={openOversight} title="Oversight (read-only)" className="text-white/90 text-base">🔎</button>}
             <button onClick={() => setView('newgroup')} title="New group" className="text-white/90 text-base">👥</button>
             <button onClick={() => setView('new')} title="New chat" className="text-white/90 text-base">✎</button>
