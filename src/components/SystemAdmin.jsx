@@ -9,7 +9,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const scoped = !!clientId
   const subtabs = scoped
     ? ['User Management', 'Pending Invites', 'AI Usage']
-    : ['User Management', 'Pending Invites', 'System Health', 'E2E Tests', 'AI Usage', 'Notifications']
+    : ['User Management', 'Pending Invites', 'System Health', 'E2E Tests', 'AI Usage', 'Reports', 'Notifications']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -264,6 +264,58 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     else { setNote({ type: 'ok', text: data }); loadE2e() }
   }
 
+  // ── Scheduled reports (native .docx) ──────────────────────────────────────────
+  const [repScheds, setRepScheds] = useState(null)
+  const [repFiles, setRepFiles] = useState([])
+  const [repBusy, setRepBusy] = useState(false)
+  const blankSched = { client_id: '', project_id: '', cadence: 'monthly', day_of_week: 1, day_of_month: 1, hour: 6 }
+  const [repForm, setRepForm] = useState(blankSched)
+  const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+  async function loadReports() {
+    const [{ data: s }, { data: f }] = await Promise.all([
+      supabase.from('report_schedules').select('*').order('created_at', { ascending: false }),
+      supabase.from('report_files').select('*').order('generated_at', { ascending: false }).limit(30),
+    ])
+    setRepScheds(s ?? []); setRepFiles(f ?? [])
+  }
+  async function addSchedule() {
+    if (!repForm.client_id) { setNote({ type: 'err', text: 'Pick a client for the schedule.' }); return }
+    setRepBusy(true); setNote(null)
+    const row = {
+      client_id: repForm.client_id, project_id: repForm.project_id || null, cadence: repForm.cadence,
+      day_of_week: Number(repForm.day_of_week), day_of_month: Number(repForm.day_of_month), hour: Number(repForm.hour),
+    }
+    const { error } = await supabase.from('report_schedules').insert(row)
+    setRepBusy(false)
+    if (error) setNote({ type: 'err', text: error.message })
+    else { setNote({ type: 'ok', text: 'Schedule created.' }); setRepForm(blankSched); loadReports() }
+  }
+  async function toggleSchedule(s) {
+    await supabase.from('report_schedules').update({ enabled: !s.enabled }).eq('id', s.id)
+    loadReports()
+  }
+  async function deleteSchedule(s) {
+    if (!window.confirm('Delete this report schedule? Previously generated files are kept.')) return
+    await supabase.from('report_schedules').delete().eq('id', s.id)
+    loadReports()
+  }
+  // Generate immediately — either an existing schedule, or an ad-hoc client/project report.
+  async function generateReport(payload, label) {
+    setRepBusy(true); setNote(null)
+    const { data, error } = await supabase.functions.invoke('report-generate', { body: payload })
+    setRepBusy(false)
+    if (error || data?.error) setNote({ type: 'err', text: data?.error ?? error?.message ?? 'Could not generate the report.' })
+    else { setNote({ type: 'ok', text: `Generated ${data?.generated ?? 0} report${(data?.generated ?? 0) === 1 ? '' : 's'}${label ? ` for ${label}` : ''}.` }); loadReports() }
+  }
+  async function downloadReport(f) {
+    const { data, error } = await supabase.storage.from('reports').createSignedUrl(f.path, 60)
+    if (error || !data?.signedUrl) { setNote({ type: 'err', text: error?.message ?? 'Could not create a download link.' }); return }
+    window.open(data.signedUrl, '_blank')
+  }
+  const schedText = s => s.cadence === 'monthly' ? `Monthly on day ${s.day_of_month}`
+    : s.cadence === 'fortnightly' ? `Fortnightly on ${DOW[s.day_of_week]}` : `Weekly on ${DOW[s.day_of_week]}`
+
   // ── Notifications (admin config) ──────────────────────────────────────────────
   const [notif, setNotif] = useState(null)
   const [notifBusy, setNotifBusy] = useState(false)
@@ -319,7 +371,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {subtabs.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage(); if (t === 'Notifications' && notif === null) loadNotif(); if (t === 'E2E Tests' && e2e === null) loadE2e() }}
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage(); if (t === 'Notifications' && notif === null) loadNotif(); if (t === 'E2E Tests' && e2e === null) loadE2e(); if (t === 'Reports' && repScheds === null) loadReports() }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -974,6 +1026,143 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           )
         })()
       )}
+
+      {/* ── REPORTS ── */}
+      {tab === 'Reports' && (
+        repScheds === null ? <div className="space-y-2">{[1,2,3].map(n => <div key={n} className="h-16 bg-slate-100 rounded-xl animate-pulse" />)}</div> : (
+        <div>
+          <p className="text-xs text-slate-400 mb-4">Native Word (.docx) change reports, generated on the server and stored here. Schedules run automatically; you can also generate one on demand.</p>
+
+          {/* New schedule */}
+          <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5">
+            <p className="text-sm font-semibold text-slate-800 mb-3">New schedule</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Client</label>
+                <select value={repForm.client_id} onChange={e => setRepForm(f => ({ ...f, client_id: e.target.value, project_id: '' }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                  <option value="">— Select client</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Programme</label>
+                <select value={repForm.project_id} onChange={e => setRepForm(f => ({ ...f, project_id: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                  <option value="">All programmes</option>
+                  {projects.filter(p => p.client_id === repForm.client_id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Cadence</label>
+                <select value={repForm.cadence} onChange={e => setRepForm(f => ({ ...f, cadence: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                  <option value="weekly">Weekly</option>
+                  <option value="fortnightly">Fortnightly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              {repForm.cadence === 'monthly' ? (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Day of month</label>
+                  <input type="number" min="1" max="28" value={repForm.day_of_month} onChange={e => setRepForm(f => ({ ...f, day_of_month: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Day of week</label>
+                  <select value={repForm.day_of_week} onChange={e => setRepForm(f => ({ ...f, day_of_week: e.target.value }))}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                    {DOW.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Hour (UTC)</label>
+                <input type="number" min="0" max="23" value={repForm.hour} onChange={e => setRepForm(f => ({ ...f, hour: e.target.value }))}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+              </div>
+              <div className="flex items-end gap-2">
+                <button onClick={addSchedule} disabled={repBusy}
+                  className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] disabled:opacity-60">Add schedule</button>
+                <button onClick={() => generateReport({ clientId: repForm.client_id, projectId: repForm.project_id || null }, 'now')}
+                  disabled={repBusy || !repForm.client_id}
+                  className="text-sm font-semibold text-[#1F4E79] border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50 disabled:opacity-40 whitespace-nowrap">Generate now</button>
+              </div>
+            </div>
+          </div>
+
+          {/* Schedules */}
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Schedules</p>
+          {repScheds.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm mb-6">No schedules yet — add one above.</div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto mb-6">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
+                    <th className="py-2.5 px-3">Client</th><th className="py-2.5 px-3">Programme</th><th className="py-2.5 px-3">Cadence</th>
+                    <th className="py-2.5 px-3">Hour</th><th className="py-2.5 px-3">Last run</th><th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {repScheds.map(s => (
+                    <tr key={s.id} className="border-t border-slate-100">
+                      <td className="py-2 px-3 text-slate-700 whitespace-nowrap">{clientName(s.client_id)}</td>
+                      <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{s.project_id ? projNameOf(s.project_id) : <span className="text-slate-400">All programmes</span>}</td>
+                      <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{schedText(s)}</td>
+                      <td className="py-2 px-3 text-slate-500 text-xs">{String(s.hour).padStart(2, '0')}:00</td>
+                      <td className="py-2 px-3 text-slate-500 text-xs whitespace-nowrap">{s.last_run_at ? fmtDate(s.last_run_at) : <span className="text-slate-300">never</span>}</td>
+                      <td className="py-2 px-3">
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${s.enabled ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>{s.enabled ? 'Active' : 'Paused'}</span>
+                      </td>
+                      <td className="py-2 px-3">
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => generateReport({ scheduleId: s.id }, clientName(s.client_id))} disabled={repBusy}
+                            className="text-xs font-semibold text-[#1F4E79] hover:underline disabled:opacity-40">Generate</button>
+                          <button onClick={() => toggleSchedule(s)} className="text-xs font-semibold text-slate-500 hover:underline">{s.enabled ? 'Pause' : 'Resume'}</button>
+                          <button onClick={() => deleteSchedule(s)} className="text-xs font-semibold text-red-500 hover:underline">Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Generated files */}
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Generated reports</p>
+          {repFiles.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">Nothing generated yet — use “Generate now” or wait for a schedule.</div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
+                    <th className="py-2.5 px-3">Generated</th><th className="py-2.5 px-3">Report</th><th className="py-2.5 px-3">Source</th>
+                    <th className="py-2.5 px-3">Size</th><th className="py-2.5 px-3 text-right">Download</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {repFiles.map(f => (
+                    <tr key={f.id} className="border-t border-slate-100">
+                      <td className="py-2 px-3 text-slate-500 text-xs whitespace-nowrap">{new Date(f.generated_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                      <td className="py-2 px-3 text-slate-700 text-xs">{f.title ?? f.filename}</td>
+                      <td className="py-2 px-3"><span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{f.source}</span></td>
+                      <td className="py-2 px-3 text-slate-400 text-xs whitespace-nowrap">{f.size_bytes ? `${Math.round(f.size_bytes / 1024)} KB` : '—'}</td>
+                      <td className="py-2 px-3 text-right">
+                        <button onClick={() => downloadReport(f)} className="text-xs font-semibold text-[#1F4E79] hover:underline">↓ .docx</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ))}
 
       {/* ── NOTIFICATIONS ── */}
       {tab === 'Notifications' && (
