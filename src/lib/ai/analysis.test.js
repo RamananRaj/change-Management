@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback } from './analysis'
 
 const heat = {
   version: 1,
@@ -54,6 +54,112 @@ describe('buildReportGantt', () => {
   })
   it('returns null when there are no dates', () => {
     expect(buildReportGantt([{ name: 'X', phases: [{ phase_number: 1, name: 'Diagnose' }], milestones: [] }])).toBeNull()
+  })
+})
+
+describe('resolveScope + scopedProjects', () => {
+  const data = {
+    clients: [{ id: 'c1', name: 'Horizon Power' }, { id: 'c2', name: 'Western Power' }],
+    projRollup: [
+      { id: 'p1', name: 'RSR Program', client_id: 'c1' },
+      { id: 'p2', name: 'Billing Uplift', client_id: 'c1' },
+      { id: 'p3', name: 'Grid Modernisation', client_id: 'c2' },
+    ],
+  }
+
+  it('scopes to a project named in the text', () => {
+    const s = resolveScope('how is the RSR Program going', {}, data)
+    expect(s.proj?.id).toBe('p1')
+    expect(s.suffix).toBe(' · RSR Program')
+    expect(scopedProjects(data, s).map(p => p.id)).toEqual(['p1'])
+  })
+
+  it('scopes to a client named in the text (all their projects)', () => {
+    const s = resolveScope('show progress for Horizon Power', {}, data)
+    expect(s.client?.id).toBe('c1')
+    expect(scopedProjects(data, s).map(p => p.id)).toEqual(['p1', 'p2'])
+  })
+
+  it('falls back to the remembered entity when the text names nothing', () => {
+    const s = resolveScope('what is at risk', { entity: 'RSR Program' }, data)
+    expect(s.proj?.id).toBe('p1')
+  })
+
+  it('an explicitly named entity overrides the remembered one', () => {
+    const s = resolveScope('progress for Western Power', { entity: 'RSR Program' }, data)
+    expect(s.client?.id).toBe('c2')
+    expect(s.proj).toBeNull()
+  })
+
+  it('returns all projects and no suffix when nothing is in scope', () => {
+    const s = resolveScope('overall progress', {}, data)
+    expect(s.label).toBeNull()
+    expect(s.suffix).toBe('')
+    expect(scopedProjects(data, s)).toHaveLength(3)
+  })
+})
+
+describe('buildPhaseDrill', () => {
+  const profiles = [{ id: 'u1', full_name: 'Jane Smith' }, { id: 'u2', full_name: 'Ravi Patel' }]
+  const args = {
+    projectName: 'RSR Program', phaseName: 'Diagnose',
+    orderedContentIds: ['a1', 'a2'],
+    content: [{ id: 'a1', title: 'Stakeholder Map', content_type: 'exercise' }, { id: 'a2', title: 'Impact Assessment', content_type: 'template' }],
+    completions: [{ user_id: 'u1', content_id: 'a1' }, { user_id: 'u2', content_id: 'a1' }],
+    memberIds: ['u1', 'u2'], profiles,
+  }
+
+  it('builds a row per activity with type, done count and completer names', () => {
+    const d = buildPhaseDrill(args)
+    expect(d.type).toBe('progress')
+    expect(d.title).toBe('RSR Program · Diagnose')
+    expect(d.rows).toHaveLength(2)
+    expect(d.rows[0]).toMatchObject({ label: 'Stakeholder Map', value: 100 })
+    expect(d.rows[0].sub).toBe('exercise · 2/2 done · Jane Smith, Ravi Patel')
+    expect(d.rows[1]).toMatchObject({ label: 'Impact Assessment', value: 0 })
+    expect(d.rows[1].sub).toContain('not started')
+  })
+
+  it('summarises owners and fully-complete count in the intro', () => {
+    const d = buildPhaseDrill(args)
+    expect(d.intro).toContain('**2** activities')
+    expect(d.intro).toContain('Jane Smith')
+    expect(d.intro).toContain('**1/2** is fully complete')
+  })
+
+  it('handles no members assigned', () => {
+    const d = buildPhaseDrill({ ...args, memberIds: [], completions: [] })
+    expect(d.rows[0].value).toBe(0)
+    expect(d.intro).toContain('no members assigned yet')
+  })
+})
+
+describe('groundedFallback', () => {
+  const grounding = [
+    'Client: Horizon Power (as of 19 Jul 2026)',
+    'Project "RSR Program": 6 people, 42% complete.',
+    '  • Phase 1 Diagnose: 80% (in progress) [01 Jul 2026→31 Jul 2026]',
+    '  • Phase 2 Design: 10% (upcoming)',
+    'Readiness: 3.1/5 — Amber/at risk from 4 responses.',
+    'Overdue/at-risk phases: Design · RSR Program (10%).',
+  ].join('\n')
+
+  it('returns null without grounding', () => {
+    expect(groundedFallback('anything', '')).toBeNull()
+    expect(groundedFallback('anything', null)).toBeNull()
+  })
+
+  it('surfaces the lines most relevant to the question', () => {
+    const out = groundedFallback('how is readiness looking?', grounding)
+    expect(out).toContain('Readiness: 3.1/5')
+    expect(out).toContain('_Client: Horizon Power (as of 19 Jul 2026)_')   // header echoed
+    expect(out).not.toContain('model tier configured for open-ended reasoning\n\n_Client')   // has a lead
+  })
+
+  it('falls back to the snapshot when nothing matches', () => {
+    const out = groundedFallback('zzzzz', grounding)
+    expect(out).toContain('grounded snapshot')
+    expect(out).toContain('RSR Program')
   })
 })
 

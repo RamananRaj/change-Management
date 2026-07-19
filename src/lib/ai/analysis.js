@@ -80,6 +80,78 @@ export function buildIntegratedInsight(heat, { pct, atRisk, avg, ragWord, upcomi
   return { heading: 'Where to focus', type: 'insight', lead, areas, move }
 }
 
+// ── Scope resolution (auto-scoping to the conversation's client/project) ──────────
+// Pure: given the query text, the conversation ctx (with a remembered `entity`) and the loaded
+// data (projRollup + clients), work out whether the answer should narrow to one project or client.
+// An explicitly named entity in the text wins; otherwise fall back to the remembered entity.
+export function resolveScope(text, ctx, data) {
+  const t = (text ?? '').toLowerCase()
+  const named = s => s && s.length >= 3 && t.includes(s.toLowerCase())
+  let proj = data.projRollup.find(p => named(p.name)) || null
+  let client = proj ? null : (data.clients.find(c => named(c.name)) || null)
+  if (!proj && !client && ctx?.entity) {
+    const e = String(ctx.entity).toLowerCase()
+    proj = data.projRollup.find(p => p.name && e.includes(p.name.toLowerCase())) || null
+    if (!proj) client = data.clients.find(c => c.name && e.includes(c.name.toLowerCase())) || null
+  }
+  return { proj, client, label: proj ? proj.name : client ? client.name : null, suffix: (proj || client) ? ` · ${proj ? proj.name : client.name}` : '' }
+}
+
+// Narrow the project rollup to the resolved scope (one project, one client's projects, or all).
+export function scopedProjects(data, scope) {
+  if (scope.proj) return data.projRollup.filter(p => p.id === scope.proj.id)
+  if (scope.client) return data.projRollup.filter(p => p.client_id === scope.client.id)
+  return data.projRollup
+}
+
+// ── Phase drill (activities · owners · per-activity progress) ─────────────────────
+// Pure: build the phase-drill widget from already-fetched rows. rules.js does the Supabase
+// reads (pathway → content → completions) and hands the arrays here so the logic is testable.
+export function buildPhaseDrill({ projectName, phaseName, orderedContentIds, content, completions, memberIds, profiles }) {
+  const ids = orderedContentIds || []
+  const nameOf = id => (profiles || []).find(u => u.id === id)?.full_name ?? 'Someone'
+  const rows = ids.map(cid => {
+    const c = (content || []).find(x => x.id === cid)
+    const doneIds = (completions || []).filter(a => a.content_id === cid).map(a => a.user_id)
+    const pct = memberIds.length ? Math.round((doneIds.length / memberIds.length) * 100) : 0
+    const doneNames = doneIds.map(nameOf)
+    const sub = `${c?.content_type ?? 'activity'} · ${doneIds.length}/${memberIds.length} done${doneNames.length ? ` · ${doneNames.join(', ')}` : ' · not started'}`
+    return { label: c?.title ?? 'Activity', sub, value: pct }
+  })
+  const owners = memberIds.map(nameOf)
+  const fullyDone = rows.filter(r => r.value >= 100).length
+  const n = ids.length
+  const intro =
+    `**${phaseName}** in **${projectName}** has **${n}** activit${n === 1 ? 'y' : 'ies'} for the team to work through` +
+    (owners.length ? `, owned by **${owners.join('** and **')}**` : ' (no members assigned yet)') + '. ' +
+    `**${fullyDone}/${n}** ${fullyDone === 1 ? 'is' : 'are'} fully complete across the team so far.\n\nHere's each activity, its owners and progress:`
+  return { type: 'progress', title: `${projectName} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
+}
+
+// ── Grounded fallback (no model tier available) ───────────────────────────────────
+// Pure: when neither the on-device SLM nor an external model is available, turn the already-
+// assembled grounded context into a useful, deterministic answer instead of a "not configured"
+// message. Picks the context lines most relevant to the question by keyword overlap. Never
+// invents — it only surfaces lines that are already in the grounded snapshot.
+export function groundedFallback(question, grounding) {
+  if (!grounding || !String(grounding).trim()) return null
+  const lines = String(grounding).split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim())
+  if (!lines.length) return null
+  const header = lines[0]                          // "Client: … (as of …)"
+  const rest = lines.slice(1)
+  const qToks = distinctiveTokens(question)
+  const scored = rest.map((l, i) => {
+    const lt = l.toLowerCase()
+    return { l, i, score: qToks.reduce((s, tk) => s + (lt.includes(tk) ? 1 : 0), 0) }
+  })
+  const hits = scored.filter(s => s.score > 0).sort((a, b) => b.score - a.score || a.i - b.i)
+  const picked = (hits.length ? hits : scored).slice(0, 8).sort((a, b) => a.i - b.i).map(s => s.l.trim())
+  const lead = hits.length
+    ? `I don't have a model tier configured for open-ended reasoning, but here's what your data shows on that:`
+    : `I don't have a model tier configured for open-ended reasoning. Here's the grounded snapshot — ask me a specific data question (progress, at-risk, milestones, readiness, heat map) for more:`
+  return `${lead}\n\n_${header}_\n\n${picked.map(l => (l.startsWith('•') ? l : `- ${l}`)).join('\n')}`
+}
+
 // ── Phrase learning tokeniser ────────────────────────────────────────────────────
 export const LEARN_STOP = new Set(('show give me the for a an of to please can you get on in with and or my our your ' +
   'this that is are it as by from at build create generate make change report a1 s').split(' '))

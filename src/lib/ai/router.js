@@ -7,6 +7,7 @@
 // ai_usage so the System Admin tab can show exactly where the work is landing.
 
 import { runRules, assembleClientContext } from './rules'
+import { groundedFallback } from './analysis'
 import { slmAvailable, runSlm } from './slm'
 import { runExternal } from './external'
 import { logUsage } from './telemetry'
@@ -45,6 +46,17 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   // 3 ── External model (last resort; may leave the device)
   const ext = await runExternal(text, gctx)
   const latency = performance.now() - t0
+
+  // No external model configured (and SLM absent/failed): rather than a bare "not configured"
+  // message, surface a grounded, deterministic answer from the context we already assembled.
+  if (ext.configured === false && !ext.error) {
+    const body = groundedFallback(text, grounding)
+    if (body) {
+      logUsage({ tier: 'rules', intent: 'grounded_fallback', query: text, ok: true, escalated: false, latency_ms: latency, ctx })
+      return { tier: 'rules', type: 'narrative', title: 'CORA', body, grounded: true }
+    }
+  }
+
   logUsage({ tier: 'external', intent: 'freeform', query: text, ok: !ext.error, escalated: true, latency_ms: latency, model: ext.model, ctx })
   return { tier: 'external', type: 'narrative', title: 'CORA', body: ext.text, external: ext.configured !== false }
 }

@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill } from './analysis'
 
 export { matchIntent }
 
@@ -90,23 +90,7 @@ const roleOf = (profiles, id) => profiles.find(p => p.id === id)?.role ?? null
 // Resolve which client/project an aggregate question is about — named in the text, or (for
 // phrase-less follow-ups) the entity CORA is remembering. Lets "what's at risk" scope to the
 // client/project currently under discussion.
-function resolveScope(text, ctx, data) {
-  const t = (text ?? '').toLowerCase()
-  const named = s => s && s.length >= 3 && t.includes(s.toLowerCase())
-  let proj = data.projRollup.find(p => named(p.name)) || null
-  let client = proj ? null : (data.clients.find(c => named(c.name)) || null)
-  if (!proj && !client && ctx?.entity) {
-    const e = String(ctx.entity).toLowerCase()
-    proj = data.projRollup.find(p => p.name && e.includes(p.name.toLowerCase())) || null
-    if (!proj) client = data.clients.find(c => c.name && e.includes(c.name.toLowerCase())) || null
-  }
-  return { proj, client, label: proj ? proj.name : client ? client.name : null, suffix: (proj || client) ? ` · ${proj ? proj.name : client.name}` : '' }
-}
-function scopedProjects(data, scope) {
-  if (scope.proj) return data.projRollup.filter(p => p.id === scope.proj.id)
-  if (scope.client) return data.projRollup.filter(p => p.client_id === scope.client.id)
-  return data.projRollup
-}
+// resolveScope + scopedProjects live in ./analysis (pure, unit-tested); imported above.
 
 // ── Intent runners → widget descriptors ───────────────────────────────────────
 async function runAtRisk(_params, text, ctx) {
@@ -588,7 +572,6 @@ function detectPhase(text) {
 async function runPhaseDetail(p, phaseNumber, data) {
   const { profiles } = data
   const phaseName = PHASE_NAMES[phaseNumber]
-  const nameOf = id => profiles.find(u => u.id === id)?.full_name ?? 'Someone'
   const memberIds = p.memberIds || []
 
   const { data: pw } = await supabase.from('project_pathways')
@@ -603,21 +586,7 @@ async function runPhaseDetail(p, phaseNumber, data) {
     ? await supabase.from('user_activities').select('user_id, content_id, status').in('user_id', memberIds).in('content_id', cids).eq('status', 'completed')
     : { data: [] }
 
-  const rows = cids.map(cid => {
-    const c = (cont ?? []).find(x => x.id === cid)
-    const doneIds = (acts ?? []).filter(a => a.content_id === cid).map(a => a.user_id)
-    const pct = memberIds.length ? Math.round((doneIds.length / memberIds.length) * 100) : 0
-    const doneNames = doneIds.map(nameOf)
-    const sub = `${c?.content_type ?? 'activity'} · ${doneIds.length}/${memberIds.length} done${doneNames.length ? ` · ${doneNames.join(', ')}` : ' · not started'}`
-    return { label: c?.title ?? 'Activity', sub, value: pct }
-  })
-  const owners = memberIds.map(nameOf)
-  const fullyDone = rows.filter(r => r.value >= 100).length
-  const intro =
-    `**${phaseName}** in **${p.name}** has **${cids.length}** activit${cids.length === 1 ? 'y' : 'ies'} for the team to work through` +
-    (owners.length ? `, owned by **${owners.join('** and **')}**` : ' (no members assigned yet)') + '. ' +
-    `**${fullyDone}/${cids.length}** ${fullyDone === 1 ? 'is' : 'are'} fully complete across the team so far.\n\nHere's each activity, its owners and progress:`
-  return { type: 'progress', title: `${p.name} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
+  return buildPhaseDrill({ projectName: p.name, phaseName, orderedContentIds: cids, content: cont ?? [], completions: acts ?? [], memberIds, profiles })
 }
 
 // Detail for a person — their projects with their own per-phase completion.

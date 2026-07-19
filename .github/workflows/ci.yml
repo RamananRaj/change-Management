@@ -20,3 +20,28 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  integration:
+    # Real-Supabase integration tests. They are skip-guarded: with no secrets set they skip
+    # and the job passes, so forks and secret-less runs stay green. Set the repo secrets
+    # (Settings → Secrets and variables → Actions) to have them exercise the live project.
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Integration tests (skip if unconfigured)
+        run: npx vitest run src/integration
+        env:
+          TEST_SUPABASE_URL: ${{ secrets.TEST_SUPABASE_URL }}
+          TEST_SUPABASE_ANON_KEY: ${{ secrets.TEST_SUPABASE_ANON_KEY }}
+          TEST_ADMIN_EMAIL: ${{ secrets.TEST_ADMIN_EMAIL }}
+          TEST_ADMIN_PASSWORD: ${{ secrets.TEST_ADMIN_PASSWORD }}
+          TEST_DM_USER_ID: ${{ secrets.TEST_DM_USER_ID }}
+          # Password-reset test sends a real email — opt in explicitly via secrets.
+          RUN_RESET_TEST: ${{ secrets.RUN_RESET_TEST }}
+          TEST_RESET_EMAIL: ${{ secrets.TEST_RESET_EMAIL }}
