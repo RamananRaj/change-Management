@@ -20,5 +20,8 @@ DROP POLICY IF EXISTS "Admins read health runs" ON public.health_runs;
 CREATE POLICY "Admins read health runs" ON public.health_runs FOR SELECT USING (public.is_admin());
 
 GRANT SELECT ON public.health_runs TO authenticated;
+-- The health-check Edge Function writes with the service role — it needs INSERT here (RLS is
+-- bypassed by service_role, but table-level privilege is still required).
+GRANT INSERT, SELECT ON public.health_runs TO service_role;
 
 SELECT 'health_runs table created' AS result;
