@@ -495,7 +495,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                         const open = expandedRun === r.id
                         const checks = Array.isArray(r.checks) ? r.checks : []
                         return (
-                          <React.Fragment key={r.id}>
+                          <Fragment key={r.id}>
                             <tr onClick={() => setExpandedRun(open ? null : r.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50/60">
                               <td className="py-2 px-3 text-slate-400 text-xs">{open ? '▾' : '▸'}</td>
                               <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
@@ -524,7 +524,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                                 )}
                               </td></tr>
                             )}
-                          </React.Fragment>
+                          </Fragment>
                         )
                       })}
                     </tbody>
