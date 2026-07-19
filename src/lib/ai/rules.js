@@ -86,35 +86,62 @@ async function loadData() {
 const nameOf = (profiles, id) => profiles.find(p => p.id === id)?.full_name ?? 'Member'
 const roleOf = (profiles, id) => profiles.find(p => p.id === id)?.role ?? null
 
+// ── Context scoping ───────────────────────────────────────────────────────────
+// Resolve which client/project an aggregate question is about — named in the text, or (for
+// phrase-less follow-ups) the entity CORA is remembering. Lets "what's at risk" scope to the
+// client/project currently under discussion.
+function resolveScope(text, ctx, data) {
+  const t = (text ?? '').toLowerCase()
+  const named = s => s && s.length >= 3 && t.includes(s.toLowerCase())
+  let proj = data.projRollup.find(p => named(p.name)) || null
+  let client = proj ? null : (data.clients.find(c => named(c.name)) || null)
+  if (!proj && !client && ctx?.entity) {
+    const e = String(ctx.entity).toLowerCase()
+    proj = data.projRollup.find(p => p.name && e.includes(p.name.toLowerCase())) || null
+    if (!proj) client = data.clients.find(c => c.name && e.includes(c.name.toLowerCase())) || null
+  }
+  return { proj, client, label: proj ? proj.name : client ? client.name : null, suffix: (proj || client) ? ` · ${proj ? proj.name : client.name}` : '' }
+}
+function scopedProjects(data, scope) {
+  if (scope.proj) return data.projRollup.filter(p => p.id === scope.proj.id)
+  if (scope.client) return data.projRollup.filter(p => p.client_id === scope.client.id)
+  return data.projRollup
+}
+
 // ── Intent runners → widget descriptors ───────────────────────────────────────
-async function runAtRisk() {
-  const { projRollup, today } = await loadData()
+async function runAtRisk(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const cp = scopedProjects(data, scope), today = data.today
   const rows = []
-  projRollup.forEach(p => p.phases.forEach(ph => {
+  cp.forEach(p => p.phases.forEach(ph => {
     if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0)
       rows.push({ rag: ph.pct < 40 ? 'r' : 'a', name: `${ph.name} · ${ph.project ?? p.name}`,
         meta: `${p.clientName} · ${ph.pct}% complete`, due: 'overdue' })
   }))
   return {
-    type: 'list', title: 'At-risk items', empty: 'Nothing overdue — everything on track.',
+    type: 'list', title: `At-risk items${scope.suffix}`, empty: `Nothing overdue${scope.label ? ` for ${scope.label}` : ' — everything on track'}.`,
     rows: rows.slice(0, 12),
     commentary: rows.length ? `${rows.length} phase${rows.length > 1 ? 's are' : ' is'} past its planned end date and under 100%. The red items are below 40% — those need attention first.` : null,
   }
 }
 
-async function runMilestones() {
-  const { milestones, projRollup, today } = await loadData()
-  const projName = id => projRollup.find(p => p.id === id)?.name ?? 'Project'
+async function runMilestones(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const cp = scopedProjects(data, scope), today = data.today
+  const ids = new Set(cp.map(p => p.id))
+  const projName = id => data.projRollup.find(p => p.id === id)?.name ?? 'Project'
   const soon = new Date(today); soon.setDate(soon.getDate() + 7)
-  const rows = (milestones ?? [])
-    .filter(m => m.milestone_date && new Date(m.milestone_date) >= today && new Date(m.milestone_date) <= soon)
+  const rows = (data.milestones ?? [])
+    .filter(m => (!scope.label || ids.has(m.project_id)) && m.milestone_date && new Date(m.milestone_date) >= today && new Date(m.milestone_date) <= soon)
     .sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))
     .map(m => {
       const days = Math.ceil((new Date(m.milestone_date) - today) / 86400000)
       return { rag: days <= 2 ? 'a' : 'g', name: m.name, meta: projName(m.project_id), due: days <= 0 ? 'today' : `in ${days}d` }
     })
   return {
-    type: 'list', title: 'Milestones due in the next 7 days', empty: 'No milestones due this week.',
+    type: 'list', title: `Milestones due in the next 7 days${scope.suffix}`, empty: 'No milestones due this week.',
     rows, commentary: rows.length ? `${rows.length} milestone${rows.length > 1 ? 's' : ''} within 7 days. Amber ones fall due in ≤2 days.` : null,
   }
 }
@@ -217,13 +244,20 @@ async function runHeatmap(_params, text) {
 // Assemble a comprehensive change report for a client — snapshot, heat map, timeline,
 // needs-attention, upcoming, readiness, recommendations. Sections are mini-descriptors the
 // report widget renders with the existing renderers. Grounded; will grow over time.
-async function runReport(_params, text) {
+async function runReport(_params, text, ctx) {
   const data = await loadData()
   const t = (text ?? '').toLowerCase()
   let client = data.clients.find(c => c.name && c.name.length >= 3 && t.includes(c.name.toLowerCase())) || (data.clients.length === 1 ? data.clients[0] : null)
   // Optional project scope: "...for RSR Program" narrows the whole report to one project.
   const candidateProjects = data.projRollup.filter(p => !client || p.client_id === client.id)
-  const proj = candidateProjects.find(p => p.name && p.name.length >= 3 && t.includes(p.name.toLowerCase())) || null
+  let proj = candidateProjects.find(p => p.name && p.name.length >= 3 && t.includes(p.name.toLowerCase())) || null
+  // Auto-scope to the conversation's context: an explicitly named client/project wins; otherwise
+  // inherit the client or project CORA is already talking about, so "generate a report" just works.
+  if (!proj && !client) {
+    const ctxScope = resolveScope(text, ctx, data)
+    if (ctxScope.proj) proj = ctxScope.proj
+    else if (ctxScope.client) client = ctxScope.client
+  }
   if (proj && !client) client = data.clients.find(c => c.id === proj.client_id) || client   // infer client from the named project
   if (!client && data.clients.length > 1) {
     return { type: 'narrative', title: 'Which client?', followup: 'report',
@@ -301,17 +335,20 @@ async function runReport(_params, text) {
     client_id: cid ?? null, client_name: client?.name ?? null, project_id: proj?.id ?? null, sections }
 }
 
-async function runUpcoming() {
-  const { projRollup, milestones, today } = await loadData()
-  const projName = id => projRollup.find(p => p.id === id)?.name ?? 'Project'
+async function runUpcoming(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const cp = scopedProjects(data, scope), today = data.today
+  const ids = new Set(cp.map(p => p.id))
+  const projName = id => data.projRollup.find(p => p.id === id)?.name ?? 'Project'
   const items = [
-    ...(milestones ?? []).filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
+    ...(data.milestones ?? []).filter(m => (!scope.label || ids.has(m.project_id)) && m.milestone_date && new Date(m.milestone_date) >= today)
       .map(m => ({ date: m.milestone_date, label: m.name, project: projName(m.project_id) })),
-    ...projRollup.flatMap(p => p.phases.filter(ph => ph.planned_start && new Date(ph.planned_start) > today)
+    ...cp.flatMap(p => p.phases.filter(ph => ph.planned_start && new Date(ph.planned_start) > today)
       .map(ph => ({ date: ph.planned_start, label: `${ph.name} starts`, project: p.name }))),
   ].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 8)
   const rows = items.map(it => ({ rag: 'g', name: it.label, meta: it.project, due: fmtDate(it.date) }))
-  return { type: 'list', title: 'Upcoming milestones', empty: 'Nothing scheduled ahead.', rows }
+  return { type: 'list', title: `Upcoming milestones${scope.suffix}`, empty: 'Nothing scheduled ahead.', rows }
 }
 
 // ── Member-personal ("me") rules ──────────────────────────────────────────────
@@ -380,27 +417,36 @@ async function runMyReadiness() {
     commentary: scored.length ? `Your average readiness is **${avg.toFixed(1)} — ${ragWord}**${rows.length > 1 ? '. Focus on your lowest survey to lift it.' : '.'}` : null }
 }
 
-async function runProgress() {
-  const { projRollup } = await loadData()
-  const rows = projRollup.map(p => ({ label: p.name, value: p.pct, sub: p.clientName, drill: `Show me the ${p.name} timeline` }))
-    .sort((a, b) => a.value - b.value)
+async function runProgress(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const cp = scopedProjects(data, scope)
+  // Scoped to one project → break down by phase; otherwise list projects.
+  const rows = (scope.proj ? cp[0].phases.map(ph => ({ label: ph.name, value: ph.pct, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet' }))
+    : cp.map(p => ({ label: p.name, value: p.pct, sub: p.clientName, drill: `Show me the ${p.name} timeline` })))
+  if (!scope.proj) rows.sort((a, b) => a.value - b.value)
   const avg = rows.length ? Math.round(rows.reduce((s, r) => s + r.value, 0) / rows.length) : 0
   const drag = rows[0], lead = rows[rows.length - 1]
   return {
-    type: 'progress', title: 'Progress by project', rows,
+    type: 'progress', title: `${scope.proj ? `${scope.proj.name} — progress by phase` : `Progress by project${scope.suffix}`}`, rows,
     empty: 'No projects yet.',
-    commentary: rows.length
+    commentary: rows.length && !scope.proj
       ? `${avg}% average completion across ${rows.length} project${rows.length > 1 ? 's' : ''}.${drag ? ` ${drag.label} (${drag.value}%) is the drag; ${lead.label} (${lead.value}%) leads.` : ''}`
       : null,
   }
 }
 
-async function runReadiness() {
-  const { projRollup, surveys, today } = await loadData()
+async function runReadiness(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const projRollup = scopedProjects(data, scope)
+  const { surveys, today } = data
+  const projIds = new Set(projRollup.map(p => p.id))
   const totalDone = projRollup.reduce((s, p) => s + p.done, 0)
   const totalAll = projRollup.reduce((s, p) => s + p.total, 0)
   const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0
-  const scores = surveys.filter(s => s.score != null)
+  const scoped = scope.label ? surveys.filter(s => s.project_id == null || projIds.has(s.project_id)) : surveys
+  const scores = scoped.filter(s => s.score != null)
   const avgScore = scores.length ? scores.reduce((s, r) => s + r.score, 0) / scores.length : null
   const ragLabel = avgScore == null ? 'Not yet measured' : avgScore >= 3.5 ? 'Green — on track' : avgScore >= 2.5 ? 'Amber — at risk' : 'Red — critical'
   const overdue = []
@@ -408,16 +454,19 @@ async function runReadiness() {
     if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue.push(ph)
   }))
   return {
-    type: 'narrative', title: 'Readiness summary',
+    type: 'narrative', title: `Readiness summary${scope.suffix}`,
     body: `Overall readiness is **${ragLabel}**. Average pathway completion is **${pct}%** across ${projRollup.length} project${projRollup.length === 1 ? '' : 's'}` +
       `${scores.length ? `, from ${scores.length} survey response${scores.length === 1 ? '' : 's'}` : ' (no survey responses yet)'}. ` +
       `${overdue.length ? `**${overdue.length}** phase${overdue.length === 1 ? ' is' : 's are'} overdue and under 100% — the biggest lever on the RAG right now.` : 'No phases are currently overdue.'}`,
   }
 }
 
-async function runMembersBehind({ phase } = {}) {
-  const { projRollup, profiles } = await loadData()
-  const n = phase ?? 2
+async function runMembersBehind({ phase } = {}, text, ctx) {
+  const data = await loadData()
+  const { profiles } = data
+  const scope = resolveScope(text, ctx, data)
+  const projRollup = scopedProjects(data, scope)
+  const n = phase ?? detectPhase(text ?? '') ?? 2
   const rows = []
   projRollup.forEach(p => {
     const ph = p.phases.find(x => x.phase_number === n)
@@ -431,7 +480,7 @@ async function runMembersBehind({ phase } = {}) {
     })
   })
   return {
-    type: 'list', title: `Members behind on ${PHASE_NAMES[n]} (Phase ${n})`,
+    type: 'list', title: `Members behind on ${PHASE_NAMES[n]} (Phase ${n})${scope.suffix}`,
     empty: `Everyone is up to date on ${PHASE_NAMES[n]}.`,
     rows: rows.slice(0, 15),
     commentary: rows.length ? `${rows.length} member${rows.length > 1 ? 's have' : ' has'} outstanding ${PHASE_NAMES[n]} steps. Red = not started.` : null,
@@ -596,7 +645,7 @@ function runStakeholderDetail(s) {
 // Generic grounded resolver: scan everything captured (clients, projects, people, stakeholders)
 // for a name mentioned in the question, and return that record's detail. Prefers the longest
 // (most specific) name match. This is what lets "any detail we have" be answered by the rules.
-async function resolveEntity(text) {
+async function resolveEntity(text, ctx = {}) {
   const t = (text ?? '').toLowerCase()
   const [data, { data: stakeholders }] = await Promise.all([
     loadData(),
@@ -609,9 +658,15 @@ async function resolveEntity(text) {
   ;(stakeholders ?? []).forEach(s => s.name && candidates.push({ type: 'stakeholder', id: s.id, name: s.name, detail: s.detail }))
 
   const matches = candidates.filter(c => c.name.length >= 3 && t.includes(c.name.toLowerCase()))
-  if (!matches.length) return null
-  matches.sort((a, b) => b.name.length - a.name.length)   // most specific wins
-  const m = matches[0]
+    .sort((a, b) => b.name.length - a.name.length)   // most specific wins
+  // Fall back to the conversation's remembered entity when the sentence names none
+  // (e.g. "give me more details under Diagnose" after we were just discussing RSR Program).
+  let m = matches[0]
+  if (!m && ctx.entity) {
+    const e = String(ctx.entity).toLowerCase()
+    m = candidates.filter(c => c.name.length >= 3 && e.includes(c.name.toLowerCase())).sort((a, b) => b.name.length - a.name.length)[0]
+  }
+  if (!m) return null
 
   // "timeline / schedule / roadmap / gantt" → render the actual timeline (delivery + change
   // lanes + phases) rather than a progress list. Client → all its projects' timelines.
@@ -694,11 +749,11 @@ export async function noteCorrection(missText, matchedText, intent, userId) {
 
 // Public: try to answer with rules. Returns { matched, intent, descriptor } — descriptor is
 // null when no rule matched (router then escalates to the SLM).
-export async function runRules(text) {
+export async function runRules(text, ctx = {}) {
   // 1 ── Deterministic intent match
   const hit = matchIntent(text)
   if (hit) {
-    const descriptor = await RUNNERS[hit.intent](hit.params, text)
+    const descriptor = await RUNNERS[hit.intent](hit.params, text, ctx)
     return { matched: true, intent: hit.intent, descriptor }
   }
 
@@ -708,13 +763,14 @@ export async function runRules(text) {
     const q = new Set(distinctiveTokens(text))
     const lp = learned.find(p => p.toks.every(t => q.has(t)))
     if (lp) {
-      const descriptor = await RUNNERS[lp.intent](null, text)
+      const descriptor = await RUNNERS[lp.intent](null, text, ctx)
       return { matched: true, intent: lp.intent, learned: true, descriptor }
     }
   }
 
-  // 3 ── Generic grounded fallback: does the question name a client, project, person or stakeholder?
-  const resolved = await resolveEntity(text)
+  // 3 ── Generic grounded fallback: does the question name a client, project, person or
+  // stakeholder? (Falls back to the conversation's remembered entity for phrase-less follow-ups.)
+  const resolved = await resolveEntity(text, ctx)
   if (resolved) return { matched: true, intent: `detail_${resolved.type}`, descriptor: resolved.descriptor }
   return { matched: false, intent: null, descriptor: null }
 }
