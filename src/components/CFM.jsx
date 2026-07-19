@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../hooks/useChat'
 import { ask } from '../lib/ai/router'
-import { fmtSize, fileIcon } from '../lib/chat/helpers'
+import { fmtSize, fileIcon, chatCoraContext } from '../lib/chat/helpers'
+import { supabase } from '../lib/supabase'
 
 // Turn a router descriptor into a concise chat-friendly answer for CORA.
 function descriptorToText(d) {
@@ -81,6 +82,20 @@ export default function CFM() {
   const [uploading, setUploading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [aiThinking, setAiThinking] = useState(false)
+  const entityNames = useRef([])   // known client/project/person names, longest-first — for CORA context
+
+  // Load entity names once so @cora answers carry the channel's context (same memory as the canvas).
+  useEffect(() => {
+    (async () => {
+      const [{ data: cl }, { data: pr }, { data: pf }] = await Promise.all([
+        supabase.from('clients').select('name'),
+        supabase.from('projects').select('name'),
+        supabase.from('profiles').select('full_name'),
+      ])
+      entityNames.current = [...(cl ?? []).map(x => x.name), ...(pr ?? []).map(x => x.name), ...(pf ?? []).map(x => x.full_name)]
+        .filter(n => n && n.length >= 3).sort((a, b) => b.length - a.length)
+    })().catch(() => {})
+  }, [])
 
   function hdrDown(e) {
     if (e.target.closest('button')) return   // let header buttons work
@@ -148,10 +163,13 @@ export default function CFM() {
     // CORA: if the message calls @cora, answer it inline (grounded, role-scoped).
     const m = t.match(/@cora\b[:,]?\s*(.*)/is)
     if (m) {
-      const q = (m[1] || '').trim() || t.replace(/@cora/ig, '').trim()
+      const asked = (m[1] || '').trim() || t.replace(/@cora/ig, '').trim()
       setAiThinking(true)
       try {
-        const d = await ask(q, { userId: user.id, clientId: profile?.client_id ?? null })
+        // Auto-scope to the conversation: inherit the client/project the channel is discussing and
+        // carry recent turns, so terse follow-ups ("more detail") work like they do on the canvas.
+        const { q, entity, history } = chatCoraContext(messages, asked, entityNames.current)
+        const d = await ask(q, { userId: user.id, clientId: profile?.client_id ?? null, entity, history })
         await chat.send(activeId, descriptorToText(d), null, null, true)
       } catch {
         await chat.send(activeId, "I couldn't work that out just now — try rephrasing.", null, null, true)

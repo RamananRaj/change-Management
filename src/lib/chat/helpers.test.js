@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { initialsOf, fmtSize, fileIcon, unreadCount, dmDisplayName } from './helpers'
+import { initialsOf, fmtSize, fileIcon, unreadCount, dmDisplayName, chatCoraContext } from './helpers'
 
 describe('initialsOf', () => {
   it('takes up to two initials, uppercased', () => {
@@ -54,5 +54,51 @@ describe('dmDisplayName', () => {
   it('uses the other participant for DMs', () => {
     expect(dmDisplayName({ isGroup: false, otherName: 'Jane Smith' })).toBe('Jane Smith')
     expect(dmDisplayName({ isGroup: false, otherName: null })).toBe('Direct message')
+  })
+})
+
+describe('chatCoraContext', () => {
+  const names = ['RSR Program', 'Horizon Power', 'Jane Smith']
+
+  it('scopes a terse follow-up to the entity last mentioned in the thread', () => {
+    const msgs = [
+      { body: 'How is the RSR Program tracking?', is_ai: false },
+      { body: 'RSR Program is 42% complete.', is_ai: true },
+    ]
+    const { q, entity } = chatCoraContext(msgs, 'give me more detail', names)
+    expect(entity).toBe('RSR Program')
+    expect(q).toBe('give me more detail (regarding RSR Program)')
+  })
+
+  it('does not append when the question already names an entity', () => {
+    const { q, entity } = chatCoraContext([], 'how is Horizon Power going overall', names)
+    expect(entity).toBe('Horizon Power')
+    expect(q).toBe('how is Horizon Power going overall')
+  })
+
+  it('prefers the most recent mention when several appear', () => {
+    const msgs = [
+      { body: 'Horizon Power update please', is_ai: false },
+      { body: '…', is_ai: true },
+      { body: 'now the RSR Program', is_ai: false },
+      { body: '…', is_ai: true },
+    ]
+    expect(chatCoraContext(msgs, 'more', names).entity).toBe('RSR Program')
+  })
+
+  it('pairs each CORA answer with the human turn before it as history', () => {
+    const msgs = [
+      { body: '@cora how is RSR Program?', is_ai: false },
+      { body: 'RSR Program is 42% complete.', is_ai: true },
+    ]
+    const { history } = chatCoraContext(msgs, 'and readiness?', names)
+    expect(history).toEqual([{ q: 'how is RSR Program?', a: 'RSR Program is 42% complete.' }])
+  })
+
+  it('leaves a full question untouched when there is no context', () => {
+    const { q, entity, history } = chatCoraContext([], 'what are the biggest risks right now', names)
+    expect(entity).toBeNull()
+    expect(q).toBe('what are the biggest risks right now')
+    expect(history).toEqual([])
   })
 })
