@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { slmOptedIn, setSlmOptedIn, webgpuSupported } from '../lib/ai/slm'
 
 // Master Admin oversight hub. Its own sub-navigation keeps future views (users, invites,
 // activity, health…) contained here rather than adding tabs to the top Admin bar.
@@ -12,8 +13,10 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
+  const [projects, setProjects] = useState([])
   const [users,   setUsers]   = useState([])
   const [invites, setInvites] = useState([])
+  const [slmOn,   setSlmOn]   = useState(slmOptedIn())
   const [clientFilter, setClientFilter] = useState('')
   const [search, setSearch]   = useState('')
   const [editing, setEditing] = useState(null)   // user being edited
@@ -34,6 +37,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       supabase.from('project_invites').select('id, email, full_name, role, status, client_id, project_id, as_client_admin, created_at').eq('status', 'pending').order('created_at', { ascending: false }),
     ])
     setClients(cls ?? [])
+    setProjects(projs ?? [])
     const metaOf   = id => (metaRes?.data ?? []).find(e => e.id === id)
     const projName = id => (projs ?? []).find(p => p.id === id)?.name
 
@@ -149,6 +153,8 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   }
 
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
+  const projNameOf = id => projects.find(p => p.id === id)?.name ?? '—'
+  const toggleSlm  = () => setSlmOn(setSlmOptedIn(!slmOn))
   const roleLabel  = code => allRoles.find(r => r.code === code)?.label ?? (code ? code.toUpperCase() : '—')
   const fmtDate    = d => d ? new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'
 
@@ -442,11 +448,71 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
         const avgLat   = withLat.length ? Math.round(withLat.reduce((s, r) => s + r.latency_ms, 0) / withLat.length) : 0
         const tierBadge = t => t === 'rules' ? 'bg-green-100 text-green-700' : t === 'slm' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
         const seg = [{ t: 'rules', n: rules, c: '#16A34A' }, { t: 'slm', n: slm, c: '#2563EB' }, { t: 'external', n: ext, c: '#D97706' }]
+        // Group usage by a tenant field (client_id / project_id): count, external share, avg latency.
+        const groupBy = (field, nameFn) => {
+          const m = new Map()
+          ai.forEach(r => {
+            const key = r[field] ?? '__none'
+            const g = m.get(key) ?? { key, name: r[field] ? nameFn(r[field]) : 'Unattributed', n: 0, ext: 0, lat: 0, latN: 0 }
+            g.n++; if (r.tier === 'external') g.ext++
+            if (r.latency_ms != null) { g.lat += r.latency_ms; g.latN++ }
+            m.set(key, g)
+          })
+          return [...m.values()].map(g => ({ ...g, avg: g.latN ? Math.round(g.lat / g.latN) : null })).sort((a, b) => b.n - a.n)
+        }
+        const byClient = groupBy('client_id', clientName)
+        const byProject = groupBy('project_id', projNameOf).filter(g => g.key !== '__none')
+        const breakdown = (title, rows) => rows.length === 0 ? null : (
+          <div className="mb-6">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{title}</p>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
+                    <th className="py-2.5 px-3">{title.replace('By ', '')}</th><th className="py-2.5 px-3 text-right">Queries</th>
+                    <th className="py-2.5 px-3">Share</th><th className="py-2.5 px-3 text-right">External</th><th className="py-2.5 px-3 text-right">Avg latency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(g => (
+                    <tr key={g.key} className="border-t border-slate-100">
+                      <td className="py-2 px-3 text-slate-700 whitespace-nowrap">{g.name === 'Unattributed' ? <span className="text-slate-400">{g.name}</span> : g.name}</td>
+                      <td className="py-2 px-3 text-right text-slate-700 font-medium">{g.n}</td>
+                      <td className="py-2 px-3 w-[34%]">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-[#1F4E79]" style={{ width: `${total ? (g.n / total) * 100 : 0}%` }} /></div>
+                          <span className="text-[11px] text-slate-400 w-9 text-right">{total ? Math.round((g.n / total) * 100) : 0}%</span>
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 text-right text-xs"><span className={g.ext > 0 ? 'text-amber-600 font-medium' : 'text-slate-300'}>{g.ext}</span></td>
+                      <td className="py-2 px-3 text-right text-slate-400 text-xs whitespace-nowrap">{g.avg != null ? `${g.avg}ms` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
         return (
           <div>
             <div className="flex items-center justify-between mb-4">
               <p className="text-xs text-slate-400">Where AI queries are being answered — Rules and the on-device model cost nothing and stay private; external is the only paid, off-device path.</p>
               <button onClick={loadAiUsage} className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c]">↻ Refresh</button>
+            </div>
+
+            {/* On-device AI (SLM) toggle — per-device capability switch */}
+            <div className="flex items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-4 mb-5">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800">On-device AI (private model)</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Runs a small model in your browser for open-ended questions — $0 and fully private (nothing leaves this device). Downloads a few hundred MB on first use. This setting applies to this browser only.
+                  {!webgpuSupported() && <span className="text-amber-600 font-medium"> This browser doesn’t support WebGPU, so it can’t run here.</span>}
+                </p>
+              </div>
+              <button role="switch" aria-checked={slmOn} onClick={toggleSlm} disabled={!webgpuSupported() && !slmOn}
+                className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${slmOn ? 'bg-[#1F4E79]' : 'bg-slate-300'} disabled:opacity-40`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${slmOn ? 'translate-x-5' : ''}`} />
+              </button>
             </div>
 
             <div className="grid grid-cols-4 gap-3 mb-5">
@@ -476,6 +542,10 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                   {seg.map(s => <span key={s.t} className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: s.c }} />{s.t} ({s.n})</span>)}
                 </div>
 
+                {/* Per-tenant breakdowns */}
+                {!scoped && breakdown('By client', byClient)}
+                {breakdown('By project', byProject)}
+
                 {/* Recent queries */}
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent queries</p>
                 <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
@@ -483,6 +553,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                     <thead>
                       <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
                         <th className="py-2.5 px-3">Time</th><th className="py-2.5 px-3">Tier</th>
+                        {!scoped && <th className="py-2.5 px-3">Client</th>}<th className="py-2.5 px-3">Project</th>
                         <th className="py-2.5 px-3">Intent</th><th className="py-2.5 px-3">Query</th><th className="py-2.5 px-3 text-right">Latency</th>
                       </tr>
                     </thead>
@@ -491,6 +562,8 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                         <tr key={r.id} className="border-t border-slate-100">
                           <td className="py-2 px-3 text-slate-500 text-xs whitespace-nowrap">{new Date(r.created_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
                           <td className="py-2 px-3"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tierBadge(r.tier)}`}>{r.tier}</span></td>
+                          {!scoped && <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.client_id ? clientName(r.client_id) : <span className="text-slate-300">—</span>}</td>}
+                          <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.project_id ? projNameOf(r.project_id) : <span className="text-slate-300">—</span>}</td>
                           <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.intent ?? '—'}</td>
                           <td className="py-2 px-3 text-slate-600 text-xs max-w-[280px] truncate" title={r.query}>{r.query ?? '—'}</td>
                           <td className="py-2 px-3 text-slate-400 text-xs text-right whitespace-nowrap">{r.latency_ms != null ? `${r.latency_ms}ms` : '—'}</td>

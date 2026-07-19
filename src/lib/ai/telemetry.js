@@ -4,11 +4,13 @@
 
 import { supabase } from '../supabase'
 
-export async function logUsage({ tier, intent, query, ok = true, escalated = false, latency_ms, model = null, tokens = null, ctx = {} }) {
+export async function logUsage({ tier, intent, query, ok = true, escalated = false, latency_ms, model = null, tokens = null, ctx = {}, clientId, projectId }) {
   try {
     await supabase.from('ai_usage').insert({
       user_id: ctx.userId ?? null,
-      client_id: ctx.clientId ?? null,
+      // Attributed client/project (from the resolved scope) win; fall back to the caller's own client.
+      client_id: clientId ?? ctx.clientId ?? null,
+      project_id: projectId ?? null,
       tier, intent,
       query: (query ?? '').slice(0, 300),
       ok, escalated,

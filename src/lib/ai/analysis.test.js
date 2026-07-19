@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope } from './analysis'
 
 const heat = {
   version: 1,
@@ -160,6 +160,27 @@ describe('groundedFallback', () => {
     const out = groundedFallback('zzzzz', grounding)
     expect(out).toContain('grounded snapshot')
     expect(out).toContain('RSR Program')
+  })
+})
+
+describe('resolveUsageScope', () => {
+  const clients = [{ id: 'c1', name: 'Horizon Power' }, { id: 'c2', name: 'Western Power' }]
+  const projects = [{ id: 'p1', name: 'RSR Program', client_id: 'c1' }, { id: 'p3', name: 'Grid Modernisation', client_id: 'c2' }]
+
+  it('attributes to a project named in the text and infers its client', () => {
+    expect(resolveUsageScope('how is the RSR Program tracking', null, clients, projects)).toEqual({ clientId: 'c1', projectId: 'p1' })
+  })
+
+  it('attributes to a client when only the client is named', () => {
+    expect(resolveUsageScope('overall risks for Horizon Power', null, clients, projects)).toEqual({ clientId: 'c1', projectId: null })
+  })
+
+  it('uses the remembered entity when the text names nothing', () => {
+    expect(resolveUsageScope('give me more detail', 'RSR Program', clients, projects)).toEqual({ clientId: 'c1', projectId: 'p1' })
+  })
+
+  it('returns nulls when nothing matches', () => {
+    expect(resolveUsageScope('what is at risk everywhere', null, clients, projects)).toEqual({ clientId: null, projectId: null })
   })
 })
 

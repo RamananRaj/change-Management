@@ -128,6 +128,20 @@ export function buildPhaseDrill({ projectName, phaseName, orderedContentIds, con
   return { type: 'progress', title: `${projectName} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
 }
 
+// ── Usage attribution (telemetry: which client / project a query was about) ───────
+// Pure: attribute an AI query to a client and/or project for the System Admin usage breakdown.
+// Prefers a project named in the query text, else in the conversation's remembered entity; infers
+// the client from that project. If no project matches, matches a client by name. Longest name
+// wins so multi-word names beat their substrings. Returns ids (or null) — never throws.
+export function resolveUsageScope(text, entity, clients = [], projects = []) {
+  const hay = `${text ?? ''}   ${entity ?? ''}`.toLowerCase()
+  const byLen = arr => [...(arr || [])].filter(x => x && x.name && x.name.length >= 3).sort((a, b) => b.name.length - a.name.length)
+  const proj = byLen(projects).find(p => hay.includes(p.name.toLowerCase())) || null
+  let clientId = proj ? (proj.client_id ?? null) : null
+  if (!clientId) clientId = (byLen(clients).find(c => hay.includes(c.name.toLowerCase())) || null)?.id ?? null
+  return { clientId: clientId ?? null, projectId: proj?.id ?? null }
+}
+
 // ── Grounded fallback (no model tier available) ───────────────────────────────────
 // Pure: when neither the on-device SLM nor an external model is available, turn the already-
 // assembled grounded context into a useful, deterministic answer instead of a "not configured"

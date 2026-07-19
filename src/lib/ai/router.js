@@ -4,16 +4,47 @@
 // Rules answer grounded, factual questions for free and privately. Only when no rule matches
 // does it fall to the in-browser SLM, and only when that's unavailable/failing does it reach
 // the external model (the one path where data can leave the device). Every hop is logged to
-// ai_usage so the System Admin tab can show exactly where the work is landing.
+// ai_usage — attributed to the client/project it was about — so the System Admin tab can show
+// exactly where the work is landing.
 
+import { supabase } from '../supabase'
 import { runRules, assembleClientContext } from './rules'
-import { groundedFallback } from './analysis'
+import { groundedFallback, resolveUsageScope } from './analysis'
 import { slmAvailable, runSlm } from './slm'
 import { runExternal } from './external'
 import { logUsage } from './telemetry'
 
+// Small cached id/name index (clients + projects) used only to attribute usage to a tenant.
+// Loaded once per session; RLS scopes it to what the caller may see.
+let scopeIndexPromise = null
+function usageIndex() {
+  if (!scopeIndexPromise) {
+    scopeIndexPromise = (async () => {
+      const [{ data: cl }, { data: pr }] = await Promise.all([
+        supabase.from('clients').select('id, name'),
+        supabase.from('projects').select('id, name, client_id'),
+      ])
+      return { clients: cl ?? [], projects: pr ?? [] }
+    })().catch(() => ({ clients: [], projects: [] }))
+  }
+  return scopeIndexPromise
+}
+
+// Log off the critical path: resolve the client/project the query was about, then write the row.
+// descriptor-provided ids (e.g. a report's client_id/project_id) take precedence over inference.
+function logScoped(base, text, ctx, descriptor) {
+  usageIndex().then(idx => {
+    const scope = resolveUsageScope(text, ctx.entity, idx.clients, idx.projects)
+    logUsage({
+      ...base, ctx,
+      clientId: descriptor?.client_id ?? scope.clientId ?? ctx.clientId ?? null,
+      projectId: descriptor?.project_id ?? scope.projectId ?? null,
+    })
+  }).catch(() => { /* telemetry is best-effort */ })
+}
+
 // ask(text, ctx, { onProgress }) → widget descriptor annotated with the tier that answered.
-// ctx = { userId, clientId }. onProgress is forwarded to the SLM for model-download updates.
+// ctx = { userId, clientId, entity, history }. onProgress is forwarded to the SLM for downloads.
 export async function ask(text, ctx = {}, { onProgress } = {}) {
   const t0 = performance.now()
 
@@ -21,7 +52,7 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   const r = await runRules(text, ctx)
   if (r.matched) {
     const latency = performance.now() - t0
-    logUsage({ tier: 'rules', intent: r.intent, query: text, ok: true, escalated: false, latency_ms: latency, ctx })
+    logScoped({ tier: 'rules', intent: r.intent, query: text, ok: true, escalated: false, latency_ms: latency }, text, ctx, r.descriptor)
     return { tier: 'rules', intent: r.intent, ...r.descriptor }
   }
 
@@ -36,7 +67,7 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
     try {
       const out = await runSlm(text, gctx, onProgress)
       const latency = performance.now() - t0
-      logUsage({ tier: 'slm', intent: 'freeform', query: text, ok: true, escalated: true, latency_ms: latency, model: out.model, tokens: out.tokens, ctx })
+      logScoped({ tier: 'slm', intent: 'freeform', query: text, ok: true, escalated: true, latency_ms: latency, model: out.model, tokens: out.tokens }, text, ctx)
       return { tier: 'slm', type: 'narrative', title: 'CORA', body: out.text }
     } catch {
       // fall through to external
@@ -52,11 +83,11 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   if (ext.configured === false && !ext.error) {
     const body = groundedFallback(text, grounding)
     if (body) {
-      logUsage({ tier: 'rules', intent: 'grounded_fallback', query: text, ok: true, escalated: false, latency_ms: latency, ctx })
+      logScoped({ tier: 'rules', intent: 'grounded_fallback', query: text, ok: true, escalated: false, latency_ms: latency }, text, ctx)
       return { tier: 'rules', type: 'narrative', title: 'CORA', body, grounded: true }
     }
   }
 
-  logUsage({ tier: 'external', intent: 'freeform', query: text, ok: !ext.error, escalated: true, latency_ms: latency, model: ext.model, ctx })
+  logScoped({ tier: 'external', intent: 'freeform', query: text, ok: !ext.error, escalated: true, latency_ms: latency, model: ext.model }, text, ctx)
   return { tier: 'external', type: 'narrative', title: 'CORA', body: ext.text, external: ext.configured !== false }
 }

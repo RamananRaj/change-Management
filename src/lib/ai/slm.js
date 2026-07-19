@@ -19,9 +19,20 @@ export function slmOptedIn() {
   try { return localStorage.getItem('cf_ai_slm') === 'on' } catch { return false }
 }
 
+// Turn the on-device model on/off for THIS device (persisted in localStorage). Returns the new state.
+export function setSlmOptedIn(on) {
+  try { on ? localStorage.setItem('cf_ai_slm', 'on') : localStorage.removeItem('cf_ai_slm') } catch { /* storage blocked */ }
+  return slmOptedIn()
+}
+
+// Does this browser expose WebGPU? (Required for the on-device model to actually run.)
+export function webgpuSupported() {
+  return typeof navigator !== 'undefined' && 'gpu' in navigator
+}
+
 // Available only when opted in AND the browser exposes WebGPU.
 export async function slmAvailable() {
-  return slmOptedIn() && typeof navigator !== 'undefined' && 'gpu' in navigator
+  return slmOptedIn() && webgpuSupported()
 }
 
 // Lazy-load the engine once. onProgress({ text, progress }) reports the download.
