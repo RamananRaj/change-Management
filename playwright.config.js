@@ -9,7 +9,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
-  reporter: [['list'], ['./e2e/reporter.js']],
+  // list = console, html = the artifact CI uploads for debugging failures, custom = posts to the app
+  reporter: [['list'], ['html', { open: 'never' }], ['./e2e/reporter.js']],
   use: {
     baseURL: process.env.E2E_BASE_URL || 'https://change-management-rust.vercel.app',
     trace: 'on-first-retry',
