@@ -1,0 +1,35 @@
+name: E2E
+
+# Runs Playwright against the deployed app. Manual + daily so it always tests what's live (rather
+# than racing the Vercel deploy on push). Results post to System Admin → E2E Tests when the
+# E2E_REPORT_* secrets are set; the run still passes/fails on its own regardless.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'   # 06:00 UTC daily
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run Playwright E2E
+        run: npm run e2e
+        env:
+          E2E_BASE_URL:      ${{ secrets.E2E_BASE_URL }}
+          E2E_REPORT_URL:    ${{ secrets.E2E_REPORT_URL }}
+          E2E_REPORT_SECRET: ${{ secrets.E2E_REPORT_SECRET }}
+          E2E_EMAIL:         ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD:      ${{ secrets.E2E_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -9,7 +9,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const scoped = !!clientId
   const subtabs = scoped
     ? ['User Management', 'Pending Invites', 'AI Usage']
-    : ['User Management', 'Pending Invites', 'System Health', 'AI Usage', 'Notifications']
+    : ['User Management', 'Pending Invites', 'System Health', 'E2E Tests', 'AI Usage', 'Notifications']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -204,6 +204,14 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
     setHistBusy(false)
   }
 
+  // ── E2E Tests (Playwright run history) ────────────────────────────────────────
+  const [e2e, setE2e] = useState(null)
+  const [expandedE2e, setExpandedE2e] = useState(null)
+  async function loadE2e() {
+    const { data } = await supabase.from('e2e_runs').select('*').order('ran_at', { ascending: false }).limit(20)
+    setE2e(data ?? [])
+  }
+
   // ── Notifications (admin config) ──────────────────────────────────────────────
   const [notif, setNotif] = useState(null)
   const [notifBusy, setNotifBusy] = useState(false)
@@ -259,7 +267,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* Sub-navigation */}
       <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {subtabs.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage(); if (t === 'Notifications' && notif === null) loadNotif() }}
+          <button key={t} onClick={() => { setTab(t); if (t === 'System Health') { loadHealthHistory(); loadSchedule(); if (!health.ran) runHealth() } if (t === 'AI Usage' && ai === null) loadAiUsage(); if (t === 'Notifications' && notif === null) loadNotif(); if (t === 'E2E Tests' && e2e === null) loadE2e() }}
             className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors ${tab === t ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
             {t}{t === 'Pending Invites' && invites.length > 0 ? ` (${invites.length})` : ''}
           </button>
@@ -777,6 +785,97 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           </div>
         )
       })()}
+
+      {/* ── E2E TESTS ── */}
+      {tab === 'E2E Tests' && (
+        e2e === null ? <div className="space-y-2">{[1,2,3].map(n => <div key={n} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div> : (() => {
+          const last = e2e[0]
+          const rate = r => r && r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0
+          const badge = s => s === 'passed' ? 'bg-green-100 text-green-700' : s === 'skipped' ? 'bg-slate-100 text-slate-500' : 'bg-red-100 text-red-700'
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs text-slate-400">Playwright end-to-end runs, reported from CI. Click a run to see every spec it executed.</p>
+                <button onClick={loadE2e} className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c]">↻ Refresh</button>
+              </div>
+
+              {e2e.length === 0 ? (
+                <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No E2E runs recorded yet. Trigger the “E2E” GitHub workflow (or run <code>npm run e2e</code> with the report env set).</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-4 gap-3 mb-5">
+                    {[
+                      { l: 'Latest pass rate', v: `${rate(last)}%`, c: rate(last) === 100 ? 'text-green-600' : 'text-[#E8913A]' },
+                      { l: 'Passed', v: last.passed ?? 0, c: 'text-green-600' },
+                      { l: 'Failed', v: last.failed ?? 0, c: (last.failed ?? 0) > 0 ? 'text-red-600' : 'text-slate-400' },
+                      { l: 'Last run', v: new Date(last.ran_at).toLocaleDateString('en', { day: 'numeric', month: 'short' }), c: 'text-[#1F4E79]' },
+                    ].map((m, i) => (
+                      <div key={i} className="bg-white rounded-xl border border-slate-100 p-4">
+                        <p className={`text-2xl font-bold ${m.c}`}>{m.v}</p>
+                        <p className="text-[11px] text-slate-400 mt-1 font-medium">{m.l}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Run history</p>
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+                          <th className="py-2 px-3 w-6"></th><th className="py-2 px-3">Time</th><th className="py-2 px-3">Source</th>
+                          <th className="py-2 px-3">Passed</th><th className="py-2 px-3">Failed</th><th className="py-2 px-3">Skipped</th>
+                          <th className="py-2 px-3">Pass rate</th><th className="py-2 px-3">Duration</th><th className="py-2 px-3">Commit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {e2e.map(r => {
+                          const open = expandedE2e === r.id
+                          const specs = Array.isArray(r.specs) ? r.specs : []
+                          return (
+                            <Fragment key={r.id}>
+                              <tr onClick={() => setExpandedE2e(open ? null : r.id)} className="border-t border-slate-100 cursor-pointer hover:bg-slate-50/60">
+                                <td className="py-2 px-3 text-slate-400 text-xs">{open ? '▾' : '▸'}</td>
+                                <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{new Date(r.ran_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                                <td className="py-2 px-3"><span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">{r.source}</span></td>
+                                <td className="py-2 px-3 text-green-600 font-medium">{r.passed}</td>
+                                <td className={`py-2 px-3 font-medium ${r.failed > 0 ? 'text-red-600' : 'text-slate-300'}`}>{r.failed}</td>
+                                <td className="py-2 px-3 text-slate-400">{r.skipped ?? 0}</td>
+                                <td className="py-2 px-3"><span className={`text-xs font-semibold ${rate(r) === 100 ? 'text-green-600' : 'text-[#E8913A]'}`}>{rate(r)}%</span></td>
+                                <td className="py-2 px-3 text-slate-400 text-xs whitespace-nowrap">{r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : '—'}</td>
+                                <td className="py-2 px-3 text-slate-400 text-xs font-mono">{r.commit ? r.commit.slice(0, 7) : '—'}</td>
+                              </tr>
+                              {open && (
+                                <tr className="bg-slate-50/60"><td /><td colSpan={8} className="px-3 py-3">
+                                  {specs.length === 0 ? <p className="text-xs text-slate-400">No per-spec detail recorded.</p> : (
+                                    <div className="space-y-1">
+                                      {specs.map((s, i) => (
+                                        <div key={i} className="flex items-center justify-between gap-3 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5">
+                                          <span className="flex items-center gap-2 text-[12px] text-slate-700 min-w-0">
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${badge(s.status)}`}>{s.status}</span>
+                                            <span className="truncate">{s.title}{s.file ? <span className="text-slate-300"> · {s.file}</span> : ''}</span>
+                                          </span>
+                                          <span className="flex items-center gap-2 shrink-0">
+                                            {s.error && <span className="text-[11px] text-red-500 max-w-[280px] truncate" title={s.error}>{s.error}</span>}
+                                            <span className="text-[11px] text-slate-400 whitespace-nowrap">{s.duration_ms != null ? `${s.duration_ms}ms` : ''}</span>
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td></tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )
+        })()
+      )}
 
       {/* ── NOTIFICATIONS ── */}
       {tab === 'Notifications' && (

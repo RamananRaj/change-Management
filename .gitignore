@@ -30,3 +30,8 @@ dist-ssr
 supabase/.temp/
 
 vitest.config.js.timestamp-*.mjs
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
