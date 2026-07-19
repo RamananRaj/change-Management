@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 const PHASES = [1, 2, 3, 4, 5]
@@ -15,6 +15,8 @@ const iso    = d => d.toISOString().slice(0, 10)
 const monthFloor = d => new Date(d.getFullYear(), d.getMonth(), 1)
 const monthCeil  = d => new Date(d.getFullYear(), d.getMonth() + 1, 1)
 const fmtShort   = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+// While dragging we show the full date — month and year matter when you're pushing a bar out.
+const fmtLong    = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
 const emptyMs = { name: '', lane: 'delivery', kind: 'point', milestone_date: '', starts_on: '', ends_on: '' }
 
@@ -107,6 +109,76 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     load()
   }
 
+  // ── Drag to reschedule ──────────────────────────────────────────────────────
+  // Drag a bar's middle to move it, or either edge to change its duration. Dates preview live
+  // while dragging (day-snapped) and only persist on release, so a cancelled drag changes nothing.
+  const dragRef = useRef(null)
+  const [dragTick, setDragTick] = useState(0)
+  const bump = () => setDragTick(t => t + 1)
+  const shiftIso = (isoStr, days) => { const d = toDate(isoStr); d.setDate(d.getDate() + days); return iso(d) }
+
+  function dragPreview(d) {
+    if (!d) return null
+    const days = Math.round(((d.dx * (domainEnd - domainStart)) / trackW) / 864e5)
+    if (d.mode === 'move') return { s: shiftIso(d.s, days), e: d.e ? shiftIso(d.e, days) : null }
+    if (d.mode === 'start') { const ns = shiftIso(d.s, days); return { s: d.e && ns > d.e ? d.e : ns, e: d.e } }
+    if (d.mode === 'end') { const ne = shiftIso(d.e, days); return { s: d.s, e: ne < d.s ? d.s : ne } }
+    return { s: d.s, e: d.e }
+  }
+  // Dates to draw for this row — the live preview while dragging, otherwise what's stored.
+  const live = (id, s, e) => {
+    const d = dragRef.current
+    if (!d || d.id !== id) return { s, e }
+    return dragPreview(d) ?? { s, e }
+  }
+
+  function beginDrag(ev, item, mode, table) {
+    if (readOnly || !hasDomain) return
+    ev.preventDefault(); ev.stopPropagation()
+    dragRef.current = {
+      id: item.id ?? item.phase_number, mode, table,
+      s: item.starts_on ?? item.planned_start ?? item.milestone_date,
+      e: item.ends_on ?? item.planned_end ?? null,
+      x0: ev.clientX, dx: 0, name: item.name ?? PHASE_NAMES[item.phase_number],
+    }
+    bump()
+    const move = e2 => { if (dragRef.current) { dragRef.current.dx = e2.clientX - dragRef.current.x0; bump() } }
+    const up = async () => {
+      window.removeEventListener('pointermove', move)
+      const d = dragRef.current
+      dragRef.current = null; bump()
+      if (!d || !d.dx) return
+      const p = dragPreview({ ...d })
+      if (!p) return
+      if (d.table === 'project_phases') {
+        await supabase.from('project_phases').update({ planned_start: p.s, planned_end: p.e })
+          .eq('project_id', project.id).eq('phase_number', d.id)
+      } else if (p.e) {
+        await supabase.from('project_milestones').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
+      } else {
+        await supabase.from('project_milestones').update({ milestone_date: p.s }).eq('id', d.id)
+      }
+      load()
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up, { once: true })
+  }
+
+  // Grab handles on a band: middle moves, edges resize.
+  const handleStyle = 'absolute top-0 h-full w-2 cursor-ew-resize'
+  const DragTip = ({ id, s, e }) => {
+    void dragTick            // re-render on every pointer move while dragging
+    const d = dragRef.current
+    if (!d || d.id !== id) return null
+    const p = dragPreview(d)
+    if (!p) return null
+    const txt = p.e ? `${fmtLong(toDate(p.s))} → ${fmtLong(toDate(p.e))}` : fmtLong(toDate(p.s))
+    return (
+      <div className="absolute -top-5 z-20 bg-[#1F4E79] text-white text-[10px] font-semibold px-2 py-0.5 rounded whitespace-nowrap pointer-events-none"
+        style={{ left: Math.max(posOf(p.s), 0) }}>{txt}</div>
+    )
+  }
+
   // ── Build time domain from every date present ──
   const allDates = []
   phases.forEach(p => { if (p.planned_start) allDates.push(toDate(p.planned_start)); if (p.planned_end) allDates.push(toDate(p.planned_end)) })
@@ -188,15 +260,26 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   <div className="relative flex-1 h-8" style={{ width: trackW }}>
                     <TodayLine />
                     {isBand ? (() => {
-                      const bx = posOf(m.starts_on)
-                      const bw = Math.max(posOf(m.ends_on) - bx, 8)
+                      const lv = live(m.id, m.starts_on, m.ends_on)
+                      const bx = posOf(lv.s)
+                      const bw = Math.max(posOf(lv.e) - bx, 8)
                       const inside = bw >= estTextW(m.name)
                       const outRight = bx + bw + estTextW(m.name) <= trackW
                       return (
                         <>
-                          <div className="absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden" style={{ left: bx, width: bw, background: '#e2e8f0', border: '1px solid #cbd5e1' }}>
-                            {inside && <span className="text-[10px] font-semibold text-slate-600 whitespace-nowrap">{m.name}</span>}
+                          <DragTip id={m.id} s={lv.s} e={lv.e} />
+                          <div onPointerDown={e => beginDrag(e, m, 'move', 'project_milestones')}
+                            title={readOnly ? '' : 'Drag to move · drag an edge to change duration'}
+                            className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                            style={{ left: bx, width: bw, background: '#e2e8f0', border: '1px solid #cbd5e1' }}>
+                            {inside && <span className="text-[10px] font-semibold text-slate-600 whitespace-nowrap select-none">{m.name}</span>}
                           </div>
+                          {!readOnly && (
+                            <>
+                              <div className={handleStyle} style={{ left: bx - 3 }} onPointerDown={e => beginDrag(e, m, 'start', 'project_milestones')} />
+                              <div className={handleStyle} style={{ left: bx + bw - 5 }} onPointerDown={e => beginDrag(e, m, 'end', 'project_milestones')} />
+                            </>
+                          )}
                           {!inside && (
                             <span className="absolute top-2 text-[10px] font-semibold text-slate-600 whitespace-nowrap"
                               style={outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(m.name) - 4, 2) }}>{m.name}</span>
@@ -204,11 +287,14 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                         </>
                       )
                     })() : m.milestone_date && (() => {
-                      const dx = posOf(m.milestone_date)
+                      const dx = posOf(live(m.id, m.milestone_date, null).s)
                       const labelRight = dx + 12 + estTextW(m.name) <= trackW
                       return (
                         <>
-                          <div className="absolute z-[5]" style={{ left: dx - 7, top: 6 }}>
+                          <DragTip id={m.id} s={live(m.id, m.milestone_date, null).s} e={null} />
+                          <div className={`absolute z-[5] ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`} style={{ left: dx - 7, top: 6 }}
+                            title={readOnly ? '' : 'Drag to move this milestone'}
+                            onPointerDown={e => beginDrag(e, m, 'move', 'project_milestones')}>
                             <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={m.color || '#1F4E79'} /></svg>
                           </div>
                           <span className="absolute top-2 text-[10px] font-semibold text-[#1F4E79] whitespace-nowrap"
@@ -299,8 +385,9 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                 else                                       effStatus = 'locked'   // upcoming
               }
               const cfg = STATUS[effStatus] ?? STATUS.locked
-              const startX = s ? posOf(s) : null
-              const endX   = e ? posOf(e) : (s ? posOf(s) + 30 : null)
+              const plv = live(p.phase_number, s, e)
+              const startX = plv.s ? posOf(plv.s) : null
+              const endX   = plv.e ? posOf(plv.e) : (plv.s ? posOf(plv.s) + 30 : null)
               return (
                 <div key={p.phase_number} className="flex items-center border-b border-slate-50">
                   <LabelCol name={`0${p.phase_number} ${PHASE_NAMES[p.phase_number]}`}
@@ -314,7 +401,17 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                       const outRight = startX + barW + estTextW(label) <= trackW
                       return (
                         <>
-                          <div className="absolute top-1.5 h-5 rounded overflow-hidden" style={{ left: startX, width: barW, background: cfg.track }}>
+                          <DragTip id={p.phase_number} s={plv.s} e={plv.e} />
+                          {!readOnly && plv.s && plv.e && (
+                            <>
+                              <div className={handleStyle} style={{ left: startX - 3 }} onPointerDown={ev => beginDrag(ev, p, 'start', 'project_phases')} />
+                              <div className={handleStyle} style={{ left: startX + barW - 5 }} onPointerDown={ev => beginDrag(ev, p, 'end', 'project_phases')} />
+                            </>
+                          )}
+                          <div onPointerDown={ev => plv.s && beginDrag(ev, p, 'move', 'project_phases')}
+                            title={readOnly ? '' : 'Drag to move · drag an edge to change duration'}
+                            className={`absolute top-1.5 h-5 rounded overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                            style={{ left: startX, width: barW, background: cfg.track }}>
                             {effStatus !== 'locked' && <div className="h-full rounded" style={{ width: `${pct}%`, background: cfg.fill }} />}
                             {inside && <span className="absolute inset-0 flex items-center px-1.5 text-[10px] font-semibold whitespace-nowrap" style={{ color: cfg.text }}>{label}</span>}
                           </div>
