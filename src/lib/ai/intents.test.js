@@ -24,6 +24,19 @@ describe('matchIntent', () => {
     expect(matchIntent('what is coming up')?.intent).toBe('upcoming')
   })
 
+  it('maps natural stakeholder-impact phrasings to the heatmap intent', () => {
+    for (const q of [
+      'Who are the high Impacted Stakeholders',
+      'who is most impacted by this change',
+      'show me stakeholder impact for Horizon Power',
+      'which are the impacted groups',
+      'impact assessment please',
+      'highest impacted teams',
+    ]) {
+      expect(matchIntent(q)?.intent, q).toBe('heatmap')
+    }
+  })
+
   it('captures a phase number into params', () => {
     const m = matchIntent('summarise phase 3')
     expect(m?.intent).toBe('readiness')

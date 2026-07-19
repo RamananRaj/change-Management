@@ -8,7 +8,9 @@ export const INTENTS = [
   { intent: 'my_readiness',        re: /(my readiness|my surveys?|my (rag|score)|how ready am i)/i },
   { intent: 'my_progress',         re: /(my progress|my journey|my phases|my steps|my completion|how am i doing|where am i)/i },
   { intent: 'report',              re: /(report|wrap[- ]?up|status (report|update|pack)|exec(utive)?[- ]?(pack|summary|report|brief(ing)?)|board[- ]?pack|briefing[- ]?pack|change[- ]?pack|full (picture|rundown))/i },
-  { intent: 'heatmap',             re: /(heat ?map|impact map|stakeholder map)/i },
+  // Stakeholder impact — people ask this many ways ("who's most impacted", "high impacted
+  // stakeholders", "impact assessment"), so match the concept, not just the artifact's name.
+  { intent: 'heatmap',             re: /(heat ?map|impact map|stakeholder map|stakeholder impact|impact(ed)? stakeholders?|(most|high(ly)?|highest|worst) impacted|who (is|are|'?s) .*impact|impact assessment|impacted groups?)/i },
   { intent: 'members_behind',      re: /(who('?s| is)?\s+behind|laggard|not (started|done|completed)|behind on|stuck on)/i },
   { intent: 'at_risk',             re: /(at risk|at-risk|overdue|slipping|needs? attention|red flags?|blockers?)/i },
   { intent: 'upcoming',            re: /(upcoming|coming up|what('?s| is) next|phase starts?|what('?s| is) ahead|road ?ahead)/i },

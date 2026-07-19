@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL } from './analysis'
 
 export { matchIntent }
 
@@ -214,9 +214,25 @@ async function runHeatmap(_params, text) {
   else if (list.length === 1) pick = list[0]
 
   if (pick) {
+    // "Who are the high-impacted stakeholders?" deserves a direct answer, not just a grid — rank
+    // the groups by total severity and name the top ones first.
+    const ranked = (pick.data.rows ?? []).map(r => {
+      const cells = r.cells ?? []
+      const total = cells.reduce((s, lv) => s + (LV_W[lv] || 0), 0)
+      const peak = cells.reduce((m, lv) => ((LV_W[lv] || 0) > (LV_W[m] || 0) ? lv : m), 'none')
+      const highs = cells.filter(lv => lv === 'vh' || lv === 'h').length
+      return { name: r.label, total, peak, highs }
+    }).sort((a, b) => b.total - a.total)
+    const top = ranked.filter(g => g.peak === 'vh' || g.peak === 'h')
+    const lead = top.length
+      ? `The most impacted groups are **${top.slice(0, 3).map(g => g.name).join('**, **')}**. ` +
+        top.slice(0, 3).map(g => `${g.name} peaks at ${LV_LABEL[g.peak]} across ${g.highs} domain${g.highs === 1 ? '' : 's'}`).join('; ') +
+        '. Focus engagement and comms there first.'
+      : ranked.length ? `No group is rated High or Very High — the heaviest is **${ranked[0].name}**.` : null
+
     return { type: 'heatmap', title: `${nameOfClient(pick.client_id)} — ${pick.title}`,
       cols: pick.data.cols, rows: pick.data.rows, version: pick.version, source: pick.source,
-      headline: pick.data.commentary ?? null, insights: analyseHeatmap(pick.data) }
+      intro: lead, headline: pick.data.commentary ?? null, insights: analyseHeatmap(pick.data) }
   }
   if (list.length > 1) {
     const names = [...new Set(list.map(a => nameOfClient(a.client_id)).filter(Boolean))]
