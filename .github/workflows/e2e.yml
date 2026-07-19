@@ -1,12 +1,11 @@
 name: E2E
 
-# Runs Playwright against the deployed app. Manual + daily so it always tests what's live (rather
-# than racing the Vercel deploy on push). Results post to System Admin → E2E Tests when the
-# E2E_REPORT_* secrets are set; the run still passes/fails on its own regardless.
+# Runs Playwright against the deployed app. Triggered on demand — either from GitHub, or from the
+# platform itself (System Admin → E2E Tests → "Run tests now" / its schedule, which dispatches this
+# workflow via the e2e-trigger function). Scheduling lives in the app so Master Admin controls it in
+# one place. Results post to System Admin → E2E Tests when the E2E_REPORT_* secrets are set.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 6 * * *'   # 06:00 UTC daily
 
 jobs:
   e2e:

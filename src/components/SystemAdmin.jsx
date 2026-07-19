@@ -207,9 +207,32 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   // ── E2E Tests (Playwright run history) ────────────────────────────────────────
   const [e2e, setE2e] = useState(null)
   const [expandedE2e, setExpandedE2e] = useState(null)
+  const [e2eSched, setE2eSched] = useState(null)     // { active, interval_minutes, cron }
+  const [e2eBusy, setE2eBusy] = useState(false)
+  const E2E_INTERVALS = [[0, 'Off'], [360, '6 hours'], [720, '12 hours'], [1440, 'Daily']]
+
   async function loadE2e() {
-    const { data } = await supabase.from('e2e_runs').select('*').order('ran_at', { ascending: false }).limit(20)
+    const [{ data }, sched] = await Promise.all([
+      supabase.from('e2e_runs').select('*').order('ran_at', { ascending: false }).limit(20),
+      supabase.rpc('get_e2e_schedule'),
+    ])
     setE2e(data ?? [])
+    setE2eSched(sched.error ? null : (sched.data?.[0] ?? { active: false, interval_minutes: null, cron: null }))
+  }
+  // Kick off a run now — dispatches the GitHub workflow; results land here when it finishes.
+  async function runE2eNow() {
+    setE2eBusy(true); setNote(null)
+    const { data, error } = await supabase.functions.invoke('e2e-trigger', { body: { source: 'manual' } })
+    setE2eBusy(false)
+    if (error || data?.error) setNote({ type: 'err', text: data?.error ?? error?.message ?? 'Could not start the run.' })
+    else setNote({ type: 'ok', text: 'E2E run started — results appear here in a few minutes (↻ Refresh).' })
+  }
+  async function setE2eSchedule(minutes) {
+    setE2eBusy(true); setNote(null)
+    const { data, error } = await supabase.rpc('set_e2e_schedule', { p_minutes: minutes })
+    setE2eBusy(false)
+    if (error) setNote({ type: 'err', text: error.message.includes('e2e_cron_config') ? 'Schedule store not set up — run add_e2e_schedule.sql and insert the URL + secret.' : error.message })
+    else { setNote({ type: 'ok', text: data }); loadE2e() }
   }
 
   // ── Notifications (admin config) ──────────────────────────────────────────────
@@ -794,13 +817,41 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           const badge = s => s === 'passed' ? 'bg-green-100 text-green-700' : s === 'skipped' ? 'bg-slate-100 text-slate-500' : 'bg-red-100 text-red-700'
           return (
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs text-slate-400">Playwright end-to-end runs, reported from CI. Click a run to see every spec it executed.</p>
-                <button onClick={loadE2e} className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c]">↻ Refresh</button>
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <p className="text-xs text-slate-400">Playwright end-to-end runs against the live app. Click a run to see every spec it executed.</p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={runE2eNow} disabled={e2eBusy}
+                    className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] disabled:opacity-60">
+                    {e2eBusy ? 'Starting…' : '▶ Run tests now'}
+                  </button>
+                  <button onClick={loadE2e} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50">↻</button>
+                </div>
+              </div>
+
+              {/* Automated schedule — server-side, admin controlled */}
+              <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-4 mb-5">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-800">Automated runs</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {e2eSched == null ? 'Loading schedule…'
+                      : e2eSched.interval_minutes
+                        ? `Runs every ${e2eSched.interval_minutes >= 1440 ? 'day' : `${e2eSched.interval_minutes / 60} hours`} automatically.`
+                        : 'Not scheduled — runs only when you click “Run tests now”.'}
+                  </p>
+                </div>
+                <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                  {E2E_INTERVALS.map(([m, l]) => {
+                    const active = e2eSched && (e2eSched.interval_minutes ?? 0) === m
+                    return (
+                      <button key={m} onClick={() => setE2eSchedule(m)} disabled={e2eBusy}
+                        className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors disabled:opacity-50 ${active ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+                    )
+                  })}
+                </div>
               </div>
 
               {e2e.length === 0 ? (
-                <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No E2E runs recorded yet. Trigger the “E2E” GitHub workflow (or run <code>npm run e2e</code> with the report env set).</div>
+                <div className="text-center py-14 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No E2E runs recorded yet — click <strong>Run tests now</strong>, or set an automated schedule above.</div>
               ) : (
                 <>
                   <div className="grid grid-cols-4 gap-3 mb-5">
