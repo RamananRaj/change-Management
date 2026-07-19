@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { slmOptedIn, setSlmOptedIn, webgpuSupported } from '../lib/ai/slm'
 
@@ -211,21 +211,50 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const [e2eBusy, setE2eBusy] = useState(false)
   const E2E_INTERVALS = [[0, 'Off'], [360, '6 hours'], [720, '12 hours'], [1440, 'Daily']]
 
+  // While a triggered run is in flight we poll for the new row, so the admin doesn't have to
+  // refresh manually. baselineRef holds the newest run id at trigger time.
+  const [e2eRunning, setE2eRunning] = useState(false)
+  const [e2eElapsed, setE2eElapsed] = useState(0)
+  const baselineRef = useRef(null)
+  const pollRef = useRef(null)
+  const tickRef = useRef(null)
+
+  function stopPolling() {
+    clearInterval(pollRef.current); clearInterval(tickRef.current)
+    pollRef.current = null; tickRef.current = null
+    setE2eRunning(false); setE2eElapsed(0)
+  }
+  useEffect(() => () => stopPolling(), [])   // clean up on unmount
+
   async function loadE2e() {
     const [{ data }, sched] = await Promise.all([
       supabase.from('e2e_runs').select('*').order('ran_at', { ascending: false }).limit(20),
       supabase.rpc('get_e2e_schedule'),
     ])
-    setE2e(data ?? [])
+    const rows = data ?? []
+    setE2e(rows)
     setE2eSched(sched.error ? null : (sched.data?.[0] ?? { active: false, interval_minutes: null, cron: null }))
+    // A new run landed → stop waiting.
+    if (pollRef.current && rows[0]?.id && rows[0].id !== baselineRef.current) {
+      stopPolling()
+      setNote({ type: 'ok', text: `Run finished — ${rows[0].passed} passed, ${rows[0].failed} failed.` })
+    }
+    return rows
   }
-  // Kick off a run now — dispatches the GitHub workflow; results land here when it finishes.
+
+  // Kick off a run now — dispatches the GitHub workflow; we then poll until the result arrives.
   async function runE2eNow() {
     setE2eBusy(true); setNote(null)
     const { data, error } = await supabase.functions.invoke('e2e-trigger', { body: { source: 'manual' } })
     setE2eBusy(false)
-    if (error || data?.error) setNote({ type: 'err', text: data?.error ?? error?.message ?? 'Could not start the run.' })
-    else setNote({ type: 'ok', text: 'E2E run started — results appear here in a few minutes (↻ Refresh).' })
+    if (error || data?.error) { setNote({ type: 'err', text: data?.error ?? error?.message ?? 'Could not start the run.' }); return }
+    setNote({ type: 'ok', text: 'E2E run started on the server — this page will update automatically when it finishes.' })
+    baselineRef.current = e2e?.[0]?.id ?? null
+    setE2eRunning(true); setE2eElapsed(0)
+    tickRef.current = setInterval(() => setE2eElapsed(s => s + 1), 1000)
+    pollRef.current = setInterval(() => { loadE2e() }, 10_000)
+    // Give up waiting after 6 minutes (the run may still complete — just hit Refresh).
+    setTimeout(() => { if (pollRef.current) { stopPolling(); setNote({ type: 'ok', text: 'Still running — press Refresh in a moment to see the result.' }) } }, 360_000)
   }
   async function setE2eSchedule(minutes) {
     setE2eBusy(true); setNote(null)
@@ -813,20 +842,38 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {tab === 'E2E Tests' && (
         e2e === null ? <div className="space-y-2">{[1,2,3].map(n => <div key={n} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div> : (() => {
           const last = e2e[0]
-          const rate = r => r && r.total > 0 ? Math.round((r.passed / r.total) * 100) : 0
+          // Pass rate over *executed* tests — skipped ones shouldn't drag it down.
+          const rate = r => {
+            if (!r) return 0
+            const executed = (r.total ?? 0) - (r.skipped ?? 0)
+            return executed > 0 ? Math.round(((r.passed ?? 0) / executed) * 100) : 0
+          }
           const badge = s => s === 'passed' ? 'bg-green-100 text-green-700' : s === 'skipped' ? 'bg-slate-100 text-slate-500' : 'bg-red-100 text-red-700'
           return (
             <div>
               <div className="flex items-center justify-between gap-3 mb-4">
                 <p className="text-xs text-slate-400">Playwright end-to-end runs against the live app. Click a run to see every spec it executed.</p>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={runE2eNow} disabled={e2eBusy}
+                  <button onClick={runE2eNow} disabled={e2eBusy || e2eRunning}
                     className="text-sm font-semibold text-white bg-[#1F4E79] px-4 py-2 rounded-lg hover:bg-[#163a5c] disabled:opacity-60">
-                    {e2eBusy ? 'Starting…' : '▶ Run tests now'}
+                    {e2eBusy ? 'Starting…' : e2eRunning ? 'Running…' : '▶ Run tests now'}
                   </button>
-                  <button onClick={loadE2e} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50">↻</button>
+                  <button onClick={loadE2e} className="text-sm font-semibold text-[#1F4E79] border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50 whitespace-nowrap">↻ Refresh</button>
                 </div>
               </div>
+
+              {/* Live progress while a triggered run is in flight */}
+              {e2eRunning && (
+                <div className="flex items-center gap-3 bg-[#1F4E79]/5 border border-[#1F4E79]/20 rounded-xl px-4 py-3 mb-5">
+                  <span className="w-4 h-4 rounded-full border-2 border-[#1F4E79]/30 border-t-[#1F4E79] animate-spin shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-[#1F4E79]">Tests running on the server…</p>
+                    <p className="text-[11px] text-slate-500">
+                      {Math.floor(e2eElapsed / 60)}:{String(e2eElapsed % 60).padStart(2, '0')} elapsed · checking every 10s — results appear automatically. Typically 1–2 minutes.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Automated schedule — server-side, admin controlled */}
               <div className="flex flex-wrap items-center justify-between gap-4 bg-white border border-slate-200 rounded-xl p-4 mb-5">
@@ -856,7 +903,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                 <>
                   <div className="grid grid-cols-4 gap-3 mb-5">
                     {[
-                      { l: 'Latest pass rate', v: `${rate(last)}%`, c: rate(last) === 100 ? 'text-green-600' : 'text-[#E8913A]' },
+                      { l: (last.skipped ?? 0) > 0 ? `Latest pass rate (${last.skipped} skipped)` : 'Latest pass rate', v: `${rate(last)}%`, c: rate(last) === 100 ? 'text-green-600' : 'text-[#E8913A]' },
                       { l: 'Passed', v: last.passed ?? 0, c: 'text-green-600' },
                       { l: 'Failed', v: last.failed ?? 0, c: (last.failed ?? 0) > 0 ? 'text-red-600' : 'text-slate-400' },
                       { l: 'Last run', v: new Date(last.ran_at).toLocaleDateString('en', { day: 'numeric', month: 'short' }), c: 'text-[#1F4E79]' },
