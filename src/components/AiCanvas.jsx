@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 import { ask } from '../lib/ai/router'
 import { loadSummary, noteCorrection } from '../lib/ai/rules'
 import { slmOptedIn } from '../lib/ai/slm'
@@ -419,12 +420,29 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
   const [input, setInput] = useState('')
   const [pendingFollowup, setPendingFollowup] = useState(null)   // e.g. 'report' — the last card asked a question
   const lastMiss = useRef(null)   // last query that fell through to SLM/external — for silent self-correction
+  const [entityNames, setEntityNames] = useState([])   // known client/project/person names, longest-first
+  const lastEntity = useRef(null)   // the entity the conversation is currently about
+  const history = useRef([])        // recent [{ q, a }] turns for conversational memory
   const [attachedFile, setAttachedFile] = useState(null)   // admin: template file to turn into a workbook
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
   const isAdminish = !!(profile?.is_admin || profile?.is_client_admin)
 
   useEffect(() => { loadSummary().then(setSummary).catch(() => setSummary(null)) }, [])
+
+  // Known entity names so the conversation can carry context ("and the timeline?" → last client).
+  useEffect(() => {
+    (async () => {
+      const [{ data: cl }, { data: pr }, { data: pf }] = await Promise.all([
+        supabase.from('clients').select('name'),
+        supabase.from('projects').select('name'),
+        supabase.from('profiles').select('full_name'),
+      ])
+      const names = [...(cl ?? []).map(x => x.name), ...(pr ?? []).map(x => x.name), ...(pf ?? []).map(x => x.full_name)]
+        .filter(n => n && n.length >= 3).sort((a, b) => b.length - a.length)
+      setEntityNames(names)
+    })().catch(() => {})
+  }, [])
 
   // Briefing: auto-run the initial queries once, appended in order so the AI view opens populated.
   useEffect(() => {
@@ -452,11 +470,22 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
     if (pendingFollowup === 'report' && !/\breport\b/i.test(label) && !otherIntent) {
       q = `build the change report for ${label}`
     }
+    // Conversational memory: track the entity in play, and carry it into terse follow-ups so the
+    // user doesn't repeat the name ("and the timeline?" → the client we were just discussing).
+    const lower = label.toLowerCase()
+    const mentioned = entityNames.find(n => lower.includes(n.toLowerCase()))
+    if (mentioned) lastEntity.current = mentioned
+    const isFollowup = /^(why|how|what about|and\b|so\b|then\b|explain|tell me more|more\b|expand|elaborate|details?|what else|go on|continue|the next|next\b)/i.test(label) || label.split(/\s+/).length <= 4
+    if (!mentioned && lastEntity.current && isFollowup && q === label) q = `${label} (regarding ${lastEntity.current})`
+
     const rewritten = q !== label
     setPendingFollowup(null)
     setThinking(true); setProgress(null)
     try {
-      const d = await ask(q, ctx, { onProgress: p => setProgress(p?.text ?? null) })
+      const d = await ask(q, { ...ctx, history: history.current.slice(-6), entity: lastEntity.current }, { onProgress: p => setProgress(p?.text ?? null) })
+      // Remember this turn (question + a short text of the answer) for context.
+      const aText = d.body || d.headline || d.commentary || d.lead || d.title || ''
+      history.current = [...history.current, { q: label, a: String(aText).replace(/\*\*/g, '').slice(0, 400) }].slice(-8)
       if (d.followup) setPendingFollowup(d.followup)   // this card is itself asking a question
       // Silent self-correction: a genuine (non-continuity) rules answer right after a miss on the
       // same topic teaches the framework that the missed phrasing meant this intent.

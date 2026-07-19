@@ -6,7 +6,7 @@
 // the external model (the one path where data can leave the device). Every hop is logged to
 // ai_usage so the System Admin tab can show exactly where the work is landing.
 
-import { runRules } from './rules'
+import { runRules, assembleClientContext } from './rules'
 import { slmAvailable, runSlm } from './slm'
 import { runExternal } from './external'
 import { logUsage } from './telemetry'
@@ -24,10 +24,16 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
     return { tier: 'rules', intent: r.intent, ...r.descriptor }
   }
 
+  // Freeform question — assemble the grounded client context so the conversational tiers can
+  // answer about anything in the client's picture (projects, phases, progress, risks, readiness).
+  let grounding = ''
+  try { grounding = await assembleClientContext(ctx.entity) } catch { /* best effort */ }
+  const gctx = { ...ctx, grounding }
+
   // 2 ── Local SLM (on-device, $0, private) — only if opted in + WebGPU present
   if (await slmAvailable()) {
     try {
-      const out = await runSlm(text, ctx, onProgress)
+      const out = await runSlm(text, gctx, onProgress)
       const latency = performance.now() - t0
       logUsage({ tier: 'slm', intent: 'freeform', query: text, ok: true, escalated: true, latency_ms: latency, model: out.model, tokens: out.tokens, ctx })
       return { tier: 'slm', type: 'narrative', title: 'CORA', body: out.text }
@@ -37,7 +43,7 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   }
 
   // 3 ── External model (last resort; may leave the device)
-  const ext = await runExternal(text, ctx)
+  const ext = await runExternal(text, gctx)
   const latency = performance.now() - t0
   logUsage({ tier: 'external', intent: 'freeform', query: text, ok: !ext.error, escalated: true, latency_ms: latency, model: ext.model, ctx })
   return { tier: 'external', type: 'narrative', title: 'CORA', body: ext.text, external: ext.configured !== false }

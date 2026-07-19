@@ -708,6 +708,45 @@ export async function runRules(text) {
   return { matched: false, intent: null, descriptor: null }
 }
 
+// Assemble a compact, grounded snapshot of the client's whole picture — projects, phases (status,
+// dates, progress), overdue risks, upcoming milestones, readiness, and the stakeholder heat map.
+// This is the context CORA reasons over for open, conversational questions. RLS-scoped.
+export async function assembleClientContext(entityHint) {
+  const data = await loadData()
+  const today = data.today
+  const focus = entityHint ? data.clients.find(c => c.name && String(entityHint).toLowerCase().includes(c.name.toLowerCase())) : null
+  const cid = focus?.id
+  const cps = data.projRollup.filter(p => !cid || p.client_id === cid)
+  const lines = [`Client: ${focus?.name || data.clientName || 'your programme'} (as of ${fmtDate(today)})`]
+
+  cps.forEach(p => {
+    lines.push(`Project "${p.name}": ${p.members} ${p.members === 1 ? 'person' : 'people'}, ${p.pct}% complete.`)
+    p.phases.forEach(ph => {
+      const started = ph.planned_start && new Date(ph.planned_start) <= today
+      const state = ph.pct >= 100 ? 'done' : started ? 'in progress' : 'upcoming'
+      const overdue = ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 ? ' — OVERDUE' : ''
+      const dates = ph.planned_start ? ` [${fmtDate(ph.planned_start)}→${ph.planned_end ? fmtDate(ph.planned_end) : '?'}]` : ''
+      lines.push(`  • Phase ${ph.phase_number} ${ph.name}: ${ph.pct}% (${state}${overdue})${dates}`)
+    })
+    ;(p.milestones || []).filter(m => m.milestone_date).forEach(m => lines.push(`  • Milestone: ${m.name} — ${fmtDate(m.milestone_date)}`))
+  })
+
+  const memberIds = new Set(cps.flatMap(p => p.memberIds))
+  const scores = data.surveys.filter(s => memberIds.has(s.user_id) && s.score != null)
+  const avg = scores.length ? scores.reduce((s, r) => s + r.score, 0) / scores.length : null
+  lines.push(`Readiness: ${avg == null ? 'not yet measured (no survey responses)' : `${avg.toFixed(1)}/5 — ${avg >= 3.5 ? 'Green/on track' : avg >= 2.5 ? 'Amber/at risk' : 'Red/critical'} from ${scores.length} response${scores.length === 1 ? '' : 's'}`}.`)
+
+  const overdue = []
+  cps.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue.push(`${ph.name} · ${p.name} (${ph.pct}%)`) }))
+  lines.push(overdue.length ? `Overdue/at-risk phases: ${overdue.join('; ')}.` : 'No phases are currently overdue.')
+
+  if (cid) {
+    const { data: arts } = await supabase.from('change_artifacts').select('data').eq('client_id', cid).eq('type', 'stakeholder_heatmap').eq('is_current', true).order('version', { ascending: false }).limit(1)
+    if (arts?.[0]?.data?.commentary) lines.push(`Stakeholder impact: ${String(arts[0].data.commentary).replace(/\*\*/g, '')}`)
+  }
+  return lines.join('\n')
+}
+
 // Lightweight summary for the collapsed KPI chips (one grounded load).
 export async function loadSummary() {
   const { projRollup, surveys, today } = await loadData()

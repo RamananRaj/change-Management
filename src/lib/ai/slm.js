@@ -37,17 +37,18 @@ async function getEngine(onProgress) {
 }
 
 const SYSTEM = [
-  "You are ChangeFlow's assistant, helping with organisational change management.",
-  'Be concise and practical. If asked for specific figures, dates, names, or counts that you were not given,',
-  'say you can only speak generally and suggest the user ask for that metric directly — never invent data.',
+  "You are CORA, ChangeFlow's change-management assistant. Speak naturally and conversationally, like a helpful colleague.",
+  'Answer using ONLY the grounded client context provided to you (projects, phases, progress, risks, milestones, readiness, stakeholder impact).',
+  "If a detail isn't in that context, say you don't have it yet rather than inventing anything. Keep replies concise and practical.",
 ].join(' ')
 
 export async function runSlm(text, ctx = {}, onProgress) {
   const engine = await getEngine(onProgress)
-  const res = await engine.chat.completions.create({
-    messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: text }],
-    temperature: 0.4, max_tokens: 400,
-  })
+  const messages = [{ role: 'system', content: SYSTEM }]
+  if (ctx.grounding) messages.push({ role: 'system', content: `Grounded client context (answer only from this):\n${ctx.grounding}` })
+  ;(ctx.history ?? []).forEach(h => { if (h.q) messages.push({ role: 'user', content: h.q }); if (h.a) messages.push({ role: 'assistant', content: h.a }) })
+  messages.push({ role: 'user', content: text })
+  const res = await engine.chat.completions.create({ messages, temperature: 0.4, max_tokens: 500 })
   const out = res?.choices?.[0]?.message?.content ?? ''
   const tokens = res?.usage?.total_tokens ?? null
   return { text: out, model: MODEL, tokens }
