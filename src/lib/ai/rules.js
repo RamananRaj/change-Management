@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -318,15 +318,27 @@ async function runReport(_params, text, ctx) {
       const { data: snaps } = await supabase.from('progress_snapshots')
         .select('captured_on, project_id, pct')
         .in('project_id', projIds).order('captured_on', { ascending: true })
-      // Aggregate to one series across the scope: mean pct per day.
-      const byDay = {}
-      ;(snaps ?? []).forEach(s => { (byDay[s.captured_on] ??= []).push(Number(s.pct)) })
-      const series = Object.entries(byDay).map(([captured_on, arr]) =>
-        ({ captured_on, pct: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) }))
-      // Latest planned end across the scope is the date to judge against.
-      const ends = cp.flatMap(p => p.phases.map(ph => ph.planned_end).filter(Boolean)).sort()
-      const trend = computeTrend(series, { plannedEnd: ends.length ? ends[ends.length - 1] : null, today: data.today })
-      sections.push({ heading: 'Trend & velocity', type: 'narrative', body: trendSentence(trend, fmtDate) })
+      // One series per programme — averaging them would hide a moving programme behind a
+      // stalled one, which is exactly the case this section exists to reveal.
+      const perProject = cp.map(p => {
+        const points = (snaps ?? []).filter(s => s.project_id === p.id)
+          .map(s => ({ captured_on: s.captured_on, pct: Number(s.pct) }))
+        const pEnds = p.phases.map(ph => ph.planned_end).filter(Boolean).sort()
+        const plannedEnd = pEnds.length ? pEnds[pEnds.length - 1] : null
+        const trend = computeTrend(points, { plannedEnd, today: data.today })
+        return { name: p.name, points, plannedEnd, trend, forecast: trend.forecast ?? null }
+      })
+
+      // Chart against the latest planned end in scope; each line carries its own forecast.
+      const allEnds = perProject.map(s => s.plannedEnd).filter(Boolean).sort()
+      const chart = buildTrendChart(perProject, {
+        plannedEnd: allEnds.length ? allEnds[allEnds.length - 1] : null,
+        today: data.today,
+      })
+      const body = perProject.length === 1
+        ? trendSentence(perProject[0].trend, fmtDate)
+        : perProject.map(s => `**${s.name}** — ${trendSentence(s.trend, fmtDate)}`).join('\n\n')
+      sections.push({ heading: 'Trend & velocity', type: 'trend', chart, series: perProject, body })
     }
   } catch { /* snapshots are optional — the report still stands without them */ }
 

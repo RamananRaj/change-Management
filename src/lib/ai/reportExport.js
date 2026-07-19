@@ -29,6 +29,18 @@ export function exportReportDoc(report) {
 function secDocHTML(s) {
   const h = `<h2>${esc(s.heading)}</h2>`
   if (s.type === 'narrative') return h + `<p>${mdHtml(s.body)}</p>`
+  // Trend: Word can't be relied on to render SVG, so export the verdict plus the underlying
+  // series as a small table — the same information, in a form that always prints.
+  if (s.type === 'trend') {
+    const series = (s.series || []).filter(x => (x.points || []).length > 1)
+    if (!series.length) return h + `<p>${mdHtml(s.body)}</p><p style="color:#94a3b8"><i>Not enough history yet to plot a trend — this builds as daily snapshots accumulate.</i></p>`
+    // One column per programme so a stalled one is visibly distinct from a moving one.
+    const dates = [...new Set(series.flatMap(x => x.points.map(p => p.captured_on)))].sort().slice(-12)
+    const head = `<tr><th>Date</th>${series.map(x => `<th>${esc(x.name)}</th>`).join('')}</tr>`
+    const rows = dates.map(d => `<tr><td>${esc(new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short' }))}</td>` +
+      series.map(x => { const p = x.points.find(q => q.captured_on === d); return `<td>${p ? p.pct + '%' : '—'}</td>` }).join('') + '</tr>').join('')
+    return h + `<p>${mdHtml(s.body)}</p><table>${head}${rows}</table>`
+  }
   if (s.type === 'progress') return h + `<table><tr><th>Item</th><th>Detail</th><th>Progress</th></tr>${(s.rows || []).map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.sub || '')}</td><td>${r.value}%</td></tr>`).join('')}</table>`
   if (s.type === 'list') return h + ((s.rows || []).length ? `<table><tr><th>Item</th><th>Detail</th><th>Status</th></tr>${s.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.meta || '')}</td><td>${esc(r.due || '')}</td></tr>`).join('')}</table>` : `<p style="color:#94a3b8">${esc(s.empty || '—')}</p>`)
   if (s.type === 'heatmap') {
@@ -100,6 +112,21 @@ export async function exportReportPptx(report) {
     sl.addText(s.heading, { x: 0.5, y: 0.35, w: 12.3, fontSize: 20, bold: true, color: '1F4E79' })
     if (s.type === 'narrative') {
       sl.addText(stripMd(s.body), { x: 0.5, y: 1.1, w: 12.3, h: 5.5, fontSize: 14, color: '334155', valign: 'top' })
+    } else if (s.type === 'trend') {
+      // Verdict, then a native line chart of the actual series (falls back to text when sparse).
+      sl.addText(stripMd(s.body), { x: 0.5, y: 1.1, w: 12.3, h: 1.4, fontSize: 13, color: '334155', valign: 'top' })
+      const plotted = (s.series || []).filter(x => (x.points || []).length > 1)
+      if (plotted.length) {
+        const dates = [...new Set(plotted.flatMap(x => x.points.map(p => p.captured_on)))].sort()
+        sl.addChart(pptx.ChartType.line, plotted.map(x => ({
+          name: x.name,
+          labels: dates.map(d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short' })),
+          values: dates.map(d => x.points.find(q => q.captured_on === d)?.pct ?? null),
+        })), { x: 0.7, y: 2.7, w: 11.9, h: 4.0, showLegend: plotted.length > 1, legendPos: 'b', lineDataSymbol: 'circle', valAxisMaxVal: 100, valAxisMinVal: 0 })
+      } else {
+        sl.addText('Not enough history yet to plot a trend — this builds as daily snapshots accumulate.',
+          { x: 0.5, y: 2.6, w: 12.3, fontSize: 13, color: 'E8913A', italic: true })
+      }
     } else if (s.type === 'progress') {
       const rows = [[{ text: 'Item', options: { bold: true } }, { text: 'Progress', options: { bold: true } }], ...(s.rows || []).map(r => [r.label, `${r.value}%`])]
       sl.addTable(rows, { x: 0.5, y: 1.1, w: 12.3, fontSize: 13, border: { pt: 0.5, color: 'E2E8F0' }, color: '334155' })

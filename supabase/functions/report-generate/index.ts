@@ -193,16 +193,17 @@ Deno.serve(async (req) => {
       try {
         const ids = cps.map((p: any) => p.id)
         const { data: snaps } = await admin.from('progress_snapshots')
-          .select('captured_on, pct').in('project_id', ids).order('captured_on', { ascending: true })
-        const byDay: Record<string, number[]> = {}
-        ;(snaps ?? []).forEach((s: any) => { (byDay[s.captured_on] ??= []).push(Number(s.pct)) })
-        const series = Object.entries(byDay)
-          .map(([d, arr]) => ({ on: new Date(d), pct: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) }))
-          .sort((a, b) => a.on.getTime() - b.on.getTime())
+          .select('captured_on, project_id, pct').in('project_id', ids).order('captured_on', { ascending: true })
 
-        if (series.length < 2) {
-          kids.push(P('Not enough history yet — trend and velocity appear once a few days of daily snapshots have accumulated.'))
-        } else {
+        // One verdict per programme — averaging hides a stalled programme behind a moving one.
+        let plotted = 0
+        for (const proj of rollup) {
+          const series = (snaps ?? []).filter((s: any) => s.project_id === proj.id)
+            .map((s: any) => ({ on: new Date(s.captured_on), pct: Number(s.pct) }))
+            .sort((a, b) => a.on.getTime() - b.on.getTime())
+          if (series.length < 2) continue
+          plotted++
+
           const latest = series[series.length - 1]
           const cutoff = (d: number) => {
             const c = new Date(now.getTime() - d * 864e5)
@@ -213,11 +214,11 @@ Deno.serve(async (req) => {
           const days = Math.max(1, (latest.on.getTime() - base.on.getTime()) / 864e5)
           const perWeek = ((latest.pct - base.pct) / days) * 7
           const d7 = cutoff(7)
-          const ends = rollup.flatMap((p: any) => p.phases.map((x: any) => x.planned_end).filter(Boolean)).sort()
+          const ends = proj.phases.map((x: any) => x.planned_end).filter(Boolean).sort()
           const plannedEnd = ends.length ? new Date(ends[ends.length - 1]) : null
 
           if (perWeek <= 0.1) {
-            kids.push(P(`Currently ${latest.pct}% complete. Progress has stalled — no measurable movement over the last ${Math.round(days)} days, so no completion date can be forecast. This is the finding to act on.`))
+            kids.push(P(`${proj.name} — currently ${latest.pct}% complete. Progress has stalled: no measurable movement over the last ${Math.round(days)} days, so no completion date can be forecast. This is the finding to act on.`))
           } else {
             const weeksLeft = Math.max(0, 100 - latest.pct) / perWeek
             const forecast = new Date(now.getTime() + weeksLeft * 7 * 864e5)
@@ -226,9 +227,12 @@ Deno.serve(async (req) => {
               : slip <= 0 ? ' That is ahead of the planned end date.'
               : slip <= 7 ? ' That is on track against the planned end date.'
               : ` That is ${slip} days past the planned end date — either the plan or the pace needs to change.`
-            kids.push(P(`Currently ${latest.pct}% complete${d7 ? `, ${latest.pct - d7.pct >= 0 ? '+' : ''}${latest.pct - d7.pct}% in the last 7 days` : ''}. ` +
+            kids.push(P(`${proj.name} — currently ${latest.pct}% complete${d7 ? `, ${latest.pct - d7.pct >= 0 ? '+' : ''}${latest.pct - d7.pct}% in the last 7 days` : ''}. ` +
               `Averaging ${Math.round(perWeek * 10) / 10}% per week, which puts completion around ${fmtDate(forecast)}.${judgement}`))
           }
+        }
+        if (!plotted) {
+          kids.push(P('Not enough history yet — trend and velocity appear once a few days of daily snapshots have accumulated.'))
         }
       } catch (_) {
         kids.push(P('Trend data unavailable for this run.'))

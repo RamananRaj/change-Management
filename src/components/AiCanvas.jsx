@@ -224,6 +224,63 @@ function ReportBody({ d, onDrill, onNavigate }) {
 function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
   // A row is clickable if it carries a drill query or a navigation target.
   const rowHandler = r => r.to && onNavigate ? () => onNavigate(r.to) : r.drill && onDrill ? () => onDrill(r.drill) : null
+  // Trend: the line chart plus the plain-English verdict underneath.
+  if (d.type === 'trend') {
+    const c = d.chart
+    const fmtAxis = dt => new Date(dt).toLocaleDateString('en', { day: 'numeric', month: 'short' })
+    return (
+      <div>
+        {c && (
+          <svg viewBox={`0 0 ${c.w} ${c.h}`} className="w-full max-w-[420px] mb-3" role="img" aria-label="Progress trend">
+            {/* gridlines */}
+            {[c.baseY, c.midY, c.topY].map((gy, i) => (
+              <line key={i} x1={c.pad} x2={c.w - c.pad} y1={gy} y2={gy} stroke="#e2e8f0" strokeWidth="1" />
+            ))}
+            <text x={c.pad - 4} y={c.topY + 3} textAnchor="end" fontSize="7" fill="#94a3b8">100%</text>
+            <text x={c.pad - 4} y={c.baseY + 3} textAnchor="end" fontSize="7" fill="#94a3b8">0%</text>
+
+            {/* planned end marker */}
+            {c.plannedX != null && (
+              <>
+                <line x1={c.plannedX} x2={c.plannedX} y1={c.topY} y2={c.baseY} stroke="#E8913A" strokeWidth="1" strokeDasharray="3 2" />
+                <text x={c.plannedX} y={c.topY - 4} textAnchor="middle" fontSize="7" fill="#E8913A">planned</text>
+              </>
+            )}
+
+            {/* one line per programme */}
+            {(c.series ?? []).map((s, si) => (
+              <g key={si}>
+                {s.forecastLine && <path d={s.forecastLine} stroke={s.color} strokeWidth="1.5" strokeDasharray="4 3" fill="none" opacity="0.45" />}
+                {s.forecastPt && s.forecastLine && <circle cx={s.forecastPt.x} cy={s.forecastPt.y} r="2.5" fill={s.color} opacity="0.45" />}
+                {s.area && <path d={s.area} fill={s.color} opacity="0.08" />}
+                {s.line && <path d={s.line} stroke={s.color} strokeWidth="2" fill="none" strokeLinejoin="round" />}
+                {s.coords.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === s.coords.length - 1 ? 3 : 1.8} fill={s.color} />)}
+                {s.latest && <text x={s.latest.x} y={s.latest.y - 6} textAnchor="middle" fontSize="8" fontWeight="700" fill={s.color}>{s.current}%</text>}
+              </g>
+            ))}
+
+            {/* date axis */}
+            <text x={c.pad} y={c.h - 6} fontSize="7" fill="#94a3b8">{fmtAxis(c.firstLabel)}</text>
+            <text x={c.w - c.pad} y={c.h - 6} textAnchor="end" fontSize="7" fill="#94a3b8">{fmtAxis(c.lastLabel)}</text>
+          </svg>
+        )}
+        {c?.multi && (
+          <div className="flex flex-wrap gap-3 mb-2">
+            {c.series.map((s, i) => (
+              <span key={i} className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                <span className="w-3 h-[2px] rounded" style={{ background: s.color }} />{s.name}
+              </span>
+            ))}
+          </div>
+        )}
+        {c?.sparse && (
+          <p className="text-[11px] text-[#E8913A] mb-2">Not enough history to draw a trend yet — showing today’s position against the planned end date. The line builds as daily snapshots accumulate.</p>
+        )}
+        <p className="text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap"><Bold text={d.body} /></p>
+      </div>
+    )
+  }
+
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap"><Bold text={d.body} /></p>
 

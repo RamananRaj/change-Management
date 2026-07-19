@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart } from './analysis'
 
 const heat = {
   version: 1,
@@ -233,6 +233,55 @@ describe('computeTrend', () => {
     const t = computeTrend([snap(14, 100), snap(0, 100)], { today })
     expect(t.verdict).toBe('complete')
     expect(trendSentence(t)).toContain('complete')
+  })
+})
+
+describe('buildTrendChart', () => {
+  const today = new Date('2026-07-19T00:00:00Z')
+  const snap = (daysAgo, pct) => ({ captured_on: new Date(today.getTime() - daysAgo * 864e5).toISOString().slice(0, 10), pct })
+
+  const rsr = { name: 'RSR Program', points: [snap(28, 20), snap(14, 34), snap(0, 48)] }
+  const erp = { name: 'ERP Rollout', points: [snap(28, 0), snap(14, 0), snap(0, 0)] }
+
+  it('plots a line through the history', () => {
+    const c = buildTrendChart([rsr], { today })
+    expect(c.sparse).toBe(false)
+    expect(c.multi).toBe(false)
+    expect(c.series[0].coords).toHaveLength(3)
+    expect(c.series[0].line).toMatch(/^M[\d.]+,[\d.]+ L/)
+    expect(c.series[0].current).toBe(48)
+    // higher pct sits higher on the canvas (smaller y)
+    expect(c.series[0].coords[2].y).toBeLessThan(c.series[0].coords[0].y)
+  })
+
+  it('keeps one line per programme rather than averaging them', () => {
+    const c = buildTrendChart([rsr, erp], { today })
+    expect(c.multi).toBe(true)
+    expect(c.series.map(s => s.name)).toEqual(['RSR Program', 'ERP Rollout'])
+    expect(c.series[0].current).toBe(48)   // the moving programme keeps its own value
+    expect(c.series[1].current).toBe(0)    // the stalled one is visibly separate, not blended to 24%
+    expect(c.series[0].color).not.toBe(c.series[1].color)
+    expect(c.series[0].area).toBeNull()    // no shaded fill when lines overlap
+  })
+
+  it('flags sparse history but still returns a usable chart', () => {
+    const c = buildTrendChart([{ name: 'RSR Program', points: [snap(0, 12)] }], { today, plannedEnd: '2026-09-30' })
+    expect(c.sparse).toBe(true)
+    expect(c.series[0].line).toBeNull()   // nothing to join yet
+    expect(c.plannedX).not.toBeNull()     // but the plan marker still renders
+    expect(c.series[0].current).toBe(12)
+  })
+
+  it('handles no data at all without throwing', () => {
+    const c = buildTrendChart([], { today })
+    expect(c.sparse).toBe(true)
+    expect(c.series).toEqual([])
+  })
+
+  it('draws a dashed projection per programme', () => {
+    const c = buildTrendChart([{ ...rsr, forecast: '2026-09-01' }], { today })
+    expect(c.series[0].forecastLine).toMatch(/^M[\d.]+,[\d.]+ L/)
+    expect(c.series[0].forecastPt.y).toBe(c.topY)   // forecast lands at 100%
   })
 })
 

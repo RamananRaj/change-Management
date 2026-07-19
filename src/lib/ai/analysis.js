@@ -193,6 +193,60 @@ export function computeTrend(snapshots = [], { plannedEnd = null, today = new Da
   }
 }
 
+// Geometry for the trend chart. Pure: returns SVG-ready coordinates so the component just draws.
+// With too little history it still returns a usable chart — today's position plotted against the
+// planned end date — and flags `sparse` so the UI can say so honestly rather than faking a line.
+export const TREND_COLORS = ['#1F4E79', '#2f8fe0', '#E8913A', '#16A34A', '#7F77DD', '#D4537E']
+
+export function buildTrendChart(seriesList = [], { plannedEnd = null, today = new Date(), w = 320, h = 120, pad = 22 } = {}) {
+  // One line per programme. Averaging several programmes into a single line hides the one that is
+  // actually moving behind the one that hasn't started, so each keeps its own series.
+  const prepared = (seriesList || []).map((s, i) => ({
+    name: s?.name ?? `Series ${i + 1}`,
+    color: TREND_COLORS[i % TREND_COLORS.length],
+    forecast: s?.forecast ?? null,
+    pts: (s?.points || [])
+      .filter(p => p && p.captured_on != null && p.pct != null)
+      .map(p => ({ on: new Date(p.captured_on), pct: Math.max(0, Math.min(100, Number(p.pct))) }))
+      .sort((a, b) => a.on - b.on),
+  }))
+
+  const now = new Date(today)
+  const allPts = prepared.flatMap(s => s.pts)
+  const sparse = !prepared.some(s => s.pts.length > 1)
+
+  const first = allPts.length ? new Date(Math.min(...allPts.map(p => p.on.getTime()))) : now
+  const ends = [now, plannedEnd ? new Date(plannedEnd) : null, ...prepared.map(s => s.forecast ? new Date(s.forecast) : null)].filter(Boolean)
+  const last = new Date(Math.max(...ends.map(d => d.getTime())))
+  const span = Math.max(1, last.getTime() - first.getTime())
+
+  const x = d => Math.round((pad + ((new Date(d).getTime() - first.getTime()) / span) * (w - pad * 2)) * 10) / 10
+  const y = pct => Math.round((h - pad - (pct / 100) * (h - pad * 2)) * 10) / 10
+
+  const single = prepared.length === 1
+  const series = prepared.map(s => {
+    const coords = s.pts.map(p => ({ x: x(p.on), y: y(p.pct), pct: p.pct, on: p.on }))
+    const line = coords.length > 1 ? coords.map((c, i) => `${i ? 'L' : 'M'}${c.x},${c.y}`).join(' ') : null
+    const latest = coords[coords.length - 1] ?? null
+    return {
+      name: s.name, color: s.color, coords, line,
+      area: (single && line) ? `${line} L${coords[coords.length - 1].x},${y(0)} L${coords[0].x},${y(0)} Z` : null,
+      latest,
+      current: s.pts.length ? s.pts[s.pts.length - 1].pct : 0,
+      forecastLine: (s.forecast && latest) ? `M${latest.x},${latest.y} L${x(s.forecast)},${y(100)}` : null,
+      forecastPt: s.forecast ? { x: x(s.forecast), y: y(100) } : null,
+    }
+  })
+
+  return {
+    w, h, pad, sparse, series, multi: prepared.length > 1,
+    plannedX: plannedEnd ? x(plannedEnd) : null,
+    todayX: x(now),
+    baseY: y(0), topY: y(100), midY: y(50),
+    firstLabel: first, lastLabel: last,
+  }
+}
+
 // One-line summary of a trend, for the report narrative.
 export function trendSentence(t, fmtDate = d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })) {
   if (!t || t.status === 'none') return 'No history captured yet — trend will appear once daily snapshots have accumulated.'
