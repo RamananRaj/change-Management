@@ -128,6 +128,23 @@ export function buildPhaseDrill({ projectName, phaseName, orderedContentIds, con
   return { type: 'progress', title: `${projectName} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
 }
 
+// ── Knowledge-rule rendering ──────────────────────────────────────────────────────
+// Guidance lives in the ai_knowledge table as templates with {{tokens}}; CORA fills them from the
+// client's live picture. Pure so the substitution is unit-testable. Unknown tokens are replaced
+// with a visible marker rather than left raw, so a bad template never leaks braces to the user.
+export function renderTemplate(body, tokens = {}) {
+  if (!body) return ''
+  return String(body).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+    const v = tokens[key]
+    return v === undefined || v === null || v === '' ? '—' : String(v)
+  })
+}
+
+// Which tokens does a template actually use? Lets the UI/tests see a rule's data dependencies.
+export function templateTokens(body) {
+  return [...new Set([...String(body ?? '').matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)].map(m => m[1]))]
+}
+
 // ── Usage attribution (telemetry: which client / project a query was about) ───────
 // Pure: attribute an AI query to a client and/or project for the System Admin usage breakdown.
 // Prefers a project named in the query text, else in the conversation's remembered entity; infers

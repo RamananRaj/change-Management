@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens } from './analysis'
 
 const heat = {
   version: 1,
@@ -160,6 +160,31 @@ describe('groundedFallback', () => {
     const out = groundedFallback('zzzzz', grounding)
     expect(out).toContain('grounded snapshot')
     expect(out).toContain('RSR Program')
+  })
+})
+
+describe('renderTemplate / templateTokens', () => {
+  const body = 'Audiences: {{audiences}}. Owners: {{owners}}. Starts {{ phase2 }}.'
+
+  it('fills tokens from live data', () => {
+    expect(renderTemplate(body, { audiences: 'Ops (High)', owners: 'Jane', phase2: '1 Aug 2026' }))
+      .toBe('Audiences: Ops (High). Owners: Jane. Starts 1 Aug 2026.')
+  })
+
+  it('never leaks raw braces for missing or empty values', () => {
+    const out = renderTemplate(body, { audiences: 'Ops' })
+    expect(out).not.toContain('{{')
+    expect(out).toContain('Owners: —')
+  })
+
+  it('lists a rule’s data dependencies', () => {
+    expect(templateTokens(body).sort()).toEqual(['audiences', 'owners', 'phase2'])
+  })
+
+  it('handles empty input safely', () => {
+    expect(renderTemplate('', {})).toBe('')
+    expect(renderTemplate(null, {})).toBe('')
+    expect(templateTokens(null)).toEqual([])
   })
 })
 

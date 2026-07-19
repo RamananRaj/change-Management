@@ -10,7 +10,8 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate } from './analysis'
+import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
 
@@ -737,47 +738,66 @@ async function runApproach(_params, text, ctx) {
 
   const head = `**${topic.label} — ${scopeLabel}**\nA structural starting point shaped by what ChangeFlow holds today. Read the "What this is based on" note at the end before sharing it — some of this is scaffolding, not evidence.\n`
 
-  const bodies = {
-    comms: [
-      `**1. Audiences (by impact)**\n${audienceLine}. Prioritise the highest-impact groups; they need the most frequent, most senior communication.`,
-      `**2. Objectives by phase**\n• Diagnose (${phaseOn(1)}) — build awareness: why the change, why now.\n• Design (${phaseOn(2)}) — involve: bring impacted groups into shaping the solution.\n• Engage (${phaseOn(3)}) — build readiness: what changes for me, and when.\n• Embed (${phaseOn(4)}) — reinforce: support, answer questions, celebrate early wins.\n• Evaluate (${phaseOn(5)}) — sustain: share outcomes and lock in new ways of working.`,
-      `**3. Channels**\nExecutive sponsor message for direction; line-manager briefing packs for the highest-impact groups (people trust their own manager most); intranet//Teams for reach; drop-in sessions for two-way dialogue; FAQ maintained throughout.`,
-      `**4. Cadence**\nFortnightly during Diagnose and Design, weekly through Engage and go-live, then monthly through Embed. Increase frequency around milestones.`,
-      `**5. Owners**\n${ownerLine}. Name a single accountable comms owner per audience.`,
-      `**6. Anchor moments**\n${msLine}.`,
-      `**7. How you'll know it's working**\nReadiness survey scores by group, attendance at sessions, volume and theme of questions, and manager confidence.`,
-    ],
-    training: [
-      `**1. Audiences (by impact)**\n${audienceLine}. Training depth should follow impact — highest-impact groups get role-specific, hands-on training; lower-impact groups need awareness only.`,
-      `**2. Training needs analysis**\nFor each impacted group, define: what they do today, what changes, and the specific capability gap. Do this before designing any content — it's what makes training role-relevant rather than system demos.`,
-      `**3. Delivery approach**\nBlended: e-learning for awareness and system basics, instructor-led or floor-walking for high-impact roles, quick-reference guides for day-one support. Use real scenarios from their actual work, not generic demos.`,
-      `**4. Schedule**\nDesign and build during Design (${phaseOn(2)}); deliver through Engage (${phaseOn(3)}) close enough to go-live that it's retained but with time to practise; reinforce during Embed (${phaseOn(4)}).`,
-      `**5. Owners**\n${ownerLine}.`,
-      `**6. Key dates**\n${msLine}.`,
-      `**7. Measures**\nCompletion rates, post-training confidence scores, readiness survey movement, and — the real test — support-ticket volume after go-live.`,
-    ],
-    cutover: [
-      `**1. Scope**\n${projects.map(p => p.name).join(', ') || 'No programmes in scope yet'}. Impacted groups: ${audienceLine}.`,
-      `**2. Readiness gates**\nBefore cutover, confirm: training complete for high-impact roles, readiness survey at or above target, support model staffed, and all Embed-phase prerequisites closed.`,
-      `**3. Cutover window**\nAnchored on Embed (${phaseOn(4)}) and Evaluate (${phaseOn(5)}). Key dates: ${msLine}.`,
-      `**4. Sequence**\nFreeze → final data migration and validation → technical switch → smoke checks → business verification by named users from each impacted group → go/no-go decision → announce live.`,
-      `**5. Go/no-go**\nNamed decision-makers, agreed criteria, and a rollback plan with a defined decision deadline. Decide in advance what "no" looks like.`,
-      `**6. Hypercare**\nElevated support for the first two weeks: floor-walkers for the highest-impact groups, daily triage, and a visible route for issues. Taper deliberately, don't just stop.`,
-      `**7. Owners**\n${ownerLine}.`,
-      allPhases.some(ph => ph.planned_end && new Date(ph.planned_end) < data.today && ph.pct < 100 && ph.steps > 0)
-        ? `**8. Watch out**\nSome phases are already overdue and under 100% — clear those before committing to a cutover date.`
-        : `**8. Watch out**\nNo phases are currently overdue — protect that position through the cutover window.`,
-    ],
-    ttt: [
-      `**1. Why train-the-trainer here**\nWith ${owners.length || 'your'} core team member${owners.length === 1 ? '' : 's'} and impacted groups spanning ${groups.length || 'several'} area${groups.length === 1 ? '' : 's'}, cascading through local trainers scales further and lands better — people learn best from someone who knows their actual job.`,
-      `**2. Trainer selection**\nPick from the highest-impact groups first (${top.map(g => g.name).join(', ') || 'once the heat map is loaded'}). Choose credibility over availability: respected practitioners who others already ask for help.`,
-      `**3. Candidate pool**\n${ownerLine}.`,
-      `**4. Prepare the trainers**\nDeeper functional training than end-users, plus facilitation skills, the "why" behind the change so they can handle challenge, and a full trainer pack (slides, scenarios, FAQ, common objections).`,
-      `**5. Certification**\nEach trainer delivers a practice session observed by the core team before going live. This is the step most programmes skip and most regret.`,
-      `**6. Cascade schedule**\nTrain trainers during Design (${phaseOn(2)}); they deliver through Engage (${phaseOn(3)}); reinforce in Embed (${phaseOn(4)}). Key dates: ${msLine}.`,
-      `**7. Support the trainers**\nA private channel for questions, weekly check-ins during the cascade, refreshed materials when things change, and visible recognition — this is on top of their day job.`,
-    ],
+  // ── Practice-source ladder ──
+  // Where does the *discipline* guidance come from? Prefer YOUR curated Content library (it's your
+  // IP, editable by Master Admin without a deploy), then the on-device model, then built-in
+  // convention as a last resort. Whichever tier answers is named in the honesty note below.
+  // Tokens the knowledge rule can interpolate from this client's live picture.
+  const tokens = {
+    client: client.name,
+    scope: scopeLabel,
+    projects: projects.map(p => p.name).join(', ') || 'no programmes yet',
+    audiences: audienceLine,
+    owners: ownerLine,
+    milestones: msLine,
+    groupcount: String(groups.length || 0),
+    phase1: phaseOn(1), phase2: phaseOn(2), phase3: phaseOn(3), phase4: phaseOn(4), phase5: phaseOn(5),
   }
+
+  // Rule lookup: client-specific → industry → global. Whichever wins is rendered with live data.
+  let practice = null, practiceSource = 'none', ruleTitle = null
+  try {
+    const { data: rules } = await supabase.from('ai_knowledge')
+      .select('id, body, title, client_id, industry, source, status')
+      .eq('topic', topic.key).eq('status', 'active')
+    const pick = (rules ?? []).sort((a, b) => {
+      const rank = r => (r.client_id === client.id ? 0 : r.industry && r.industry === client.industry ? 1 : !r.client_id && !r.industry ? 2 : 3)
+      return rank(a) - rank(b)
+    })[0]
+    if (pick) {
+      practice = renderTemplate(pick.body, tokens)
+      practiceSource = pick.source === 'slm' ? 'slm_rule' : pick.client_id ? 'rule_client' : pick.industry ? 'rule_industry' : 'rule_global'
+      ruleTitle = pick.title
+    }
+  } catch { /* rule lookup is best-effort */ }
+
+  // No rule yet → ask the on-device model, then WRITE IT BACK so the next ask is instant.
+  if (!practice && await slmAvailable()) {
+    try {
+      const out = await slmGenerate(
+        'You are CORA, a change-management assistant. Give practical, specific guidance. Use short numbered sections with bold headings. No preamble, no generic filler.',
+        `Draft ${topic.label} guidance. Impacted groups: {{audiences}}. Programmes: {{projects}}. Team: {{owners}}. Key dates: {{milestones}}. Write it as a reusable template that keeps those {{tokens}} in place so it can be reused for other clients.`,
+        null, { maxTokens: 420 })
+      if (out && out.trim()) {
+        practice = renderTemplate(out.trim(), tokens)
+        practiceSource = 'slm_new'
+        // Enrich the rule store (admin-only by RLS; silently skipped for other roles).
+        supabase.from('ai_knowledge').insert({
+          topic: topic.key, title: topic.label, body: out.trim(), source: 'slm', status: 'draft',
+        }).then(() => {}, () => {})
+      }
+    } catch { /* leave practice null — the honesty note explains */ }
+  }
+
+  // The client's industry may carry the methodology your practice is built on.
+  let methodology = null
+  try {
+    if (client.industry) {
+      const { data: ind } = await supabase.from('industries').select('label, detail').eq('code', client.industry).limit(1)
+      if (ind?.[0]) methodology = `${ind[0].label}${ind[0].detail ? ` — ${ind[0].detail}` : ''}`
+    }
+  } catch { /* optional */ }
+
 
   // ── Be explicit about evidence vs. scaffolding ──
   // The client/project/phase data is real. The discipline content (how to train, how to cut over)
@@ -806,14 +826,31 @@ async function runApproach(_params, text, ctx) {
   }
   const missing = GAPS[topic.key]
 
+  const disc = topic.label.replace(' Approach', '').toLowerCase()
+  const sourceNote = {
+    rule_client: `The guidance above is **your own rule for ${client.name}** — curated in CORA's knowledge base, filled with this programme's live data.`,
+    rule_industry: `The guidance above is **your rule for the ${client.industry} industry**, filled with this programme's live data.`,
+    rule_global: `The guidance above is **your platform-wide ${disc} rule**, filled with this programme's live data. Refine it once and every client benefits.`,
+    slm_rule: `The guidance above came from a rule the **on-device model drafted earlier** and it is still marked draft — review and curate it so it becomes trusted practice.`,
+    slm_new: `No ${disc} rule existed, so the **on-device model drafted one just now** and I've saved it as a draft rule for review. The next ask will be instant. Treat this pass as a prompt to react to, not doctrine.`,
+    none: `No ${disc} rule exists yet and no on-device model is available, so I have **no practice guidance to offer** — only the grounded facts below. Add a rule and I'll serve it instantly next time.`,
+  }[practiceSource]
+
   const honesty =
     `**What this is based on**\nReal data I hold: ${basis.join('; ')}.` +
     (haveTypes.length ? ` Captured artifacts: ${haveTypes.join(', ')}.` : '') +
-    `\n\nWhat I do **not** hold for ${topic.label.replace(' Approach', '').toLowerCase()}: ${missing.join('; ')}. ` +
-    `The audiences, dates, owners and milestones above are drawn from your data and are specific to ${client.name}. The ${topic.label.replace(' Approach', '').toLowerCase()} content itself is standard practice, not evidence from this programme — treat it as a checklist to challenge, not a plan to sign off.` +
-    `\n\nTo make this genuinely specific, capture the missing items as content or an exercise in the library (Content Manager → add a template users complete). Once that data exists, ask me again and this draft will be built from it.`
+    (methodology ? ` Industry methodology on record: ${methodology}.` : '') +
+    `\n\n${sourceNote}` +
+    `\n\nWhat I do **not** hold for ${disc}: ${missing.join('; ')}. ` +
+    `The audiences, dates, owners and milestones woven through this are drawn from your data and are specific to ${client.name} — those you can rely on.`
 
-  return { type: 'narrative', title: `${topic.label} — ${scopeLabel}`, body: [head, ...bodies[topic.key], honesty].join('\n\n') }
+  // Grounded facts always accompany the guidance, so the reader can separate the two.
+  const facts = `**Programme facts used**\n• Audiences: ${audienceLine}\n• Programmes: ${tokens.projects}\n• Owners: ${ownerLine}\n• Milestones: ${msLine}\n• Phase starts: Diagnose ${tokens.phase1}, Design ${tokens.phase2}, Engage ${tokens.phase3}, Embed ${tokens.phase4}, Evaluate ${tokens.phase5}`
+
+  const parts = [head]
+  if (practice) parts.push(ruleTitle && practiceSource.startsWith('rule') ? `**${ruleTitle}**\n${practice}` : practice)
+  parts.push(facts, honesty)
+  return { type: 'narrative', title: `${topic.label} — ${scopeLabel}`, body: parts.join('\n\n') }
 }
 
 const RUNNERS = {
