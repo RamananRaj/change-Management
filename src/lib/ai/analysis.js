@@ -128,6 +128,88 @@ export function buildPhaseDrill({ projectName, phaseName, orderedContentIds, con
   return { type: 'progress', title: `${projectName} · ${phaseName}`, rows, empty: `No activities in ${phaseName} yet.`, intro }
 }
 
+// ── Trend & velocity ──────────────────────────────────────────────────────────────
+// Turns daily progress snapshots into the question sponsors actually ask: are we improving, and
+// will we make the date? Pure — the caller supplies snapshots (ascending by date) and the planned
+// end date. Deliberately conservative: with too little history or no movement it says so rather
+// than extrapolating from noise.
+export function computeTrend(snapshots = [], { plannedEnd = null, today = new Date() } = {}) {
+  const pts = (snapshots || [])
+    .filter(s => s && s.captured_on != null && s.pct != null)
+    .map(s => ({ on: new Date(s.captured_on), pct: Number(s.pct) }))
+    .sort((a, b) => a.on - b.on)
+  if (!pts.length) return { status: 'none', points: [] }
+
+  const now = new Date(today)
+  const latest = pts[pts.length - 1]
+  const daysBetween = (a, b) => (b.getTime() - a.getTime()) / 864e5
+  // Closest snapshot at least N days old (so a gap in capture doesn't break the comparison).
+  const at = days => {
+    const cutoff = new Date(now.getTime() - days * 864e5)
+    const older = pts.filter(p => p.on <= cutoff)
+    return older.length ? older[older.length - 1] : null
+  }
+  const wk = at(7), mo = at(28), first = pts[0]
+
+  const span = daysBetween(first.on, latest.on)
+  if (pts.length < 2 || span < 1) {
+    return { status: 'building', points: pts, current: latest.pct, days: Math.round(span) }
+  }
+
+  // Velocity from the longest reliable window we have (prefer 28d, else whatever exists).
+  const base = mo ?? wk ?? first
+  const days = Math.max(1, daysBetween(base.on, latest.on))
+  const perWeek = ((latest.pct - base.pct) / days) * 7
+
+  const remaining = Math.max(0, 100 - latest.pct)
+  let forecast = null, weeksLeft = null
+  if (perWeek > 0.1) {
+    weeksLeft = remaining / perWeek
+    forecast = new Date(now.getTime() + weeksLeft * 7 * 864e5)
+  }
+
+  let verdict = 'unknown'
+  if (perWeek <= 0.1) verdict = latest.pct >= 100 ? 'complete' : 'stalled'
+  else if (plannedEnd) {
+    const due = new Date(plannedEnd)
+    const slipDays = Math.round(daysBetween(due, forecast))
+    verdict = slipDays <= 0 ? 'ahead' : slipDays <= 7 ? 'on_track' : 'behind'
+    return {
+      status: 'ok', points: pts, current: latest.pct,
+      delta7: wk ? latest.pct - wk.pct : null,
+      delta28: mo ? latest.pct - mo.pct : null,
+      perWeek: Math.round(perWeek * 10) / 10,
+      forecast, weeksLeft: Math.round(weeksLeft * 10) / 10, verdict, slipDays,
+    }
+  } else verdict = 'moving'
+
+  return {
+    status: 'ok', points: pts, current: latest.pct,
+    delta7: wk ? latest.pct - wk.pct : null,
+    delta28: mo ? latest.pct - mo.pct : null,
+    perWeek: Math.round(perWeek * 10) / 10,
+    forecast, weeksLeft: weeksLeft == null ? null : Math.round(weeksLeft * 10) / 10,
+    verdict, slipDays: null,
+  }
+}
+
+// One-line summary of a trend, for the report narrative.
+export function trendSentence(t, fmtDate = d => new Date(d).toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })) {
+  if (!t || t.status === 'none') return 'No history captured yet — trend will appear once daily snapshots have accumulated.'
+  if (t.status === 'building') return `Only ${t.days} day${t.days === 1 ? '' : 's'} of history so far (currently **${t.current}%**). Velocity needs about a week of snapshots before it means anything.`
+  const move = t.delta7 != null ? `${t.delta7 >= 0 ? '+' : ''}${t.delta7}% in the last 7 days` : null
+  const mo = t.delta28 != null ? `${t.delta28 >= 0 ? '+' : ''}${t.delta28}% over 28 days` : null
+  const head = `Currently **${t.current}%**${move ? `, ${move}` : ''}${mo ? ` (${mo})` : ''}.`
+  if (t.verdict === 'complete') return `${head} Delivery is complete.`
+  if (t.verdict === 'stalled') return `${head} **Progress has stalled** — no measurable movement, so no completion can be forecast. This is the finding to act on.`
+  const rate = `Averaging **${t.perWeek}% per week**`
+  const eta = t.forecast ? `, which puts completion around **${fmtDate(t.forecast)}**` : ''
+  if (t.verdict === 'ahead') return `${head} ${rate}${eta} — **ahead of the planned end date**.`
+  if (t.verdict === 'on_track') return `${head} ${rate}${eta} — **on track** against the planned end date.`
+  if (t.verdict === 'behind') return `${head} ${rate}${eta} — that is **${t.slipDays} days past the planned end date**. Either the plan or the pace needs to change.`
+  return `${head} ${rate}${eta}.`
+}
+
 // ── Knowledge-rule routing ────────────────────────────────────────────────────────
 // Which rule answers this question? Rules declare their own trigger phrases in the database, so a
 // new subject is an INSERT rather than a code change. The longest matching trigger wins, so a

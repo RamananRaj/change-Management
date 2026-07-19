@@ -188,6 +188,52 @@ Deno.serve(async (req) => {
         ? 'Readiness has not been measured yet — no survey responses captured for this scope.'
         : `Average readiness is ${avg.toFixed(1)} out of 5 (${rag}), from ${scores.length} response${scores.length === 1 ? '' : 's'}.`))
 
+      // ── Trend & velocity, from the daily progress snapshots ──
+      kids.push(H2('Trend & velocity'))
+      try {
+        const ids = cps.map((p: any) => p.id)
+        const { data: snaps } = await admin.from('progress_snapshots')
+          .select('captured_on, pct').in('project_id', ids).order('captured_on', { ascending: true })
+        const byDay: Record<string, number[]> = {}
+        ;(snaps ?? []).forEach((s: any) => { (byDay[s.captured_on] ??= []).push(Number(s.pct)) })
+        const series = Object.entries(byDay)
+          .map(([d, arr]) => ({ on: new Date(d), pct: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) }))
+          .sort((a, b) => a.on.getTime() - b.on.getTime())
+
+        if (series.length < 2) {
+          kids.push(P('Not enough history yet — trend and velocity appear once a few days of daily snapshots have accumulated.'))
+        } else {
+          const latest = series[series.length - 1]
+          const cutoff = (d: number) => {
+            const c = new Date(now.getTime() - d * 864e5)
+            const older = series.filter(p => p.on <= c)
+            return older.length ? older[older.length - 1] : null
+          }
+          const base = cutoff(28) ?? cutoff(7) ?? series[0]
+          const days = Math.max(1, (latest.on.getTime() - base.on.getTime()) / 864e5)
+          const perWeek = ((latest.pct - base.pct) / days) * 7
+          const d7 = cutoff(7)
+          const ends = rollup.flatMap((p: any) => p.phases.map((x: any) => x.planned_end).filter(Boolean)).sort()
+          const plannedEnd = ends.length ? new Date(ends[ends.length - 1]) : null
+
+          if (perWeek <= 0.1) {
+            kids.push(P(`Currently ${latest.pct}% complete. Progress has stalled — no measurable movement over the last ${Math.round(days)} days, so no completion date can be forecast. This is the finding to act on.`))
+          } else {
+            const weeksLeft = Math.max(0, 100 - latest.pct) / perWeek
+            const forecast = new Date(now.getTime() + weeksLeft * 7 * 864e5)
+            const slip = plannedEnd ? Math.round((forecast.getTime() - plannedEnd.getTime()) / 864e5) : null
+            const judgement = slip === null ? ''
+              : slip <= 0 ? ' That is ahead of the planned end date.'
+              : slip <= 7 ? ' That is on track against the planned end date.'
+              : ` That is ${slip} days past the planned end date — either the plan or the pace needs to change.`
+            kids.push(P(`Currently ${latest.pct}% complete${d7 ? `, ${latest.pct - d7.pct >= 0 ? '+' : ''}${latest.pct - d7.pct}% in the last 7 days` : ''}. ` +
+              `Averaging ${Math.round(perWeek * 10) / 10}% per week, which puts completion around ${fmtDate(forecast)}.${judgement}`))
+          }
+        }
+      } catch (_) {
+        kids.push(P('Trend data unavailable for this run.'))
+      }
+
       if (heat) {
         kids.push(H2('Stakeholder impact'))
         const cols = heat.data.cols ?? []

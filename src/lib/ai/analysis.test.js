@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence } from './analysis'
 
 const heat = {
   version: 1,
@@ -188,6 +188,54 @@ describe('renderTemplate / templateTokens', () => {
   })
 })
 
+describe('computeTrend', () => {
+  const today = new Date('2026-07-19T00:00:00Z')
+  const snap = (daysAgo, pct) => ({ captured_on: new Date(today.getTime() - daysAgo * 864e5).toISOString().slice(0, 10), pct })
+
+  it('reports nothing when there is no history', () => {
+    expect(computeTrend([], { today }).status).toBe('none')
+  })
+
+  it('says it is still building with under a day of history', () => {
+    const t = computeTrend([snap(0, 20)], { today })
+    expect(t.status).toBe('building')
+    expect(t.current).toBe(20)
+  })
+
+  it('computes weekly velocity and a forecast', () => {
+    // 28 days ago 20% → today 48% = 28 points over 28 days = 7%/week; 52 remaining ≈ 7.4 weeks
+    const t = computeTrend([snap(28, 20), snap(14, 34), snap(7, 41), snap(0, 48)], { today })
+    expect(t.status).toBe('ok')
+    expect(t.current).toBe(48)
+    expect(t.delta7).toBe(7)
+    expect(t.delta28).toBe(28)
+    expect(t.perWeek).toBe(7)
+    expect(t.weeksLeft).toBeCloseTo(7.4, 0)
+  })
+
+  it('flags a stall rather than forecasting from noise', () => {
+    const t = computeTrend([snap(28, 40), snap(14, 40), snap(0, 40)], { today })
+    expect(t.verdict).toBe('stalled')
+    expect(t.forecast).toBeNull()
+    expect(trendSentence(t)).toContain('stalled')
+  })
+
+  it('judges against the planned end date', () => {
+    const pts = [snap(28, 20), snap(0, 48)]                       // 7%/week → ~7.4 weeks left
+    const behind = computeTrend(pts, { today, plannedEnd: '2026-08-01' })   // way before forecast
+    expect(behind.verdict).toBe('behind')
+    expect(behind.slipDays).toBeGreaterThan(7)
+    const ahead = computeTrend(pts, { today, plannedEnd: '2027-01-01' })
+    expect(ahead.verdict).toBe('ahead')
+  })
+
+  it('recognises completion', () => {
+    const t = computeTrend([snap(14, 100), snap(0, 100)], { today })
+    expect(t.verdict).toBe('complete')
+    expect(trendSentence(t)).toContain('complete')
+  })
+})
+
 describe('resolveUsageScope', () => {
   const clients = [{ id: 'c1', name: 'Horizon Power' }, { id: 'c2', name: 'Western Power' }]
   const projects = [{ id: 'p1', name: 'RSR Program', client_id: 'c1' }, { id: 'p3', name: 'Grid Modernisation', client_id: 'c2' }]
@@ -250,8 +298,3 @@ describe('matchKnowledgeRule', () => {
     expect(matchKnowledgeRule('training', [{ topic: 'x' }, ...rules]).topic).toBe('training')
   })
 })
-
-import { matchIntent } from './intents'
-
-// Pure intent-matching tests — no Supabase, no network. Guards the router's first tier:
-// these phrasings must resolve to the right grounded intent (and stay out of the model).

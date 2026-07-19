@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -308,6 +308,27 @@ async function runReport(_params, text, ctx) {
   sections.push({ heading: 'Needs attention', type: 'list', rows: atRisk, empty: 'Everything is on track.' })
   sections.push({ heading: 'Upcoming (next 30 days)', type: 'list', rows: upcoming, empty: 'Nothing scheduled ahead.' })
   sections.push({ heading: 'Readiness', type: 'narrative', body: `Average readiness **${avg == null ? '—' : avg.toFixed(1)}** (${ragWord})${scores.length ? ` from ${scores.length} survey response${scores.length === 1 ? '' : 's'}` : ' — no survey responses captured yet'}.` })
+
+  // ── Trend & velocity ──
+  // The rest of the report is "where we are". This is "are we improving, and will we make it?",
+  // computed from the daily progress snapshots.
+  try {
+    const projIds = cp.map(p => p.id)
+    if (projIds.length) {
+      const { data: snaps } = await supabase.from('progress_snapshots')
+        .select('captured_on, project_id, pct')
+        .in('project_id', projIds).order('captured_on', { ascending: true })
+      // Aggregate to one series across the scope: mean pct per day.
+      const byDay = {}
+      ;(snaps ?? []).forEach(s => { (byDay[s.captured_on] ??= []).push(Number(s.pct)) })
+      const series = Object.entries(byDay).map(([captured_on, arr]) =>
+        ({ captured_on, pct: Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) }))
+      // Latest planned end across the scope is the date to judge against.
+      const ends = cp.flatMap(p => p.phases.map(ph => ph.planned_end).filter(Boolean)).sort()
+      const trend = computeTrend(series, { plannedEnd: ends.length ? ends[ends.length - 1] : null, today: data.today })
+      sections.push({ heading: 'Trend & velocity', type: 'narrative', body: trendSentence(trend, fmtDate) })
+    }
+  } catch { /* snapshots are optional — the report still stands without them */ }
 
   const recs = []
   if (heatInsights.length) recs.push(heatInsights[heatInsights.length - 1].replace(/^\*\*Recommendation:\*\*\s*/, ''))
