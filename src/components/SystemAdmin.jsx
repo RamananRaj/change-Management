@@ -145,12 +145,30 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   }
 
   // ── AI Usage ─────────────────────────────────────────────────────────────────
-  const [ai, setAi] = useState(null)   // null = not loaded yet
-  async function loadAiUsage() {
-    // RLS scopes this: Master Admin sees all, Client Admin sees their client's rows.
-    const { data } = await supabase.from('ai_usage').select('*').order('created_at', { ascending: false }).limit(500)
-    setAi(data ?? [])
+  const [ai, setAi] = useState(null)        // recent rows (detail list) — null = not loaded yet
+  const [aiSummary, setAiSummary] = useState(null)   // server-side per-tenant aggregates (whole dataset)
+  const [aiRange, setAiRange] = useState('all')      // 'all' | '90' | '30' | '7' (days)
+  const [aiSearch, setAiSearch] = useState('')       // filter the breakdown tables by client/project name
+  const AI_RANGES = [['all', 'All time'], ['90', '90 days'], ['30', '30 days'], ['7', '7 days']]
+
+  const sinceFor = range => {
+    if (range === 'all') return null
+    const d = new Date(); d.setDate(d.getDate() - Number(range)); return d.toISOString()
   }
+  async function loadAiUsage(range = aiRange) {
+    // Recent rows power the detail list; the RPC aggregates the WHOLE dataset for accurate,
+    // searchable per-client/project totals as the customer base grows. Both are RLS-scoped.
+    const since = sinceFor(range)
+    let recent = supabase.from('ai_usage').select('*').order('created_at', { ascending: false }).limit(500)
+    if (since) recent = recent.gte('created_at', since)
+    const [{ data: rows }, sum] = await Promise.all([
+      recent,
+      supabase.rpc('ai_usage_by_tenant', { p_since: since }),
+    ])
+    setAi(rows ?? [])
+    setAiSummary(sum.error ? null : (sum.data ?? []))   // null → UI falls back to client-side grouping
+  }
+  function setAiRangeAndLoad(range) { setAiRange(range); setAi(null); setAiSummary(null); loadAiUsage(range) }
 
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
   const projNameOf = id => projects.find(p => p.id === id)?.name ?? '—'
@@ -439,16 +457,15 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* ── AI USAGE ── */}
       {tab === 'AI Usage' && (() => {
         if (ai === null) return <div className="space-y-2">{[1,2,3,4].map(n => <div key={n} className="h-14 bg-slate-100 rounded-xl animate-pulse" />)}</div>
-        const total = ai.length
-        const byTier = t => ai.filter(r => r.tier === t).length
-        const rules = byTier('rules'), slm = byTier('slm'), ext = byTier('external')
-        const localPct = total ? Math.round(((rules + slm) / total) * 100) : 0
-        const extPct   = total ? Math.round((ext / total) * 100) : 0
-        const withLat  = ai.filter(r => r.latency_ms != null)
-        const avgLat   = withLat.length ? Math.round(withLat.reduce((s, r) => s + r.latency_ms, 0) / withLat.length) : 0
+        const useSummary = Array.isArray(aiSummary)
         const tierBadge = t => t === 'rules' ? 'bg-green-100 text-green-700' : t === 'slm' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-        const seg = [{ t: 'rules', n: rules, c: '#16A34A' }, { t: 'slm', n: slm, c: '#2563EB' }, { t: 'external', n: ext, c: '#D97706' }]
-        // Group usage by a tenant field (client_id / project_id): count, external share, avg latency.
+
+        // Per-tenant rows: prefer the server aggregate (whole dataset); fall back to grouping the
+        // recent sample if the RPC isn't available yet (pre-migration).
+        const fromSummary = sc => aiSummary.filter(s => s.scope === sc).map(s => ({
+          key: s.id ?? '__none', name: s.id ? (s.name ?? (sc === 'client' ? clientName(s.id) : projNameOf(s.id))) : 'Unattributed',
+          n: Number(s.queries), ext: Number(s.external), avg: s.avg_latency ?? null,
+        })).sort((a, b) => b.n - a.n)
         const groupBy = (field, nameFn) => {
           const m = new Map()
           ai.forEach(r => {
@@ -460,11 +477,38 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           })
           return [...m.values()].map(g => ({ ...g, avg: g.latN ? Math.round(g.lat / g.latN) : null })).sort((a, b) => b.n - a.n)
         }
-        const byClient = groupBy('client_id', clientName)
-        const byProject = groupBy('project_id', projNameOf).filter(g => g.key !== '__none')
-        const breakdown = (title, rows) => rows.length === 0 ? null : (
+        const byClient  = useSummary ? fromSummary('client')  : groupBy('client_id', clientName)
+        const byProject = (useSummary ? fromSummary('project') : groupBy('project_id', projNameOf)).filter(g => g.key !== '__none')
+
+        // Headline totals: from the aggregate when available (accurate at any scale), else the sample.
+        let total, rules, slm, ext, avgLat
+        if (useSummary) {
+          const cr = aiSummary.filter(s => s.scope === 'client')
+          const sum = f => cr.reduce((a, s) => a + Number(s[f] || 0), 0)
+          total = sum('queries'); rules = sum('rules'); slm = sum('slm'); ext = sum('external')
+          const wl = cr.filter(s => s.avg_latency != null)
+          const wn = wl.reduce((a, s) => a + Number(s.queries), 0)
+          avgLat = wn ? Math.round(wl.reduce((a, s) => a + s.avg_latency * Number(s.queries), 0) / wn) : 0
+        } else {
+          total = ai.length
+          const byTier = t => ai.filter(r => r.tier === t).length
+          rules = byTier('rules'); slm = byTier('slm'); ext = byTier('external')
+          const withLat = ai.filter(r => r.latency_ms != null)
+          avgLat = withLat.length ? Math.round(withLat.reduce((s, r) => s + r.latency_ms, 0) / withLat.length) : 0
+        }
+        const localPct = total ? Math.round(((rules + slm) / total) * 100) : 0
+        const extPct   = total ? Math.round((ext / total) * 100) : 0
+        const seg = [{ t: 'rules', n: rules, c: '#16A34A' }, { t: 'slm', n: slm, c: '#2563EB' }, { t: 'external', n: ext, c: '#D97706' }]
+
+        // Search narrows the breakdown tables so the list stays usable as clients grow.
+        const sq = aiSearch.trim().toLowerCase()
+        const filt = rows => sq ? rows.filter(r => r.name.toLowerCase().includes(sq)) : rows
+        const breakdown = (title, rows) => {
+          const shown = filt(rows)
+          if (rows.length === 0) return null
+          return (
           <div className="mb-6">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{title}</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{title} <span className="text-slate-300 normal-case tracking-normal">({shown.length}{sq ? ` of ${rows.length}` : ''})</span></p>
             <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -474,7 +518,9 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(g => (
+                  {shown.length === 0 ? (
+                    <tr><td colSpan={5} className="py-6 text-center text-slate-400 text-xs">No match for “{aiSearch}”.</td></tr>
+                  ) : shown.map(g => (
                     <tr key={g.key} className="border-t border-slate-100">
                       <td className="py-2 px-3 text-slate-700 whitespace-nowrap">{g.name === 'Unattributed' ? <span className="text-slate-400">{g.name}</span> : g.name}</td>
                       <td className="py-2 px-3 text-right text-slate-700 font-medium">{g.n}</td>
@@ -492,7 +538,8 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
               </table>
             </div>
           </div>
-        )
+          )
+        }
         return (
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -513,6 +560,21 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                 className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${slmOn ? 'bg-[#1F4E79]' : 'bg-slate-300'} disabled:opacity-40`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${slmOn ? 'translate-x-5' : ''}`} />
               </button>
+            </div>
+
+            {/* Time window + search — keep the breakdown usable as the client base grows */}
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+                {AI_RANGES.map(([v, l]) => (
+                  <button key={v} onClick={() => setAiRangeAndLoad(v)}
+                    className={`px-3 py-1 rounded-md text-xs font-semibold transition-colors ${aiRange === v ? 'bg-white text-[#1F4E79] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+                ))}
+              </div>
+              {!scoped && (
+                <input value={aiSearch} onChange={e => setAiSearch(e.target.value)} placeholder="Search client or project…"
+                  className="flex-1 min-w-[200px] border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-[#1F4E79]" />
+              )}
+              <span className="text-[11px] text-slate-400">{useSummary ? 'Whole dataset' : 'Recent sample'}{aiRange !== 'all' ? ` · last ${aiRange}d` : ''}</span>
             </div>
 
             <div className="grid grid-cols-4 gap-3 mb-5">
