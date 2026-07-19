@@ -26,10 +26,12 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey)
 
     const b = await req.json().catch(() => ({}))
+    // Playwright reports fractional milliseconds — these columns are int, so round defensively.
+    const int = (v: unknown) => (v === null || v === undefined || Number.isNaN(Number(v)) ? null : Math.round(Number(v)))
     const row = {
       source: b.source === 'local' ? 'local' : 'ci',
-      total: b.total ?? null, passed: b.passed ?? null, failed: b.failed ?? null, skipped: b.skipped ?? null,
-      duration_ms: b.duration_ms ?? null,
+      total: int(b.total), passed: int(b.passed), failed: int(b.failed), skipped: int(b.skipped),
+      duration_ms: int(b.duration_ms),
       specs: Array.isArray(b.specs) ? b.specs.slice(0, 200) : [],
       commit: (b.commit ?? '').slice(0, 60) || null,
       branch: (b.branch ?? '').slice(0, 120) || null,

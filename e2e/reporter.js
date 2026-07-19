@@ -17,7 +17,7 @@ export default class SupabaseReporter {
       title: test.title,
       file: (test.location?.file || '').split('/').pop(),
       status,
-      duration_ms: result.duration,
+      duration_ms: Math.round(result.duration ?? 0),
       error: result.error?.message ? String(result.error.message).replace(/\[[0-9;]*m/g, '').slice(0, 300) : null,
     })
   }
@@ -32,7 +32,7 @@ export default class SupabaseReporter {
     const payload = {
       source: process.env.CI ? 'ci' : 'local',
       ...this.counts,
-      duration_ms: result.duration,
+      duration_ms: Math.round(result.duration ?? 0),
       specs: this.specs,
       commit: process.env.GITHUB_SHA || '',
       branch: process.env.GITHUB_REF_NAME || '',
@@ -43,7 +43,8 @@ export default class SupabaseReporter {
         headers: { 'Content-Type': 'application/json', 'x-report-secret': secret },
         body: JSON.stringify(payload),
       })
-      console.log(`[e2e reporter] posted results → ${r.status}`)
+      const body = await r.text().catch(() => '')
+      console.log(`[e2e reporter] posted results → ${r.status}${r.ok ? '' : ` · ${body.slice(0, 400)}`}`)
     } catch (e) {
       console.log('[e2e reporter] post failed:', e?.message || e)
     }
