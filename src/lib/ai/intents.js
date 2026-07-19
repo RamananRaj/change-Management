@@ -7,6 +7,9 @@
 export const INTENTS = [
   { intent: 'my_readiness',        re: /(my readiness|my surveys?|my (rag|score)|how ready am i)/i },
   { intent: 'my_progress',         re: /(my progress|my journey|my phases|my steps|my completion|how am i doing|where am i)/i },
+  // "Define the comms approach" — advisory questions that ask CORA to draft a change deliverable
+  // from the client's real data. Listed before `report` so "training plan" isn't read as a report.
+  { intent: 'approach',            re: /((comms|communications?|training|cutover|go[- ]?live|adoption|engagement|train[- ]?the[- ]?trainer|trainer the trainer)\s*(approach|plan|strategy|framework))|((approach|plan|strategy)\s+(for|to)\s+(comms|communications?|training|cutover|go[- ]?live))|train[- ]?the[- ]?trainer|trainer the trainer/i },
   { intent: 'report',              re: /(report|wrap[- ]?up|status (report|update|pack)|exec(utive)?[- ]?(pack|summary|report|brief(ing)?)|board[- ]?pack|briefing[- ]?pack|change[- ]?pack|full (picture|rundown))/i },
   // Stakeholder impact — people ask this many ways ("who's most impacted", "high impacted
   // stakeholders", "impact assessment"), so match the concept, not just the artifact's name.

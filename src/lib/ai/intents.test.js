@@ -37,6 +37,25 @@ describe('matchIntent', () => {
     }
   })
 
+  it('maps "define an approach" questions to the approach intent', () => {
+    for (const q of [
+      'Define Comms Approach',
+      'Define Training Approach',
+      'Define Cutover Approach',
+      'Trainer the Trainer approach',
+      'train the trainer',
+      'communications plan for Horizon Power',
+      'go-live strategy',
+    ]) {
+      expect(matchIntent(q)?.intent, q).toBe('approach')
+    }
+  })
+
+  it('does not let approach swallow ordinary report requests', () => {
+    expect(matchIntent('build me a change report')?.intent).toBe('report')
+    expect(matchIntent('exec pack for Horizon Power')?.intent).toBe('report')
+  })
+
   it('captures a phase number into params', () => {
     const m = matchIntent('summarise phase 3')
     expect(m?.intent).toBe('readiness')

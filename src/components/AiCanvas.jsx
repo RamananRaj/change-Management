@@ -225,7 +225,7 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
   // A row is clickable if it carries a drill query or a navigation target.
   const rowHandler = r => r.to && onNavigate ? () => onNavigate(r.to) : r.drill && onDrill ? () => onDrill(r.drill) : null
   if (d.type === 'narrative')
-    return <p className="text-[14px] leading-relaxed text-slate-700"><Bold text={d.body} /></p>
+    return <p className="text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap"><Bold text={d.body} /></p>
 
   if (d.type === 'report') return <ReportBody d={d} onDrill={onDrill} onNavigate={onNavigate} />
 

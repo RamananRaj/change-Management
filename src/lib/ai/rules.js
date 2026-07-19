@@ -681,8 +681,144 @@ async function resolveEntity(text, ctx = {}) {
   return { type: m.type, descriptor }
 }
 
+// ── Approach drafts ──────────────────────────────────────────────────────────────
+// "Define the comms approach" is advisory, not retrieval — the answer doesn't exist in the data
+// yet. Rather than let a model invent generic consulting boilerplate, CORA drafts it FROM the
+// client's real picture: impacted groups (heat map), phase dates, milestones and named owners.
+// Deterministic, grounded, $0. The admin edits from there.
+const APPROACH_TOPICS = [
+  { key: 'ttt',      re: /(train[- ]?the[- ]?trainer|trainer the trainer|ttt)/i, label: 'Train-the-Trainer Approach' },
+  { key: 'comms',    re: /(comms|communication)/i,                               label: 'Communications Approach' },
+  { key: 'cutover',  re: /(cutover|go[- ]?live)/i,                               label: 'Cutover Approach' },
+  { key: 'training', re: /training/i,                                            label: 'Training Approach' },
+]
+
+async function runApproach(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const cp = scopedProjects(data, scope)
+  const topic = APPROACH_TOPICS.find(t => t.re.test(text ?? '')) ?? APPROACH_TOPICS[1]
+
+  // Which client are we drafting for?
+  let client = scope.client
+  if (!client && scope.proj) client = data.clients.find(c => c.id === scope.proj.client_id) ?? null
+  if (!client && data.clients.length === 1) client = data.clients[0]
+  if (!client) {
+    return { type: 'narrative', title: 'Which client?',
+      body: `Tell me who this is for and I'll draft it from their data — e.g. "${topic.label} for ${data.clients[0]?.name ?? 'a client'}".` }
+  }
+  const projects = cp.filter(p => p.client_id === client.id)
+  const scopeLabel = scope.proj ? `${client.name} — ${scope.proj.name}` : client.name
+
+  // Impacted groups, ranked (the audience for every one of these approaches).
+  let groups = []
+  const { data: arts } = await supabase.from('change_artifacts').select('data')
+    .eq('client_id', client.id).eq('type', 'stakeholder_heatmap').eq('is_current', true)
+    .order('version', { ascending: false }).limit(1)
+  if (arts?.[0]?.data?.rows) {
+    groups = arts[0].data.rows.map(r => {
+      const cells = r.cells ?? []
+      return { name: r.label, total: cells.reduce((s, lv) => s + (LV_W[lv] || 0), 0), peak: cells.reduce((m, lv) => ((LV_W[lv] || 0) > (LV_W[m] || 0) ? lv : m), 'none') }
+    }).sort((a, b) => b.total - a.total)
+  }
+  const top = groups.slice(0, 3)
+  const audienceLine = groups.length
+    ? top.map(g => `${g.name} (${LV_LABEL[g.peak]})`).join(', ')
+    : 'no stakeholder heat map captured yet — load one and I\'ll target this properly'
+
+  // Timeline + owners from the live plan.
+  const allPhases = projects.flatMap(p => p.phases.map(ph => ({ ...ph, project: p.name })))
+  const phaseOn = n => allPhases.filter(ph => ph.phase_number === n).map(ph => ph.planned_start ? fmtDate(ph.planned_start) : null).filter(Boolean)[0] ?? 'date TBC'
+  const owners = [...new Set(projects.flatMap(p => p.memberIds))].map(id => nameOf(data.profiles, id)).filter(Boolean)
+  const ownerLine = owners.length ? owners.slice(0, 6).join(', ') + (owners.length > 6 ? ` +${owners.length - 6} more` : '') : 'no members assigned yet'
+  const ms = projects.flatMap(p => (p.milestones ?? []).filter(m => m.milestone_date).map(m => ({ ...m, project: p.name })))
+    .sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date)).slice(0, 4)
+  const msLine = ms.length ? ms.map(m => `${m.name} (${fmtDate(m.milestone_date)})`).join(', ') : 'no milestones set yet'
+
+  const head = `**${topic.label} — ${scopeLabel}**\nA structural starting point shaped by what ChangeFlow holds today. Read the "What this is based on" note at the end before sharing it — some of this is scaffolding, not evidence.\n`
+
+  const bodies = {
+    comms: [
+      `**1. Audiences (by impact)**\n${audienceLine}. Prioritise the highest-impact groups; they need the most frequent, most senior communication.`,
+      `**2. Objectives by phase**\n• Diagnose (${phaseOn(1)}) — build awareness: why the change, why now.\n• Design (${phaseOn(2)}) — involve: bring impacted groups into shaping the solution.\n• Engage (${phaseOn(3)}) — build readiness: what changes for me, and when.\n• Embed (${phaseOn(4)}) — reinforce: support, answer questions, celebrate early wins.\n• Evaluate (${phaseOn(5)}) — sustain: share outcomes and lock in new ways of working.`,
+      `**3. Channels**\nExecutive sponsor message for direction; line-manager briefing packs for the highest-impact groups (people trust their own manager most); intranet//Teams for reach; drop-in sessions for two-way dialogue; FAQ maintained throughout.`,
+      `**4. Cadence**\nFortnightly during Diagnose and Design, weekly through Engage and go-live, then monthly through Embed. Increase frequency around milestones.`,
+      `**5. Owners**\n${ownerLine}. Name a single accountable comms owner per audience.`,
+      `**6. Anchor moments**\n${msLine}.`,
+      `**7. How you'll know it's working**\nReadiness survey scores by group, attendance at sessions, volume and theme of questions, and manager confidence.`,
+    ],
+    training: [
+      `**1. Audiences (by impact)**\n${audienceLine}. Training depth should follow impact — highest-impact groups get role-specific, hands-on training; lower-impact groups need awareness only.`,
+      `**2. Training needs analysis**\nFor each impacted group, define: what they do today, what changes, and the specific capability gap. Do this before designing any content — it's what makes training role-relevant rather than system demos.`,
+      `**3. Delivery approach**\nBlended: e-learning for awareness and system basics, instructor-led or floor-walking for high-impact roles, quick-reference guides for day-one support. Use real scenarios from their actual work, not generic demos.`,
+      `**4. Schedule**\nDesign and build during Design (${phaseOn(2)}); deliver through Engage (${phaseOn(3)}) close enough to go-live that it's retained but with time to practise; reinforce during Embed (${phaseOn(4)}).`,
+      `**5. Owners**\n${ownerLine}.`,
+      `**6. Key dates**\n${msLine}.`,
+      `**7. Measures**\nCompletion rates, post-training confidence scores, readiness survey movement, and — the real test — support-ticket volume after go-live.`,
+    ],
+    cutover: [
+      `**1. Scope**\n${projects.map(p => p.name).join(', ') || 'No programmes in scope yet'}. Impacted groups: ${audienceLine}.`,
+      `**2. Readiness gates**\nBefore cutover, confirm: training complete for high-impact roles, readiness survey at or above target, support model staffed, and all Embed-phase prerequisites closed.`,
+      `**3. Cutover window**\nAnchored on Embed (${phaseOn(4)}) and Evaluate (${phaseOn(5)}). Key dates: ${msLine}.`,
+      `**4. Sequence**\nFreeze → final data migration and validation → technical switch → smoke checks → business verification by named users from each impacted group → go/no-go decision → announce live.`,
+      `**5. Go/no-go**\nNamed decision-makers, agreed criteria, and a rollback plan with a defined decision deadline. Decide in advance what "no" looks like.`,
+      `**6. Hypercare**\nElevated support for the first two weeks: floor-walkers for the highest-impact groups, daily triage, and a visible route for issues. Taper deliberately, don't just stop.`,
+      `**7. Owners**\n${ownerLine}.`,
+      allPhases.some(ph => ph.planned_end && new Date(ph.planned_end) < data.today && ph.pct < 100 && ph.steps > 0)
+        ? `**8. Watch out**\nSome phases are already overdue and under 100% — clear those before committing to a cutover date.`
+        : `**8. Watch out**\nNo phases are currently overdue — protect that position through the cutover window.`,
+    ],
+    ttt: [
+      `**1. Why train-the-trainer here**\nWith ${owners.length || 'your'} core team member${owners.length === 1 ? '' : 's'} and impacted groups spanning ${groups.length || 'several'} area${groups.length === 1 ? '' : 's'}, cascading through local trainers scales further and lands better — people learn best from someone who knows their actual job.`,
+      `**2. Trainer selection**\nPick from the highest-impact groups first (${top.map(g => g.name).join(', ') || 'once the heat map is loaded'}). Choose credibility over availability: respected practitioners who others already ask for help.`,
+      `**3. Candidate pool**\n${ownerLine}.`,
+      `**4. Prepare the trainers**\nDeeper functional training than end-users, plus facilitation skills, the "why" behind the change so they can handle challenge, and a full trainer pack (slides, scenarios, FAQ, common objections).`,
+      `**5. Certification**\nEach trainer delivers a practice session observed by the core team before going live. This is the step most programmes skip and most regret.`,
+      `**6. Cascade schedule**\nTrain trainers during Design (${phaseOn(2)}); they deliver through Engage (${phaseOn(3)}); reinforce in Embed (${phaseOn(4)}). Key dates: ${msLine}.`,
+      `**7. Support the trainers**\nA private channel for questions, weekly check-ins during the cascade, refreshed materials when things change, and visible recognition — this is on top of their day job.`,
+    ],
+  }
+
+  // ── Be explicit about evidence vs. scaffolding ──
+  // The client/project/phase data is real. The discipline content (how to train, how to cut over)
+  // is generic practice — ChangeFlow doesn't hold a training needs analysis or a cutover runbook.
+  // Say so plainly, and name what to capture, rather than letting structure imply substance.
+  const { data: artRows } = await supabase.from('change_artifacts').select('type')
+    .eq('client_id', client.id).eq('is_current', true)
+  const haveTypes = [...new Set((artRows ?? []).map(a => a.type))]
+  const datedPhases = allPhases.filter(ph => ph.planned_start).length
+  const scored = (data.surveys ?? []).filter(s => new Set(projects.flatMap(p => p.memberIds)).has(s.user_id) && s.score != null)
+
+  const basis = [
+    `${projects.length} programme${projects.length === 1 ? '' : 's'} for ${client.name}`,
+    datedPhases ? `${datedPhases} phase${datedPhases === 1 ? '' : 's'} with planned dates` : null,
+    owners.length ? `${owners.length} assigned team member${owners.length === 1 ? '' : 's'}` : null,
+    groups.length ? `a stakeholder heat map (${groups.length} groups)` : null,
+    ms.length ? `${ms.length} milestone${ms.length === 1 ? '' : 's'}` : null,
+    scored.length ? `${scored.length} readiness survey response${scored.length === 1 ? '' : 's'}` : null,
+  ].filter(Boolean)
+
+  const GAPS = {
+    comms: ['a key-message library or comms calendar', 'audience channel preferences (what each group actually reads)', 'a sponsor engagement roadmap'],
+    training: ['a training needs analysis — what each role does today, what changes, and the capability gap', 'a curriculum or course list mapped to roles', 'trainer availability and delivery capacity', 'completion or assessment data'],
+    cutover: ['a cutover runbook with sequenced tasks and durations', 'agreed go/no-go criteria and rollback triggers', 'environment, data-migration and support-model detail'],
+    ttt: ['trainer nominations and their current capability', 'cascade capacity — how many sessions each trainer can realistically run', 'a trainer pack and certification standard'],
+  }
+  const missing = GAPS[topic.key]
+
+  const honesty =
+    `**What this is based on**\nReal data I hold: ${basis.join('; ')}.` +
+    (haveTypes.length ? ` Captured artifacts: ${haveTypes.join(', ')}.` : '') +
+    `\n\nWhat I do **not** hold for ${topic.label.replace(' Approach', '').toLowerCase()}: ${missing.join('; ')}. ` +
+    `The audiences, dates, owners and milestones above are drawn from your data and are specific to ${client.name}. The ${topic.label.replace(' Approach', '').toLowerCase()} content itself is standard practice, not evidence from this programme — treat it as a checklist to challenge, not a plan to sign off.` +
+    `\n\nTo make this genuinely specific, capture the missing items as content or an exercise in the library (Content Manager → add a template users complete). Once that data exists, ask me again and this draft will be built from it.`
+
+  return { type: 'narrative', title: `${topic.label} — ${scopeLabel}`, body: [head, ...bodies[topic.key], honesty].join('\n\n') }
+}
+
 const RUNNERS = {
   report: runReport,
+  approach: runApproach,
   heatmap: runHeatmap,
   my_progress: runMyJourney,
   my_readiness: runMyReadiness,
