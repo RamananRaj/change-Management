@@ -703,10 +703,21 @@ async function runApproach(_params, text, ctx) {
   // Which client are we drafting for?
   let client = scope.client
   if (!client && scope.proj) client = data.clients.find(c => c.id === scope.proj.client_id) ?? null
+  // Fall back to whoever the conversation has been about — the remembered entity may be a project,
+  // or only appear in an earlier turn ("Show me Horizon Power" → "Define Training Approach").
+  if (!client && ctx?.history?.length) {
+    const hay = ctx.history.map(h => `${h.q ?? ''} ${h.a ?? ''}`).join(' ').toLowerCase()
+    const proj = data.projRollup.find(p => p.name && p.name.length >= 3 && hay.includes(p.name.toLowerCase()))
+    client = (proj ? data.clients.find(c => c.id === proj.client_id) : null)
+      ?? data.clients.find(c => c.name && c.name.length >= 3 && hay.includes(c.name.toLowerCase())) ?? null
+  }
   if (!client && data.clients.length === 1) client = data.clients[0]
   if (!client) {
-    return { type: 'narrative', title: 'Which client?',
-      body: `Tell me who this is for and I'll draft it from their data — e.g. "${topic.label} for ${data.clients[0]?.name ?? 'a client'}".` }
+    // Never dead-end: offer the clients as one-click choices rather than asking them to retype.
+    return { type: 'list', title: 'Which client?',
+      intro: `I can draft the ${topic.label.toLowerCase()} from a client's live data — pick one:`,
+      empty: 'No clients set up yet.',
+      rows: (data.clients ?? []).map(c => ({ rag: 'g', name: c.name, meta: 'Draft from their data', drill: `${topic.label} for ${c.name}` })) }
   }
   const projects = cp.filter(p => p.client_id === client.id)
   const scopeLabel = scope.proj ? `${client.name} — ${scope.proj.name}` : client.name
