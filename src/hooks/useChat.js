@@ -87,6 +87,10 @@ export function useChat(user, profile) {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, payload => {
         if (chanIds.current.includes(payload.new.channel_id)) load()
       })
+      // Edits should appear for everyone, not just the author.
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_messages' }, payload => {
+        if (chanIds.current.includes(payload.new?.channel_id)) load()
+      })
       // Someone marking a channel read updates their last_read_at — refresh so the sender's
       // ticks turn from grey to blue without needing a reload.
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_members' }, payload => {
@@ -125,6 +129,17 @@ export function useChat(user, profile) {
     await supabase.from('chat_messages').insert({ channel_id: channelId, sender_id: uid, body: text, reply_to: replyTo, attachment, is_ai: isAi })
     await supabase.from('chat_members').update({ last_read_at: new Date().toISOString() }).eq('channel_id', channelId).eq('user_id', uid)
     load()
+  }
+
+  // Edit your own message. RLS enforces ownership; edited_at drives the visible "edited" marker.
+  async function editMessage(messageId, body) {
+    const text = (body || '').trim()
+    if (!text) return { error: { message: 'Message cannot be empty' } }
+    const { error } = await supabase.from('chat_messages')
+      .update({ body: text, edited_at: new Date().toISOString() })
+      .eq('id', messageId).eq('sender_id', uid)
+    if (!error) load()
+    return { error }
   }
 
   async function markRead(channelId) {
@@ -196,5 +211,5 @@ export function useChat(user, profile) {
     }).sort((a, b) => b.lastAt - a.lastAt)
   }
 
-  return { channels, people, loading, totalUnread, reload: load, loadMessages, send, uploadAttachment, markRead, openOrCreateDm, createGroup, loadClients, loadOversight }
+  return { channels, people, loading, totalUnread, reload: load, loadMessages, send, editMessage, uploadAttachment, markRead, openOrCreateDm, createGroup, loadClients, loadOversight }
 }

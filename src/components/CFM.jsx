@@ -66,6 +66,14 @@ export default function CFM() {
   const [text, setText] = useState('')
   const [view, setView] = useState('list')   // 'list' | 'thread' | 'new' | 'newgroup'
   const [replyTo, setReplyTo] = useState(null)   // message being replied to
+  const [editing, setEditing] = useState(null)   // your own message being edited
+
+  // Pull a message into the composer to fix it (typos are the main reason people want this).
+  function startEdit(m) {
+    setEditing(m); setReplyTo(null); setText(m.body ?? '')
+    setTimeout(() => msgInputRef.current?.focus(), 0)
+  }
+  function cancelEdit() { setEditing(null); setText('') }
   const [groupName, setGroupName] = useState('')
   const [picked, setPicked] = useState([])
   // Master Admin oversight (read-only)
@@ -166,6 +174,17 @@ export default function CFM() {
   async function submit(e) {
     e?.preventDefault()
     const t = text.trim(); if (!t || !activeId) return
+
+    // Saving an edit rather than sending something new.
+    if (editing) {
+      const target = editing
+      setEditing(null); setText('')
+      const { error } = await chat.editMessage(target.id, t)
+      if (error) { window.alert(`Could not save the edit: ${error.message}`); setEditing(target); setText(t); return }
+      chat.loadMessages(activeId).then(setMessages)
+      return
+    }
+
     const rt = replyTo?.id ?? null
     setText(''); setReplyTo(null)
     await chat.send(activeId, t, rt)
@@ -325,6 +344,7 @@ export default function CFM() {
                   {m.attachment && <Attachment a={m.attachment} />}
                   {m.body && <span className={isAi ? 'whitespace-pre-wrap' : ''}>{m.body}</span>}
                   <span className="text-[9.5px] text-slate-400 float-right ml-2 mt-1.5">
+                    {m.edited_at && <span className="italic mr-1" title={`Edited ${fmtTime(m.edited_at)}`}>edited</span>}
                     {fmtTime(m.created_at)}
                     {mine && (() => {
                       // Read once every other participant's last_read_at is at/after this message.
@@ -336,13 +356,26 @@ export default function CFM() {
                   </span>
                   {!isAi && <button onClick={() => setReplyTo(m)} title="Reply"
                     className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[11px] flex items-center justify-center shadow-sm ${mine ? '-left-7' : '-right-7'}`}>↩</button>}
+                  {mine && !isAi && <button onClick={() => startEdit(m)} title="Edit this message"
+                    className="absolute top-8 -left-7 opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 rounded-full bg-white border border-slate-200 text-slate-500 text-[10px] flex items-center justify-center shadow-sm">✎</button>}
                 </div>
               )
             })}
             {aiThinking && <div className="mr-auto max-w-[80%] px-3 py-2 rounded-lg bg-violet-50 border border-violet-100 text-[12.5px] text-violet-600 animate-pulse">✦ CORA is thinking…</div>}
             {messages.length === 0 && <p className="text-center text-xs text-slate-400 mt-6">No messages yet — say hello, or ask <span className="font-semibold text-violet-600">@cora</span> 👋</p>}
           </div>
-          {replyTo && (
+          {editing && (
+            <div className="bg-[#f0f2f5] px-3 pt-2 -mb-1">
+              <div className="bg-white border-l-[3px] border-[#E8913A] rounded px-3 py-1.5 flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-[#E8913A] leading-tight">✎ Editing your message</p>
+                  <p className="text-[11px] text-slate-500 truncate">Press Enter to save · Esc to cancel</p>
+                </div>
+                <button onClick={cancelEdit} className="text-slate-400 hover:text-slate-600 text-sm shrink-0">✕</button>
+              </div>
+            </div>
+          )}
+          {replyTo && !editing && (
             <div className="bg-[#f0f2f5] px-3 pt-2 -mb-1">
               <div className="bg-white border-l-[3px] border-[#1F4E79] rounded px-3 py-1.5 flex items-center gap-2">
                 <div className="min-w-0 flex-1">
@@ -360,7 +393,9 @@ export default function CFM() {
               title="Attach a file" className="text-slate-500 hover:text-[#1F4E79] text-lg disabled:opacity-40">📎</button>
             <button type="button" onClick={() => { setText(t => /^@cora\b/i.test(t.trim()) ? t : `@cora ${t}`.trimStart()); msgInputRef.current?.focus() }}
               title="Ask CORA" className="text-violet-500 hover:text-violet-700 text-base font-bold shrink-0">✦</button>
-            <input ref={msgInputRef} value={text} onChange={e => setText(e.target.value)} placeholder={uploading ? 'Uploading…' : 'Message · ✦ to ask CORA'}
+            <input ref={msgInputRef} value={text} onChange={e => setText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape' && editing) { e.preventDefault(); cancelEdit() } }}
+              placeholder={editing ? 'Edit your message…' : uploading ? 'Uploading…' : 'Message · ✦ to ask CORA'}
               onPaste={e => { const f = [...e.clipboardData.files][0]; if (f) { e.preventDefault(); sendFile(f) } }}
               className="flex-1 bg-white rounded-full px-4 py-2 text-[13.5px] outline-none" />
             <button type="submit" disabled={uploading} className="w-10 h-10 rounded-full bg-[#1F4E79] text-white text-base shrink-0 disabled:opacity-50">➤</button>
