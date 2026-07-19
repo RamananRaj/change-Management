@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useChat } from '../hooks/useChat'
 import { ask } from '../lib/ai/router'
+import { fmtSize, fileIcon } from '../lib/chat/helpers'
 
 // Turn a router descriptor into a concise chat-friendly answer for CORA.
 function descriptorToText(d) {
@@ -28,9 +29,6 @@ const CfmMark = ({ size = 34 }) => (
     <circle cx="26" cy="8" r="3" fill="#E8913A"/>
   </svg>
 )
-
-const fmtSize = b => !b ? '' : b < 1024 ? `${b} B` : b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`
-const fileIcon = t => (t || '').includes('pdf') ? '📕' : /word|document/.test(t || '') ? '📘' : /sheet|excel|csv/.test(t || '') ? '📗' : /presentation|powerpoint/.test(t || '') ? '📙' : '📄'
 
 function Attachment({ a }) {
   if (!a) return null

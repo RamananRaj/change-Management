@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { initialsOf, unreadCount, dmDisplayName } from '../lib/chat/helpers'
 
 // CFM chat data layer. Loads the signed-in user's channels (DMs + groups), resolves display
 // names + unread counts, and keeps them live via a Realtime subscription on chat_messages.
@@ -10,8 +11,7 @@ export function useChat(user, profile) {
   const [people, setPeople]     = useState([])   // people you can start a chat with
   const [loading, setLoading]   = useState(true)
   const chanIds = useRef([])
-
-  const initials = n => (n || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+  const initials = initialsOf
 
   const load = useCallback(async () => {
     if (!uid) return
@@ -40,11 +40,10 @@ export function useChat(user, profile) {
       const memberIds = (allMems ?? []).filter(m => m.channel_id === c.id).map(m => m.user_id)
       const others = memberIds.filter(id => id !== uid)
       const isGroup = c.type === 'group'
-      const name = isGroup ? (c.name || 'Group') : (profMap[others[0]]?.full_name ?? 'Direct message')
+      const name = dmDisplayName({ isGroup, groupName: c.name, otherName: profMap[others[0]]?.full_name })
       const list = byChan[c.id] ?? []
       const last = list[0] ?? null
-      const lr = lastRead[c.id] ? new Date(lastRead[c.id]) : new Date(0)
-      const unread = list.filter(m => m.sender_id !== uid && new Date(m.created_at) > lr).length
+      const unread = unreadCount(list, lastRead[c.id], uid)
       return {
         id: c.id, type: c.type, isGroup, name, initials: initials(name),
         members: memberIds, memberProfiles: memberIds.map(id => profMap[id]).filter(Boolean),
