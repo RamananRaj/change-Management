@@ -145,30 +145,48 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   }
 
   // ── AI Usage ─────────────────────────────────────────────────────────────────
-  const [ai, setAi] = useState(null)        // recent rows (detail list) — null = not loaded yet
-  const [aiSummary, setAiSummary] = useState(null)   // server-side per-tenant aggregates (whole dataset)
-  const [aiRange, setAiRange] = useState('all')      // 'all' | '90' | '30' | '7' (days)
+  const [ai, setAi] = useState(null)        // recent detail (last 7 days) — null = not loaded yet
+  const [aiSummary, setAiSummary] = useState(null)   // server-side per-tenant aggregates (whole retained dataset)
+  const [aiRange, setAiRange] = useState('all')      // aggregate window: 'all' | '90' | '30' | '7' (days)
   const [aiSearch, setAiSearch] = useState('')       // filter the breakdown tables by client/project name
+  const [history, setHistory] = useState(null)       // older-than-7-days rows, loaded on demand (paged)
+  const [histDone, setHistDone] = useState(false)    // no more history pages
+  const [histBusy, setHistBusy] = useState(false)
   const AI_RANGES = [['all', 'All time'], ['90', '90 days'], ['30', '30 days'], ['7', '7 days']]
+  const HIST_PAGE = 100
 
   const sinceFor = range => {
     if (range === 'all') return null
     const d = new Date(); d.setDate(d.getDate() - Number(range)); return d.toISOString()
   }
+  const sevenDaysAgo = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString() }
+
   async function loadAiUsage(range = aiRange) {
-    // Recent rows power the detail list; the RPC aggregates the WHOLE dataset for accurate,
-    // searchable per-client/project totals as the customer base grows. Both are RLS-scoped.
+    // Recent detail = last 7 days only (kept small); the RPC aggregates the whole retained dataset
+    // for accurate, searchable per-client/project totals. Both are RLS-scoped.
     const since = sinceFor(range)
-    let recent = supabase.from('ai_usage').select('*').order('created_at', { ascending: false }).limit(500)
-    if (since) recent = recent.gte('created_at', since)
     const [{ data: rows }, sum] = await Promise.all([
-      recent,
+      supabase.from('ai_usage').select('*').gte('created_at', sevenDaysAgo()).order('created_at', { ascending: false }).limit(200),
       supabase.rpc('ai_usage_by_tenant', { p_since: since }),
     ])
     setAi(rows ?? [])
-    setAiSummary(sum.error ? null : (sum.data ?? []))   // null → UI falls back to client-side grouping
+    setAiSummary(sum.error ? null : (sum.data ?? []))   // null → UI falls back to grouping the recent sample
+    setHistory(null); setHistDone(false)                // reset history when (re)loading
   }
-  function setAiRangeAndLoad(range) { setAiRange(range); setAi(null); setAiSummary(null); loadAiUsage(range) }
+  function setAiRangeAndLoad(range) { setAiRange(range); setAiSummary(null); loadAiUsage(range) }
+
+  // History: rows older than 7 days, fetched only when the admin opens it, one page at a time.
+  async function loadHistory(reset = false) {
+    setHistBusy(true)
+    const offset = reset ? 0 : (history?.length ?? 0)
+    const { data } = await supabase.from('ai_usage').select('*')
+      .lt('created_at', sevenDaysAgo()).order('created_at', { ascending: false })
+      .range(offset, offset + HIST_PAGE - 1)
+    const rows = data ?? []
+    setHistory(reset || history === null ? rows : [...history, ...rows])
+    setHistDone(rows.length < HIST_PAGE)
+    setHistBusy(false)
+  }
 
   const clientName = id => clients.find(c => c.id === id)?.name ?? '—'
   const projNameOf = id => projects.find(p => p.id === id)?.name ?? '—'
@@ -540,6 +558,33 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
           </div>
           )
         }
+        // Shared detail-log table — used by both "Recent" (7 days) and "History" (older, paged).
+        const queryTable = rows => (
+          <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
+                  <th className="py-2.5 px-3">Time</th><th className="py-2.5 px-3">Tier</th>
+                  {!scoped && <th className="py-2.5 px-3">Client</th>}<th className="py-2.5 px-3">Project</th>
+                  <th className="py-2.5 px-3">Intent</th><th className="py-2.5 px-3">Query</th><th className="py-2.5 px-3 text-right">Latency</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} className="border-t border-slate-100">
+                    <td className="py-2 px-3 text-slate-500 text-xs whitespace-nowrap">{new Date(r.created_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
+                    <td className="py-2 px-3"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tierBadge(r.tier)}`}>{r.tier}</span></td>
+                    {!scoped && <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.client_id ? clientName(r.client_id) : <span className="text-slate-300">—</span>}</td>}
+                    <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.project_id ? projNameOf(r.project_id) : <span className="text-slate-300">—</span>}</td>
+                    <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.intent ?? '—'}</td>
+                    <td className="py-2 px-3 text-slate-600 text-xs max-w-[280px] truncate" title={r.query}>{r.query ?? '—'}</td>
+                    <td className="py-2 px-3 text-slate-400 text-xs text-right whitespace-nowrap">{r.latency_ms != null ? `${r.latency_ms}ms` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
         return (
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -608,31 +653,34 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
                 {!scoped && breakdown('By client', byClient)}
                 {breakdown('By project', byProject)}
 
-                {/* Recent queries */}
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent queries</p>
-                <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-slate-50 text-left text-[11px] font-semibold text-slate-400 uppercase tracking-wide [&>th]:whitespace-nowrap">
-                        <th className="py-2.5 px-3">Time</th><th className="py-2.5 px-3">Tier</th>
-                        {!scoped && <th className="py-2.5 px-3">Client</th>}<th className="py-2.5 px-3">Project</th>
-                        <th className="py-2.5 px-3">Intent</th><th className="py-2.5 px-3">Query</th><th className="py-2.5 px-3 text-right">Latency</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ai.slice(0, 60).map(r => (
-                        <tr key={r.id} className="border-t border-slate-100">
-                          <td className="py-2 px-3 text-slate-500 text-xs whitespace-nowrap">{new Date(r.created_at).toLocaleString('en', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</td>
-                          <td className="py-2 px-3"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${tierBadge(r.tier)}`}>{r.tier}</span></td>
-                          {!scoped && <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.client_id ? clientName(r.client_id) : <span className="text-slate-300">—</span>}</td>}
-                          <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.project_id ? projNameOf(r.project_id) : <span className="text-slate-300">—</span>}</td>
-                          <td className="py-2 px-3 text-slate-600 text-xs whitespace-nowrap">{r.intent ?? '—'}</td>
-                          <td className="py-2 px-3 text-slate-600 text-xs max-w-[280px] truncate" title={r.query}>{r.query ?? '—'}</td>
-                          <td className="py-2 px-3 text-slate-400 text-xs text-right whitespace-nowrap">{r.latency_ms != null ? `${r.latency_ms}ms` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {/* Recent queries — last 7 days only, so this list stays small */}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Recent queries <span className="text-slate-300 normal-case tracking-normal">· last 7 days</span></p>
+                {ai.length === 0
+                  ? <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No queries in the last 7 days.</div>
+                  : queryTable(ai)}
+
+                {/* History — older rows, fetched on demand and paged so nothing heavy loads upfront */}
+                <div className="mt-6">
+                  {history === null ? (
+                    <button onClick={() => loadHistory(true)} disabled={histBusy}
+                      className="text-sm font-semibold text-[#1F4E79] hover:underline disabled:opacity-50">
+                      {histBusy ? 'Loading…' : 'View history (older than 7 days) →'}
+                    </button>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">History <span className="text-slate-300 normal-case tracking-normal">· older than 7 days{history.length ? ` · ${history.length} loaded` : ''}</span></p>
+                      {history.length === 0
+                        ? <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">No older queries.</div>
+                        : queryTable(history)}
+                      {!histDone && history.length > 0 && (
+                        <div className="text-center mt-3">
+                          <button onClick={() => loadHistory()} disabled={histBusy}
+                            className="text-sm font-semibold text-[#1F4E79] hover:underline disabled:opacity-50">{histBusy ? 'Loading…' : 'Load more'}</button>
+                        </div>
+                      )}
+                      <p className="text-[10px] text-slate-400 mt-3">Detail is retained for 180 days; per-client and per-project totals above cover the whole retained window.</p>
+                    </>
+                  )}
                 </div>
               </>
             )}
