@@ -20,7 +20,7 @@ export const INTENTS = [
   { intent: 'milestones',          re: /(milestone|due (this|next|soon|in)|deadline|what('?s| is) due)/i },
   { intent: 'clients',             re: /(clients|which client|list client|show client|all client)/i },
   { intent: 'people',              re: /(all people|list people|show people|people list|team members?|everyone|who('?s| is) on the)/i },
-  { intent: 'progress',            re: /(progress|completion|how far|on track|percent|% (done|complete))/i },
+  { intent: 'progress',            re: /(progress|completion|how far|on track|tracking|track(ing)? (well|ok|badly)|how('?s| is| are) .* (going|doing|tracking)|percent|% (done|complete))/i },
   { intent: 'readiness',           re: /(readiness|rag status|how are we|overall health|summary|summarise|summarize|how('?s| is) it going)/i },
 ]
 

@@ -78,9 +78,11 @@ export async function ask(text, ctx = {}, { onProgress } = {}) {
   const ext = await runExternal(text, gctx)
   const latency = performance.now() - t0
 
-  // No external model configured (and SLM absent/failed): rather than a bare "not configured"
-  // message, surface a grounded, deterministic answer from the context we already assembled.
-  if (ext.configured === false && !ext.error) {
+  // No usable external answer — whether because none is configured OR because the
+  // call failed. Both mean the same thing to the user, so both get the grounded
+  // fallback. Gating this on !ext.error was wrong: a failed call is the single most
+  // likely reason to need a fallback, and it was the one case that skipped it.
+  if (ext.configured === false || ext.error) {
     const body = groundedFallback(text, grounding)
     if (body) {
       logScoped({ tier: 'rules', intent: 'grounded_fallback', query: text, ok: true, escalated: false, latency_ms: latency }, text, ctx)

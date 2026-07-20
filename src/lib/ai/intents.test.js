@@ -73,3 +73,17 @@ describe('matchIntent', () => {
     expect(matchIntent('qwerty zxcv nonsense token')).toBeNull()
   })
 })
+
+describe('progress intent — natural phrasings', () => {
+  it('matches the way people actually ask', () => {
+    for (const q of [
+      'How is Meridian tracking',
+      "how's the RSR Program going",
+      'how are we doing on Phase 2',
+      'is Meridian on track',
+      'what percent complete is billing',
+    ]) {
+      expect(matchIntent(q)?.intent).toBe('progress')
+    }
+  })
+})
