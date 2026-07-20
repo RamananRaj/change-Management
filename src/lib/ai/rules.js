@@ -81,7 +81,9 @@ async function loadData() {
     }
   })
 
-  return { today, clients: clients ?? [], projRollup, milestones, surveys, profiles, clientName }
+  // Exported as clientNameOf, not clientName: it is a LOOKUP, and interpolating it
+  // into a template literal printed the function's source into CORA's answer.
+  return { today, clients: clients ?? [], projRollup, milestones, surveys, profiles, clientNameOf: clientName }
 }
 
 const nameOf = (profiles, id) => profiles.find(p => p.id === id)?.full_name ?? 'Member'
@@ -1018,6 +1020,7 @@ async function runStory(_params, text, ctx) {
     projectName: p.name, clientName: p.clientName, today,
     pct: p.pct, phases: p.phases.map(ph => ({ name: ph.name, pct: ph.pct })),
     trend, milestones, atRisk,
+    plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null,
     heat: art('stakeholder_heatmap'), gate: art('readiness_gate'),
     comms: art('comms_plan'), issues: art('issues_log'),
   })
@@ -1139,7 +1142,7 @@ export async function assembleClientContext(entityHint) {
   const focus = entityHint ? data.clients.find(c => c.name && String(entityHint).toLowerCase().includes(c.name.toLowerCase())) : null
   const cid = focus?.id
   const cps = data.projRollup.filter(p => !cid || p.client_id === cid)
-  const lines = [`Client: ${focus?.name || data.clientName || 'your programme'} (as of ${fmtDate(today)})`]
+  const lines = [`Client: ${focus?.name || data.projRollup?.[0]?.clientName || 'your programme'} (as of ${fmtDate(today)})`]
 
   cps.forEach(p => {
     lines.push(`Project "${p.name}": ${p.members} ${p.members === 1 ? 'person' : 'people'}, ${p.pct}% complete.`)

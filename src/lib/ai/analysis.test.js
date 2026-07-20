@@ -548,8 +548,8 @@ describe('buildProgrammeStory', () => {
   it('leads with where the programme actually is', () => {
     const s = buildProgrammeStory(base)
     expect(s.sections[0].heading).toBe('Where we are')
-    expect(s.sections[0].body).toContain('53% complete')
-    expect(s.sections[0].body).toContain('2 of 4 phases closed out')
+    expect(s.sections[0].body).toContain('53% complete** on activities')
+    expect(s.sections[0].body).toContain('2 of 4 phases fully closed')
     expect(s.sections[0].body).toContain('Engage')
   })
 
@@ -581,5 +581,34 @@ describe('buildProgrammeStory', () => {
     ]))
     expect(s.sections.find(x => x.heading === 'Who it lands on')).toBeUndefined()
     expect(renderStory(s)).toContain("Not covered, because the data isn't there yet")
+  })
+})
+
+describe('buildProgrammeStory · forecast sanity', () => {
+  const base = {
+    projectName: 'X', pct: 53, phases: [{ name: 'A', pct: 100 }, { name: 'B', pct: 20 }],
+    today: new Date('2026-07-20T00:00:00'), plannedEnd: '2027-02-26',
+  }
+
+  it('refuses to report a finish date earlier than the plan still runs', () => {
+    // Activity burn-down is fast early and slow late; extrapolating it linearly
+    // "finishes" before phases that have not started are even scheduled to.
+    const s = buildProgrammeStory({ ...base, trend: { perWeek: 5.5, verdict: 'on_track', forecast: new Date('2026-09-07T00:00:00'), slipDays: -172 } })
+    const body = s.sections.find(x => x.heading === 'Which way it is moving').body
+    expect(body).toContain('5.5%/week')
+    expect(body).not.toContain('Sep 7')
+    expect(body).toContain('health signal rather than a finish date')
+  })
+
+  it('reports a forecast that lands after the plan, with the slip', () => {
+    const forecast = new Date('2027-05-01T00:00:00')
+    const s = buildProgrammeStory({ ...base, trend: { perWeek: 0.9, verdict: 'slipping', forecast, slipDays: 64 } })
+    const body = s.sections.find(x => x.heading === 'Which way it is moving').body
+    // Format the expectation the same way the code does. Asserting a literal
+    // "May 1, 2027" passes in en-US and fails in en-AU, which says nothing about
+    // whether the forecast logic is right.
+    const expected = forecast.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    expect(body).toContain(expected)
+    expect(body).toContain('64 days past')
   })
 })

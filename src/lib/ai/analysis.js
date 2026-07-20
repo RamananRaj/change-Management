@@ -557,7 +557,7 @@ export function matchByPartialName(text, candidates = []) {
 // complete when half the inputs are empty is worse than a short one.
 export function buildProgrammeStory({
   projectName, clientName, today = new Date(),
-  pct = 0, phases = [], trend = null, milestones = [], atRisk = [],
+  pct = 0, phases = [], trend = null, milestones = [], atRisk = [], plannedEnd = null,
   heat = null, gate = null, comms = null, issues = null,
 } = {}) {
   const fmt = d => d ? new Date(typeof d === 'string' ? d + 'T00:00:00' : d)
@@ -568,8 +568,8 @@ export function buildProgrammeStory({
   // Where we are
   const active = phases.find(p => p.pct > 0 && p.pct < 100)
   const done = phases.filter(p => p.pct >= 100).length
-  let where = `**${projectName}** is **${pct}% complete**`
-  if (phases.length) where += `, with ${done} of ${phases.length} phases closed out`
+  let where = `**${projectName}** is **${pct}% complete** on activities`
+  if (phases.length) where += `, with ${done} of ${phases.length} phases fully closed`
   if (active) where += ` and **${active.name}** underway at ${active.pct}%`
   where += '.'
   sections.push({ heading: 'Where we are', body: where })
@@ -578,10 +578,19 @@ export function buildProgrammeStory({
   if (trend?.perWeek != null) {
     const dir = trend.verdict === 'stalled' ? 'has stalled' : `is moving at about **${trend.perWeek}%/week**`
     let body = `Progress ${dir}`
-    if (trend.forecast) body += `, which lands completion around **${fmt(trend.forecast)}**`
-    if (trend.slipDays > 0) body += ` — **${trend.slipDays} days past** the planned finish`
-    else if (trend.slipDays < 0) body += ` — ${Math.abs(trend.slipDays)} days ahead`
-    sections.push({ heading: 'Which way it is moving', body: body + '.' })
+    // Activity completion runs fast in early phases and slowly in late ones, so a
+    // straight-line projection off it routinely "finishes" months before the last
+    // phase is even scheduled to begin. Reporting that as a forecast date is worse
+    // than reporting no date: it invites a decision on a number that cannot happen.
+    const impossible = trend.forecast && plannedEnd && new Date(trend.forecast) < new Date(plannedEnd + 'T00:00:00')
+    if (trend.forecast && !impossible) {
+      body += `, which lands completion around **${fmt(trend.forecast)}**`
+      if (trend.slipDays > 0) body += ` — **${trend.slipDays} days past** the planned finish`
+      else if (trend.slipDays < 0) body += ` — ${Math.abs(trend.slipDays)} days ahead`
+    } else if (impossible) {
+      body += `. At that rate the activity burn-down finishes early, but the plan still runs to **${fmt(plannedEnd)}** — the remaining phases are scheduled, not merely unstarted, so treat the rate as a health signal rather than a finish date`
+    }
+    sections.push({ heading: 'Which way it is moving', body: body.endsWith('date') ? body + '.' : body + '.' })
   } else {
     gaps.push('not enough history to compute velocity')
   }
@@ -633,8 +642,8 @@ export function buildProgrammeStory({
     const ready = gate.units.filter(u => u.status === 'ready').length
     const unassessed = gate.units.filter(u => u.status === 'not_assessed')
     const risky = gate.units.filter(u => u.status === 'at_risk')
-    let body = `**${ready} of ${gate.units.length}** business units are ready for the ${gate.gate_name ?? 'gate'}${gate.decision_due ? `, decided ${fmt(gate.decision_due)}` : ''}.`
-    if (risky.length) body += ` ${risky.map(u => `**${u.unit}** is at risk — ${u.open}`).join(' ')}`
+    let body = `**${ready} of ${gate.units.length}** business units are ready for ${gate.gate_name ? `the **${gate.gate_name}** gate` : 'the gate'}${gate.decision_due ? `, decided ${fmt(gate.decision_due)}` : ''}.`
+    if (risky.length) body += ` ${risky.map(u => `**${u.unit}** is at risk — ${String(u.open).replace(/\.$/, '')}.`).join(' ')}`
     if (unassessed.length) body += ` ${unassessed.map(u => u.unit).join(' and ')} ${unassessed.length === 1 ? 'has' : 'have'} not been assessed at all, so ${unassessed.length === 1 ? 'it is' : 'they are'} not counted as ready.`
     sections.push({ heading: 'Are we ready', body })
   } else {
