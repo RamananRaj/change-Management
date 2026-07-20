@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { LANE_TINTS, laneStyle, buildLaneTree, rowsForLane } from '../lib/ai/analysis'
+import { LANE_TINTS, laneStyle, buildLaneTree, rowsForLane, groupLaneRows } from '../lib/ai/analysis'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -51,8 +51,10 @@ export default function ProjectTimeline({ project, readOnly = false }) {
 
   useEffect(() => { if (project?.id) load() /* eslint-disable-next-line */ }, [project?.id])
 
-  async function load() {
-    setLoading(true)
+  // quiet = refresh in place. Only the first load shows the skeleton; a refresh after
+  // an edit must not blank the chart, or every drag flashes the whole view away.
+  async function load({ quiet = false } = {}) {
+    if (!quiet) setLoading(true)
     const [{ data: ph }, { data: ms }, { data: ln }, { data: dated }] = await Promise.all([
       supabase.from('project_phases').select('*').eq('project_id', project.id).order('phase_number'),
       supabase.from('project_milestones').select('*').eq('project_id', project.id)
@@ -100,6 +102,13 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     setLoading(false)
   }
 
+  // Apply an edit to local state immediately, so the chart updates on the spot and
+  // the follow-up refetch just confirms it rather than being the thing you wait for.
+  function patchRow(table, id, patch) {
+    const setter = table === 'project_pathways' ? setActivities : setMilestones
+    setter(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
+  }
+
   function setPhaseDate(n, field, val) {
     setPhases(prev => prev.map(p => p.phase_number === n ? { ...p, [field]: val || null } : p))
   }
@@ -114,7 +123,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       }
     }
     setSavingDates(false)
-    load()
+    load({ quiet: true })
   }
 
   async function saveMilestone() {
@@ -126,8 +135,9 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         ends_on:   msForm.ends_on || null,
         lane_id:   msForm.lane_id || null,
         color:     msForm.color || null,
+        sort_order: Number(msForm.sort_order) || 0,
       }).eq('id', msForm.activityId)
-      setMsSaving(false); setMsForm(null); load()
+      setMsSaving(false); setMsForm(null); load({ quiet: true })
       return
     }
     if (!msForm.name.trim()) { setMsSaving(false); return }
@@ -143,18 +153,19 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       starts_on: msForm.kind === 'band' ? (msForm.starts_on || null) : null,
       ends_on:   msForm.kind === 'band' ? (msForm.ends_on || null) : null,
       color:     msForm.color || null,
+      sort_order: Number(msForm.sort_order) || 0,
     }
     if (msForm.id) await supabase.from('project_milestones').update(payload).eq('id', msForm.id)
     else           await supabase.from('project_milestones').insert(payload)
     setMsSaving(false)
     setMsForm(null)
-    load()
+    load({ quiet: true })
   }
 
   async function deleteMilestone(id) {
     if (!window.confirm('Delete this timeline item?')) return
     await supabase.from('project_milestones').delete().eq('id', id)
-    load()
+    load({ quiet: true })
   }
 
   async function saveLane() {
@@ -169,7 +180,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     if (laneForm.id) await supabase.from('project_lanes').update(payload).eq('id', laneForm.id)
     else             await supabase.from('project_lanes').insert(payload)
     setLaneForm(null)
-    load()
+    load({ quiet: true })
   }
 
   async function deleteLane(lane) {
@@ -181,7 +192,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     if (!window.confirm(warn)) return
     // ON DELETE SET NULL on both FKs means bars survive; they just fall out of a lane.
     await supabase.from('project_lanes').delete().eq('id', lane.id)
-    load()
+    load({ quiet: true })
   }
 
   // ── Drag to reschedule ──────────────────────────────────────────────────────
@@ -222,6 +233,13 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       if (!dragRef.current) return
       dragRef.current.dx = e2.clientX - dragRef.current.x0
       dragRef.current.dy = e2.clientY - dragRef.current.y0
+      dragRef.current.lastX = e2.clientX
+      dragRef.current.lastY = e2.clientY
+      // Which lane is under the cursor right now? Used both for the live hint and
+      // for the drop. Read from the DOM rather than computing row maths, so it
+      // stays correct however the lanes are nested or sized.
+      const el = document.elementFromPoint(e2.clientX, e2.clientY)
+      dragRef.current.overLane = el?.closest('[data-lane-id]')?.getAttribute('data-lane-id') ?? null
       bump()
     }
     const up = async () => {
@@ -230,9 +248,19 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       dragRef.current = null; bump()
       if (!d) return
 
+      // Dropped over a different lane? Move it there. This takes priority over
+      // reordering — you can't meaningfully do both in one gesture, and the lane
+      // change is the bigger intent.
+      const crossLane = d.mode === 'move' && d.laneId && d.overLane && d.overLane !== d.laneId
+      if (crossLane) {
+        patchRow(d.table, d.id, { lane_id: d.overLane })   // move it on screen straight away
+        await supabase.from(d.table).update({ lane_id: d.overLane }).eq('id', d.id)
+        if (!d.dx) { load({ quiet: true }); return }
+      }
+
       // Vertical drag reorders the row within its lane. Phases keep their fixed 1–5 sequence.
       const steps = Math.round(d.dy / ROW_H)
-      if (steps && d.laneId && d.mode === 'move') {
+      if (!crossLane && steps && d.laneId && d.mode === 'move') {
         const lane = rowsForLane(d.laneId, milestones, activities)
         const from = lane.findIndex(x => x.id === d.id)
         const to = Math.max(0, Math.min(lane.length - 1, from + steps))
@@ -245,20 +273,26 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         }
       }
 
-      if (!d.dx) { if (steps) load(); return }
+      if (!d.dx) { if (steps) load({ quiet: true }); return }
       const p = dragPreview({ ...d })
       if (!p) return
+      // Paint the new dates locally first. Waiting on the round-trip is what made a
+      // drag snap back to the old position for a moment before settling.
       if (d.table === 'project_phases') {
+        setPhases(prev => prev.map(x => x.phase_number === d.id ? { ...x, planned_start: p.s, planned_end: p.e } : x))
         await supabase.from('project_phases').update({ planned_start: p.s, planned_end: p.e })
           .eq('project_id', project.id).eq('phase_number', d.id)
       } else if (d.table === 'project_pathways') {
+        patchRow(d.table, d.id, { starts_on: p.s, ends_on: p.e })
         await supabase.from('project_pathways').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
       } else if (p.e) {
+        patchRow(d.table, d.id, { starts_on: p.s, ends_on: p.e })
         await supabase.from('project_milestones').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
       } else {
+        patchRow(d.table, d.id, { milestone_date: p.s })
         await supabase.from('project_milestones').update({ milestone_date: p.s }).eq('id', d.id)
       }
-      load()
+      load({ quiet: true })
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up, { once: true })
@@ -272,8 +306,10 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     return { transform: `translateY(${d.dy}px)`, zIndex: 30, opacity: 0.92, transition: 'none' }
   }
 
-  // Grab handles on a band: middle moves, edges resize.
-  const handleStyle = 'absolute top-0 h-full w-2 cursor-ew-resize'
+  // Grab handles on a band: middle moves, edges resize. z-[6] keeps them above the
+  // bar — in the phase rows the handles are painted first, so without it the bar
+  // covers them and the edges simply can't be grabbed.
+  const handleStyle = 'absolute top-0 h-full w-2 cursor-ew-resize z-[6]'
   const DragTip = ({ id }) => {
     void dragTick            // re-render on every pointer move while dragging
     const d = dragRef.current
@@ -282,8 +318,10 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     if (!p) return null
     const txt = p.e ? `${fmtLong(toDate(p.s))} → ${fmtLong(toDate(p.e))}` : fmtLong(toDate(p.s))
     const steps = Math.round(d.dy / ROW_H)
-    const rowMove = (steps && d.table === 'project_milestones' && d.mode === 'move')
-      ? ` · ${steps > 0 ? '↓' : '↑'} ${Math.abs(steps)} row${Math.abs(steps) === 1 ? '' : 's'}` : ''
+    const target = d.overLane && d.overLane !== d.laneId ? lanes.find(l => l.id === d.overLane) : null
+    const rowMove = target ? ` · → ${target.name}`
+      : (steps && d.laneId && d.mode === 'move')
+        ? ` · ${steps > 0 ? '↓' : '↑'} ${Math.abs(steps)} row${Math.abs(steps) === 1 ? '' : 's'}` : ''
     return (
       <div className="absolute -top-5 z-20 bg-[#1F4E79] text-white text-[10px] font-semibold px-2 py-0.5 rounded whitespace-nowrap pointer-events-none"
         style={{ left: Math.max(posOf(p.s), 0) }}>{txt}{rowMove}</div>
@@ -310,77 +348,99 @@ export default function ProjectTimeline({ project, readOnly = false }) {
 
   const laneTree = buildLaneTree(lanes)
   const rowsIn = laneId => rowsForLane(laneId, milestones, activities)
+  // Lane currently under the cursor mid-drag, when it isn't the row's own lane.
+  const dropLane = (dragTick, dragRef.current?.overLane && dragRef.current.overLane !== dragRef.current.laneId)
+    ? dragRef.current.overLane : null
 
-  // A single row renderer for every lane. Milestones and activities differ only in
-  // which table an edit writes back to, so one component covers both and the two
-  // lanes stop drifting apart the way the old copy-pasted blocks did.
-  const TimelineRow = ({ r, accent, dim, depth = 0 }) => {
-    const isBand = r.starts_on && r.ends_on
-    const dates = isBand ? `${fmtShort(toDate(r.starts_on))} – ${fmtShort(toDate(r.ends_on))}`
-      : (r.milestone_date ? fmtShort(toDate(r.milestone_date)) : 'No dates set')
+  // One line of the chart. A line can hold several items — a band and the milestone
+  // that closes it, say — so the drawing loop is per item and the label column
+  // joins their names. Items share a line by sharing a sort_order.
+  const TimelineRow = ({ group, accent, dim, depth = 0 }) => {
+    const multi = group.items.length > 1
+    const dateText = i => (i.starts_on && i.ends_on)
+      ? `${fmtShort(toDate(i.starts_on))} – ${fmtShort(toDate(i.ends_on))}`
+      : (i.milestone_date ? fmtShort(toDate(i.milestone_date)) : 'No dates set')
+    const anyUndated = group.items.some(i => i.undated)
     return (
       <div className="flex items-center border-b border-slate-50 group">
         {/* Nesting indents the LABEL only. Indenting the row would shift the track
             and every bar in a sub-lane would sit at the wrong date. */}
         <div className="w-[190px] shrink-0 pr-3" style={{ paddingLeft: 12 + depth * 14 }}>
-          <p className={`text-xs font-semibold truncate ${r.undated ? 'text-slate-400' : ''}`} style={r.undated ? {} : { color: accent }}>{r.name}</p>
-          <p className={`text-[10px] ${r.undated ? 'text-amber-500' : 'text-slate-400'}`}>{dates}</p>
+          <p className={`text-xs font-semibold truncate ${anyUndated ? 'text-slate-400' : ''}`}
+            style={anyUndated ? {} : { color: accent }} title={group.label}>{group.label}</p>
+          <p className={`text-[10px] truncate ${anyUndated ? 'text-amber-500' : 'text-slate-400'}`}>
+            {multi ? group.items.map(dateText).join('  ·  ') : dateText(group.items[0])}
+          </p>
         </div>
         <div className="relative flex-1 h-8" style={{ width: trackW }}>
           <MonthGrid />
           <TodayLine />
-          {isBand ? (() => {
-            const lv = live(r.id, r.starts_on, r.ends_on)
-            const bx = posOf(lv.s)
-            const bw = Math.max(posOf(lv.e) - bx, 8)
-            const inside = bw >= estTextW(r.name)
-            const outRight = bx + bw + estTextW(r.name) <= trackW
-            return (
-              <>
-                <DragTip id={r.id} />
-                <div onPointerDown={e => beginDrag(e, r, 'move', r.table)}
-                  title={readOnly ? '' : 'Drag to move · drag an edge to change duration'}
-                  className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
-                  style={{ left: bx, width: bw, background: r.color || dim, border: `1px solid ${r.color || dim}`, ...(dragLift(r.id) || {}) }}>
-                  {inside && <span className="text-[10px] font-semibold whitespace-nowrap select-none" style={{ color: onColor(r.color) || accent }}>{r.name}</span>}
-                </div>
-                {!readOnly && (
-                  <>
-                    <div className={handleStyle} style={{ left: bx - 3 }} onPointerDown={e => beginDrag(e, r, 'start', r.table)} />
-                    <div className={handleStyle} style={{ left: bx + bw - 5 }} onPointerDown={e => beginDrag(e, r, 'end', r.table)} />
-                  </>
-                )}
-                {!inside && (
-                  <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap" style={{ color: accent, ...(outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(r.name) - 4, 2) }) }}>{r.name}</span>
-                )}
-              </>
-            )
-          })() : r.milestone_date ? (() => {
-            const dx = posOf(live(r.id, r.milestone_date, null).s)
-            const labelRight = dx + 12 + estTextW(r.name) <= trackW
-            return (
-              <>
-                <DragTip id={r.id} />
-                <div className={`absolute z-[5] ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`} style={{ left: dx - 7, top: 6, ...(dragLift(r.id) || {}) }}
-                  title={readOnly ? '' : 'Drag to move this milestone'}
-                  onPointerDown={e => beginDrag(e, r, 'move', r.table)}>
-                  <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={r.color || accent} /></svg>
-                </div>
-                <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap" style={{ color: accent, ...(labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(r.name) - 11, 2) }) }}>{r.name}</span>
-              </>
-            )
-          })() : (
-            // No dates: draw nothing on the track rather than guessing a position.
-            // The amber "No dates set" in the label column is the whole signal.
+          {group.ordered.map(r => {
+            const isBand = r.starts_on && r.ends_on
+            if (isBand) {
+              const lv = live(r.id, r.starts_on, r.ends_on)
+              const bx = posOf(lv.s)
+              const bw = Math.max(posOf(lv.e) - bx, 8)
+              // With several items on a line there is no room for outside labels;
+              // the label column already lists them.
+              const inside = bw >= estTextW(r.name)
+              const outRight = bx + bw + estTextW(r.name) <= trackW
+              return (
+                <Fragment key={`${r.table}-${r.id}`}>
+                  <DragTip id={r.id} />
+                  <div onPointerDown={e => beginDrag(e, r, 'move', r.table)}
+                    title={readOnly ? '' : 'Drag to move · drag an edge to change duration · drag onto another lane to move it there'}
+                    className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                    style={{ left: bx, width: bw, background: r.color || dim, border: `1px solid ${r.color || dim}`, ...(dragLift(r.id) || {}) }}>
+                    {inside && <span className="text-[10px] font-semibold whitespace-nowrap select-none" style={{ color: onColor(r.color) || accent }}>{r.name}</span>}
+                  </div>
+                  {!readOnly && (
+                    <>
+                      <div className={handleStyle} style={{ left: bx - 3 }} onPointerDown={e => beginDrag(e, r, 'start', r.table)} />
+                      <div className={handleStyle} style={{ left: bx + bw - 5 }} onPointerDown={e => beginDrag(e, r, 'end', r.table)} />
+                    </>
+                  )}
+                  {!inside && !multi && (
+                    <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap" style={{ color: accent, ...(outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(r.name) - 4, 2) }) }}>{r.name}</span>
+                  )}
+                </Fragment>
+              )
+            }
+            if (r.milestone_date) {
+              const dx = posOf(live(r.id, r.milestone_date, null).s)
+              const labelRight = dx + 12 + estTextW(r.name) <= trackW
+              return (
+                <Fragment key={`${r.table}-${r.id}`}>
+                  <DragTip id={r.id} />
+                  <div className={`absolute z-[8] ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`} style={{ left: dx - 7, top: 6, ...(dragLift(r.id) || {}) }}
+                    title={readOnly ? '' : 'Drag to move this milestone'}
+                    onPointerDown={e => beginDrag(e, r, 'move', r.table)}>
+                    <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={r.color || accent} stroke="#fff" strokeWidth="1.5" /></svg>
+                  </div>
+                  {!multi && (
+                    <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap z-[8]" style={{ color: accent, ...(labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(r.name) - 11, 2) }) }}>{r.name}</span>
+                  )}
+                </Fragment>
+              )
+            }
+            return null
+          })}
+          {group.items.every(i => !i.starts_on && !i.milestone_date) && (
             <span className="absolute top-2 left-2 text-[10px] text-slate-300 italic">not scheduled</span>
           )}
         </div>
         {!readOnly && (
-          <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={() => openRowEditor(r)} className="text-[10px] hover:underline" style={{ color: accent }}>Edit</button>
-            {r.table === 'project_milestones' && (
-              <button onClick={() => deleteMilestone(r.id)} className="text-[10px] text-red-400 hover:underline ml-1.5">Del</button>
-            )}
+          <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity leading-tight">
+            {group.items.map(r => (
+              <div key={`${r.table}-${r.id}`}>
+                <button onClick={() => openRowEditor(r)} className="text-[10px] hover:underline" style={{ color: accent }}
+                  title={`Edit ${r.name}`}>{multi ? r.name.slice(0, 6) : 'Edit'}</button>
+                {r.table === 'project_milestones' && (
+                  <button onClick={() => deleteMilestone(r.id)} className="text-[10px] text-red-400 hover:underline ml-1.5"
+                    title={`Delete ${r.name}`}>Del</button>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -392,12 +452,13 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   function openRowEditor(r) {
     if (r.table === 'project_pathways') {
       setMsForm({ ...emptyMs, activityId: r.id, name: r.name, kind: 'band', lane_id: r.lane_id,
-        starts_on: r.starts_on ?? '', ends_on: r.ends_on ?? '', color: r.color ?? '' })
+        starts_on: r.starts_on ?? '', ends_on: r.ends_on ?? '', color: r.color ?? '', sort_order: r.sort_order ?? 0 })
       return
     }
     const m = milestones.find(x => x.id === r.id) ?? r
     setMsForm({ ...emptyMs, ...m, kind: (m.starts_on && m.ends_on) ? 'band' : 'point',
-      milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '', color: m.color ?? '' })
+      milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '', color: m.color ?? '',
+      sort_order: m.sort_order ?? 0 })
   }
 
   // Lane bands span the full width with no side borders or horizontal padding, so
@@ -408,7 +469,13 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     const rows = rowsIn(lane.id)
     const nested = depth > 0
     return (
-      <div style={{ background: nested ? '#ffffff' : st.tint, borderTop: `1px solid ${st.border}`, borderBottom: `1px solid ${st.border}` }}>
+      <div data-lane-id={lane.id}
+        style={{
+          background: nested ? '#ffffff' : st.tint,
+          borderTop: `1px solid ${st.border}`, borderBottom: `1px solid ${st.border}`,
+          // Highlight the lane you're about to drop into.
+          outline: dropLane === lane.id ? `2px solid ${st.text}` : 'none', outlineOffset: -2,
+        }}>
         <div className="flex items-center justify-between pr-3 pt-2 pb-1 group/lane" style={{ paddingLeft: 12 + depth * 14 }}>
           <span className={`font-semibold ${nested ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: st.text }}>
             {nested && <span className="opacity-50 mr-1">↳</span>}{lane.name}
@@ -424,7 +491,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         {rows.length === 0 && (lane.children?.length ?? 0) === 0 && (
           <div className="pb-2 text-[11px] text-slate-400" style={{ paddingLeft: 12 + depth * 14 }}>Nothing in this lane yet.</div>
         )}
-        {rows.map(r => <TimelineRow key={`${r.table}-${r.id}`} r={r} accent={st.text} dim={st.border} depth={depth} />)}
+        {groupLaneRows(rows).map(g => <TimelineRow key={g.key} group={g} accent={st.text} dim={st.border} depth={depth} />)}
         {(lane.children ?? []).map(c => <LaneBand key={c.id} lane={c} depth={depth + 1} />)}
       </div>
     )
@@ -679,6 +746,27 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                     </div>
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Line</label>
+                  <select value={String(msForm.sort_order ?? 0)} onChange={e => setMsForm({ ...msForm, sort_order: Number(e.target.value) })}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                    {(() => {
+                      const existing = groupLaneRows(rowsIn(msForm.lane_id)).filter(g => g.items.some(i => i.id !== msForm.id && i.id !== msForm.activityId))
+                      const nextFree = existing.length ? Math.max(...existing.map(g => g.sort_order)) + 1 : 0
+                      const onOwn = !existing.some(g => g.sort_order === Number(msForm.sort_order ?? 0))
+                      return (
+                        <>
+                          <option value={onOwn ? String(msForm.sort_order ?? 0) : String(nextFree)}>Its own line</option>
+                          {existing.map(g => (
+                            <option key={g.sort_order} value={String(g.sort_order)}>Share with: {g.label}</option>
+                          ))}
+                        </>
+                      )
+                    })()}
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">Put a milestone on the same line as the band it closes — Go-Live on Build, say.</p>
+                </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Colour</label>

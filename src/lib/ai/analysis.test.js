@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows } from './analysis'
 
 const heat = {
   version: 1,
@@ -384,5 +384,33 @@ describe('timeline swimlanes', () => {
   it('flags an activity missing either date as undated', () => {
     const [row] = rowsForLane('a', [], [{ id: 'p', lane_id: 'a', name: 'X', starts_on: '2026-07-01', ends_on: null }])
     expect(row.undated).toBe(true)
+  })
+})
+
+describe('shared timeline lines', () => {
+  const band = { id: 'b', name: 'Build', starts_on: '2026-07-27', ends_on: '2026-11-02', sort_order: 0 }
+  const point = { id: 'g', name: 'Go-Live', milestone_date: '2026-12-01', sort_order: 0 }
+  const other = { id: 's', name: 'System Test', starts_on: '2026-11-01', ends_on: '2026-12-03', sort_order: 1 }
+
+  it('puts items sharing a sort_order on one line', () => {
+    const rows = groupLaneRows([band, point, other])
+    expect(rows).toHaveLength(2)
+    expect(rows[0].items.map(i => i.id)).toEqual(['b', 'g'])
+    expect(rows[0].label).toBe('Build · Go-Live')
+    expect(rows[1].items.map(i => i.id)).toEqual(['s'])
+  })
+
+  it('draws bands before points so a marker sits on top of its band', () => {
+    const [row] = groupLaneRows([point, band])
+    expect(row.ordered.map(i => i.id)).toEqual(['b', 'g'])
+  })
+
+  it('orders lines by sort_order, not insertion', () => {
+    expect(groupLaneRows([other, band]).map(r => r.sort_order)).toEqual([0, 1])
+  })
+
+  it('treats a missing sort_order as line zero', () => {
+    const [row] = groupLaneRows([{ id: 'x', name: 'X' }, { id: 'y', name: 'Y', sort_order: 0 }])
+    expect(row.items).toHaveLength(2)
   })
 })

@@ -394,3 +394,25 @@ export function rowsForLane(laneId, milestones = [], activities = []) {
   }))
   return [...ms, ...acts].sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
 }
+
+// Items sharing a sort_order share a line. That makes sort_order the row number
+// rather than a strict ordinal, which is what lets a milestone sit on the same
+// line as the band it belongs to (Go-Live on the end of Build, say).
+export function groupLaneRows(rows = []) {
+  const byRow = new Map()
+  rows.forEach(r => {
+    const k = r.sort_order ?? 0
+    if (!byRow.has(k)) byRow.set(k, [])
+    byRow.get(k).push(r)
+  })
+  return [...byRow.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([sort_order, items]) => ({
+      sort_order,
+      key: `row-${sort_order}`,
+      items,
+      // Bands first so a point marker paints on top of a band it overlaps.
+      ordered: [...items].sort((a, b) => Number(!!b.ends_on) - Number(!!a.ends_on)),
+      label: items.map(i => i.name).join(' · '),
+    }))
+}
