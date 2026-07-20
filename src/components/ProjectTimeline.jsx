@@ -44,7 +44,6 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const [milestones,  setMilestones]  = useState([])
   const [progress,    setProgress]    = useState({})   // { phase: {done,total} }
   const [loading,     setLoading]     = useState(true)
-  const [savingDates, setSavingDates] = useState(false)
   const [msForm,      setMsForm]      = useState(null)  // milestone being added/edited
   const [msSaving,    setMsSaving]    = useState(false)
   const [lanes,       setLanes]       = useState([])   // project_lanes, flat; parent_id makes a sub-lane
@@ -111,49 +110,16 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     setter(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
   }
 
-  function setPhaseDate(n, field, val) {
-    setPhases(prev => prev.map(p => p.phase_number === n ? { ...p, [field]: val || null } : p))
-  }
-
-  // Edits in the Dates table are held locally until Save, so tabbing between fields
-  // doesn't fire a write per keystroke and a half-typed date never reaches the DB.
-  const [draft, setDraft] = useState({})       // { 'table:id': { field: value } }
-  const dirty = new Set(Object.keys(draft))
-  const dateVal = (r, field) => draft[`${r.table}:${r.id}`]?.[field] ?? r[field] ?? ''
-  function editDate(r, field, val) {
-    const k = `${r.table}:${r.id}`
-    setDraft(d => ({ ...d, [k]: { ...(d[k] ?? {}), [field]: val || null } }))
-  }
-
-  async function saveAllDates() {
-    setSavingDates(true)
-    const failures = []
-
-    for (const p of phases) {
-      if (p.id) {
-        await supabase.from('project_phases').update({ planned_start: p.planned_start, planned_end: p.planned_end }).eq('id', p.id)
-      } else if (p.planned_start || p.planned_end) {
-        await supabase.from('project_phases').insert({ project_id: project.id, phase_number: p.phase_number, status: p.status ?? 'locked', planned_start: p.planned_start, planned_end: p.planned_end })
-      }
-    }
-
-    for (const [key, patch] of Object.entries(draft)) {
-      const [table, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)]
-      const { data, error } = await supabase.from(table).update(patch).eq('id', id).select('id')
-      if (error || !data?.length) failures.push({ key, error })
-    }
-
-    setSavingDates(false)
-    if (failures.length) {
-      console.error('Timeline: some dates did not save', failures)
-      window.alert(`${failures.length} item(s) could not be saved. The table will reload to show the stored dates.`)
-    }
-    setDraft({})
-    load({ quiet: true })
-  }
-
   async function saveMilestone() {
     setMsSaving(true)
+    if (msForm.phaseNumber) {
+      const existing = phases.find(p => p.phase_number === msForm.phaseNumber)
+      const dates = { planned_start: msForm.starts_on || null, planned_end: msForm.ends_on || null }
+      if (existing?.id) await supabase.from('project_phases').update(dates).eq('id', existing.id)
+      else await supabase.from('project_phases').insert({ project_id: project.id, phase_number: msForm.phaseNumber, status: existing?.status ?? 'locked', ...dates })
+      setMsSaving(false); setMsForm(null); load({ quiet: true })
+      return
+    }
     // An activity row belongs to the pathway; the timeline only schedules and colours it.
     if (msForm.activityId) {
       await supabase.from('project_pathways').update({
@@ -253,7 +219,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       // preferring that silently broke both preview and save: the preview never
       // matched the row, and the update ran .eq('phase_number', <uuid>) against nothing.
       id: table === 'project_phases' ? item.phase_number : item.id,
-      mode, table,
+      mode, table, item,
       s: item.starts_on ?? item.planned_start ?? item.milestone_date,
       e: item.ends_on ?? item.planned_end ?? null,
       x0: ev.clientX, dx: 0, y0: ev.clientY, dy: 0,
@@ -278,6 +244,14 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       const d = dragRef.current
       dragRef.current = null; bump()
       if (!d) return
+
+      // A press that didn't really move is a click: open the item's details.
+      // 4px of slop covers the wobble in a normal click without swallowing a
+      // deliberate nudge, which would silently discard a one-day drag.
+      if (d.mode === 'move' && Math.abs(d.dx) < 4 && Math.abs(d.dy) < 4) {
+        openRowEditor(d.table === 'project_phases' ? { ...d.item, table: 'project_phases' } : d.item)
+        return
+      }
 
       // Dropped over a different lane? Move it there. This takes priority over
       // reordering — you can't meaningfully do both in one gesture, and the lane
@@ -498,6 +472,13 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   // Activities are owned by the pathway, so the timeline edits their dates and colour
   // but never their name or existence — that stays in the pathway builder.
   function openRowEditor(r) {
+    // A ChangeFlow phase has a fixed name and status-driven colour; only its dates
+    // are the user's to set, so the dialog opens with just those enabled.
+    if (r.table === 'project_phases') {
+      setMsForm({ ...emptyMs, phaseNumber: r.phase_number, name: `0${r.phase_number} ${PHASE_NAMES[r.phase_number]}`,
+        kind: 'band', starts_on: r.planned_start ?? '', ends_on: r.planned_end ?? '' })
+      return
+    }
     if (r.table === 'project_pathways') {
       setMsForm({ ...emptyMs, activityId: r.id, name: r.name, kind: 'band', lane_id: r.lane_id,
         starts_on: r.starts_on ?? '', ends_on: r.ends_on ?? '', color: r.color ?? '', sort_order: r.sort_order ?? 0 })
@@ -532,7 +513,8 @@ export default function ProjectTimeline({ project, readOnly = false }) {
             <span className="flex gap-2 opacity-60 group-hover/lane:opacity-100 transition-opacity">
               <button onClick={() => setLaneForm({ ...lane })} className="text-[10px] hover:underline" style={{ color: st.text }}>Edit lane</button>
               {!nested && <button onClick={() => setLaneForm({ project_id: project.id, parent_id: lane.id, name: '', tint: '#f8fafc', sort_order: (lane.children?.length ?? 0) })} className="text-[10px] hover:underline" style={{ color: st.text }}>+ Sub-lane</button>}
-              <button onClick={() => deleteLane(lane)} className="text-[10px] text-red-400 hover:underline">Delete</button>
+              {/* Delete lives inside the edit dialog, not here. Sitting one pixel from
+                  Edit it was far too easy to hit, and there is no undo. */}
             </span>
           )}
         </div>
@@ -709,68 +691,6 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         <span className="flex items-center gap-1.5"><span className="w-px h-3.5 bg-red-500 inline-block" />Today</span>
       </div>
 
-      {/* Dates — everything on the chart in one place, so exact dates can be typed
-          without opening a dialog per bar. Lanes first, phases last. */}
-      {!readOnly && (
-        <div className="bg-white border border-slate-100 rounded-2xl p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dates</p>
-            {dirty.size > 0 && <span className="text-[10px] text-amber-600">{dirty.size} unsaved</span>}
-          </div>
-
-          {laneTree.map(l => {
-            const st = laneStyle(l.tint)
-            const sub = [l, ...(l.children ?? [])]
-            return (
-              <div key={l.id} className="mb-3">
-                <p className="text-[11px] font-semibold mb-1.5" style={{ color: st.text }}>{l.name}</p>
-                {sub.map(lane => rowsIn(lane.id).map(r => (
-                  <div key={`${r.table}-${r.id}`} className="flex items-center gap-3 flex-wrap mb-1.5"
-                    style={{ paddingLeft: lane.id === l.id ? 0 : 14 }}>
-                    <span className="text-sm text-slate-700 w-40 shrink-0 truncate" title={r.name}>
-                      {lane.id !== l.id && <span className="text-slate-300 mr-1">↳</span>}{r.name}
-                    </span>
-                    {r.milestone_date !== null && !r.starts_on ? (
-                      <input type="date" value={dateVal(r, 'milestone_date')} onChange={e => editDate(r, 'milestone_date', e.target.value)}
-                        className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
-                    ) : (
-                      <>
-                        <input type="date" value={dateVal(r, 'starts_on')} onChange={e => editDate(r, 'starts_on', e.target.value)}
-                          className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
-                        <span className="text-slate-300 text-xs">→</span>
-                        <input type="date" value={dateVal(r, 'ends_on')} onChange={e => editDate(r, 'ends_on', e.target.value)}
-                          className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
-                      </>
-                    )}
-                  </div>
-                )))}
-                {sub.every(lane => rowsIn(lane.id).length === 0) && (
-                  <p className="text-[11px] text-slate-300">Nothing in this lane yet.</p>
-                )}
-              </div>
-            )
-          })}
-
-          <div className="mb-3">
-            <p className="text-[11px] font-semibold text-[#E8913A] mb-1.5">ChangeFlow phases</p>
-            {phases.map(p => (
-              <div key={p.phase_number} className="flex items-center gap-3 flex-wrap mb-1.5">
-                <span className="text-sm text-slate-700 w-40 shrink-0">0{p.phase_number} {PHASE_NAMES[p.phase_number]}</span>
-                <input type="date" value={p.planned_start ?? ''} onChange={e => setPhaseDate(p.phase_number, 'planned_start', e.target.value)}
-                  className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
-                <span className="text-slate-300 text-xs">→</span>
-                <input type="date" value={p.planned_end ?? ''} onChange={e => setPhaseDate(p.phase_number, 'planned_end', e.target.value)}
-                  className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
-              </div>
-            ))}
-          </div>
-
-          <button onClick={saveAllDates} disabled={savingDates}
-            className="bg-[#1F4E79] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
-            {savingDates ? 'Saving…' : 'Save dates'}
-          </button>
-        </div>
-      )}
 
       {/* Milestone form modal */}
       {msForm && (
@@ -779,17 +699,18 @@ export default function ProjectTimeline({ project, readOnly = false }) {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-md">
               <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-slate-800">{msForm.activityId ? 'Schedule activity' : msForm.id ? 'Edit timeline item' : 'New timeline item'}</h3>
+                <h3 className="font-bold text-slate-800">{msForm.phaseNumber ? 'Phase dates' : msForm.activityId ? 'Schedule activity' : msForm.id ? 'Edit timeline item' : 'New timeline item'}</h3>
                 <button onClick={() => setMsForm(null)} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">✕</button>
               </div>
               <div className="px-6 py-5 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Name {msForm.activityId ? '' : '*'}</label>
-                  <input value={msForm.name} onChange={e => setMsForm({ ...msForm, name: e.target.value })} autoFocus={!msForm.activityId}
-                    disabled={!!msForm.activityId}
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Name {msForm.activityId || msForm.phaseNumber ? '' : '*'}</label>
+                  <input value={msForm.name} onChange={e => setMsForm({ ...msForm, name: e.target.value })} autoFocus={!msForm.activityId && !msForm.phaseNumber}
+                    disabled={!!msForm.activityId || !!msForm.phaseNumber}
                     placeholder="e.g. Go-Live" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] disabled:bg-slate-50 disabled:text-slate-500" />
                   {msForm.activityId && <p className="text-[10px] text-slate-400 mt-1">Activity names come from the pathway. Rename it there.</p>}
                 </div>
+                {!msForm.phaseNumber && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Lane</label>
@@ -814,6 +735,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                     </select>
                   </div>
                 </div>
+                )}
                 {msForm.kind === 'point' ? (
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Date</label>
@@ -835,6 +757,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   </div>
                 )}
 
+                {!msForm.phaseNumber && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Line</label>
                   <select value={String(msForm.sort_order ?? 0)} onChange={e => setMsForm({ ...msForm, sort_order: Number(e.target.value) })}
@@ -855,7 +778,9 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   </select>
                   <p className="text-[10px] text-slate-400 mt-1">Put a milestone on the same line as the band it closes — Go-Live on Build, say.</p>
                 </div>
+                )}
 
+                {!msForm.phaseNumber && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Colour</label>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -881,12 +806,16 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">“Lane default” keeps the standard Delivery / Change styling.</p>
                 </div>
+                )}
+                {msForm.phaseNumber && (
+                  <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">A ChangeFlow phase takes its name and colour from its status, so only the dates are editable here.</p>
+                )}
               </div>
               <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                 <button onClick={() => setMsForm(null)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
                 <button onClick={saveMilestone} disabled={msSaving}
                   className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
-                  {msSaving ? 'Saving…' : msForm.id || msForm.activityId ? 'Save' : 'Add'}
+                  {msSaving ? 'Saving…' : msForm.id || msForm.activityId || msForm.phaseNumber ? 'Save' : 'Add'}
                 </button>
               </div>
             </div>
@@ -937,12 +866,18 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   </p>
                 )}
               </div>
-              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-between items-center gap-3">
+                {laneForm.id
+                  ? <button onClick={() => { const l = laneForm; setLaneForm(null); deleteLane(l) }}
+                      className="text-xs text-red-500 hover:underline">Delete lane</button>
+                  : <span />}
+                <div className="flex gap-3">
                 <button onClick={() => setLaneForm(null)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
                 <button onClick={saveLane} disabled={!laneForm.name.trim()}
                   className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
                   {laneForm.id ? 'Save' : 'Add'}
                 </button>
+                </div>
               </div>
             </div>
           </div>
