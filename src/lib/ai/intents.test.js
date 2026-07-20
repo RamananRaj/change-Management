@@ -87,3 +87,21 @@ describe('progress intent — natural phrasings', () => {
     }
   })
 })
+
+describe('gates and comms intents', () => {
+  it('recognises readiness gate questions', () => {
+    for (const q of ['show me the readiness gate', 'business readiness for Meridian',
+                     'are we ready to go live', 'go/no-go status'])
+      expect(matchIntent(q)?.intent).toBe('gates')
+  })
+
+  it('recognises comms plan questions', () => {
+    for (const q of ['show me the comms plan', 'show me the communications plan for Meridian',
+                     'comms status', 'who have we told'])
+      expect(matchIntent(q)?.intent).toBe('comms')
+  })
+
+  it('does not steal "define the comms approach" from the approach intent', () => {
+    expect(matchIntent('define the comms approach')?.intent).toBe('approach')
+  })
+})

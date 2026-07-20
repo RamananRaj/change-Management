@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens } from './analysis'
 
 const heat = {
   version: 1,
@@ -421,5 +421,98 @@ describe('clampPct', () => {
     expect(clampPct(-20)).toBe(0)
     expect(clampPct('62.4')).toBe(62)
     expect(clampPct(undefined)).toBe(0)
+  })
+})
+
+describe('fuzzy entity matching (did you mean)', () => {
+  const cands = [
+    { id: 'c1', name: 'Meridian Water Corporation (Demo)' },
+    { id: 'c2', name: 'Horizon Power' },
+    { id: 'p1', name: 'Customer Billing Transformation' },
+  ]
+
+  it('catches a one-character typo', () => {
+    const hit = fuzzyEntityMatch('how is Merdian tracking', cands)
+    expect(hit.entity.id).toBe('c1')
+    expect(hit.typed).toBe('merdian')
+  })
+
+  it('catches a transposition', () => {
+    expect(fuzzyEntityMatch('Horzion Power progress', cands).entity.id).toBe('c2')
+  })
+
+  it('returns nothing when the name is spelled correctly', () => {
+    expect(fuzzyEntityMatch('how is Meridian tracking', cands)).toBeNull()
+  })
+
+  it('does not guess from unrelated words', () => {
+    expect(fuzzyEntityMatch('what is at risk this week', cands)).toBeNull()
+  })
+
+  it('ignores short words that would match almost anything', () => {
+    expect(fuzzyEntityMatch('how is it', cands)).toBeNull()
+  })
+})
+
+describe('resolveScope · did you mean', () => {
+  const data = {
+    clients: [{ id: 'c1', name: 'Meridian Water Corporation (Demo)' }],
+    projRollup: [{ id: 'p1', name: 'Customer Billing Transformation', client_id: 'c1' }],
+  }
+
+  it('suggests the client when the name is misspelled', () => {
+    const s = resolveScope('how is Merdian tracking', {}, data)
+    expect(s.client).toBeNull()
+    expect(s.didYouMean).toMatchObject({ name: 'Meridian Water Corporation (Demo)', kind: 'client' })
+  })
+
+  it('adds no suggestion when the name resolves exactly', () => {
+    const s = resolveScope('how is Meridian Water Corporation (Demo) tracking', {}, data)
+    expect(s.client?.id).toBe('c1')
+    expect(s.didYouMean).toBeNull()
+  })
+})
+
+describe('partial name matching', () => {
+  const data = {
+    clients: [
+      { id: 'c1', name: 'Meridian Water Corporation (Demo)' },
+      { id: 'c2', name: 'Horizon Power' },
+      { id: 'c3', name: 'Western Power' },
+    ],
+    projRollup: [
+      { id: 'p1', name: 'Customer Billing Transformation', client_id: 'c1' },
+      { id: 'p2', name: 'RSR Program', client_id: 'c2' },
+      { id: 'p3', name: 'My First Project', client_id: 'c2' },
+      { id: 'p4', name: 'My First Project', client_id: 'c3' },
+    ],
+  }
+
+  it('scopes on a short form of the client name', () => {
+    const s = resolveScope('How is Meridian tracking', {}, data)
+    expect(s.client?.id).toBe('c1')
+    expect(s.suffix).toBe(' · Meridian Water Corporation (Demo)')
+  })
+
+  it('scopes on a short form of a project name', () => {
+    expect(resolveScope('show me the Billing timeline', {}, data).proj?.id).toBe('p1')
+  })
+
+  it('will not guess from a word several candidates share', () => {
+    // "Power" belongs to both Horizon and Western — it identifies neither.
+    const s = resolveScope('how is Power tracking', {}, data)
+    expect(s.client).toBeNull()
+    expect(s.proj).toBeNull()
+  })
+
+  it('refuses to pick between two projects with the same name', () => {
+    // Two clients each have "My First Project" — answering about either would be a guess.
+    const s = resolveScope('how is My First Project going', {}, data)
+    expect(s.proj).toBeNull()
+    expect(s.ambiguous?.map(x => x.id).sort()).toEqual(['p3', 'p4'])
+  })
+
+  it('still prefers an exact full-name match', () => {
+    expect(resolveScope('progress for Horizon Power', {}, data).client?.id).toBe('c2')
   })
 })

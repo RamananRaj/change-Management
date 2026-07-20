@@ -87,14 +87,49 @@ export function buildIntegratedInsight(heat, { pct, atRisk, avg, ragWord, upcomi
 export function resolveScope(text, ctx, data) {
   const t = (text ?? '').toLowerCase()
   const named = s => s && s.length >= 3 && t.includes(s.toLowerCase())
-  let proj = data.projRollup.find(p => named(p.name)) || null
-  let client = proj ? null : (data.clients.find(c => named(c.name)) || null)
+  // Two projects can share a name across clients. Picking the first silently answers
+  // about the wrong one, so an exact match that hits more than one is ambiguous.
+  const projHits = (data.projRollup ?? []).filter(p => named(p.name))
+  const clientHits = projHits.length ? [] : (data.clients ?? []).filter(c => named(c.name))
+  let proj = projHits.length === 1 ? projHits[0] : null
+  let client = clientHits.length === 1 ? clientHits[0] : null
+  let nameClash = (projHits.length > 1 && [...projHits]) || (clientHits.length > 1 && [...clientHits]) || null
+
+  // Full-name match failed. People say "Meridian", not the registered legal name, so
+  // fall back to matching on the parts of a name that only one candidate has.
+  let ambiguous = nameClash
+  if (!proj && !client && !ambiguous) {
+    const ph = matchByPartialName(text, data.projRollup ?? [])
+    if (ph?.entity) proj = ph.entity
+    else {
+      const ch = matchByPartialName(text, data.clients ?? [])
+      if (ch?.entity) client = ch.entity
+      else ambiguous = ph?.ambiguous ?? ch?.ambiguous ?? null
+    }
+  }
   if (!proj && !client && ctx?.entity) {
     const e = String(ctx.entity).toLowerCase()
     proj = data.projRollup.find(p => p.name && e.includes(p.name.toLowerCase())) || null
     if (!proj) client = data.clients.find(c => c.name && e.includes(c.name.toLowerCase())) || null
   }
-  return { proj, client, label: proj ? proj.name : client ? client.name : null, suffix: (proj || client) ? ` · ${proj ? proj.name : client.name}` : '' }
+  // Nothing matched by name. Before falling back to "everything", check whether the
+  // question contains a near miss for a real client or project — a typo should be
+  // offered back, not silently answered as an org-wide question.
+  let didYouMean = null
+  if (!proj && !client) {
+    const hit = fuzzyEntityMatch(text, [...(data.projRollup ?? []), ...(data.clients ?? [])])
+    if (hit) {
+      const isProj = (data.projRollup ?? []).some(p => p.id === hit.entity.id)
+      didYouMean = { name: hit.entity.name, kind: isProj ? 'project' : 'client', typed: hit.typed, score: Number(hit.score.toFixed(2)) }
+    }
+  }
+
+  return {
+    proj, client,
+    label: proj ? proj.name : client ? client.name : null,
+    suffix: (proj || client) ? ` · ${proj ? proj.name : client.name}` : '',
+    didYouMean, ambiguous,
+  }
 }
 
 // Narrow the project rollup to the resolved scope (one project, one client's projects, or all).
@@ -419,4 +454,95 @@ export function groupLaneRows(rows = []) {
       ordered: [...items].sort((a, b) => Number(!!b.ends_on) - Number(!!a.ends_on)),
       label: items.map(i => i.name).join(' · '),
     }))
+}
+
+// ── Fuzzy entity matching ─────────────────────────────────────────────────────
+// "Merdian" should not silently widen the answer to every client. When an exact
+// name match fails, look for a near miss and offer it back as a suggestion.
+
+// Damerau-Levenshtein (optimal string alignment): counts a transposition as ONE
+// edit, not two. Swapped adjacent letters are the most common typing mistake —
+// "Horzion" for "Horizon" — and plain Levenshtein scores those far enough apart
+// that a real near miss falls below any sensible threshold.
+function levenshtein(a, b) {
+  if (a === b) return 0
+  if (!a.length) return b.length
+  if (!b.length) return a.length
+  const d = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)))
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1)
+      }
+    }
+  }
+  return d[a.length][b.length]
+}
+
+const simRatio = (a, b) => (a.length || b.length) ? 1 - levenshtein(a, b) / Math.max(a.length, b.length) : 1
+
+// Compare each meaningful word in the question against each word of each candidate
+// name, rather than whole strings — "Merdian" should reach "Meridian Water
+// Corporation (Demo)" without being penalised for the words it never typed.
+export function fuzzyEntityMatch(text, candidates = [], { threshold = 0.75 } = {}) {
+  const words = String(text ?? '')
+    .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/)
+    .filter(w => w.length >= 4 && !LEARN_STOP.has(w))
+  if (!words.length) return null
+
+  let best = null
+  for (const c of candidates) {
+    const name = c?.name
+    if (!name) continue
+    const parts = name.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(p => p.length >= 4)
+    for (const w of words) {
+      for (const p of parts) {
+        // An exactly-typed word is not a typo, so it is never itself a suggestion —
+        // but it must not stop the search either. "Horzion Power" spells Power
+        // correctly, and bailing out there would miss the misspelt word beside it.
+        if (w === p) continue
+        const score = simRatio(w, p)
+        if (score >= threshold && (!best || score > best.score)) best = { entity: c, score, typed: w, meant: p }
+      }
+    }
+  }
+  return best
+}
+
+// ── Partial name matching ─────────────────────────────────────────────────────
+// People say "Meridian", not "Meridian Water Corporation (Demo)". Requiring the
+// full name meant such questions silently widened to the whole portfolio.
+//
+// Distinctiveness is measured against the candidate set rather than a fixed word
+// list: a token shared by several names ("Project", "Power", "Program") cannot
+// identify one of them, while a token unique to one name can. That self-tunes as
+// clients are added, instead of needing a stop-list maintained by hand.
+export function distinctiveNameTokens(candidates = []) {
+  const tokensOf = n => [...new Set(String(n ?? '').toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !LEARN_STOP.has(w)))]
+  const freq = new Map()
+  candidates.forEach(c => tokensOf(c?.name).forEach(t => freq.set(t, (freq.get(t) ?? 0) + 1)))
+  const out = new Map()
+  candidates.forEach(c => out.set(c.id, tokensOf(c?.name).filter(t => freq.get(t) === 1)))
+  return out
+}
+
+// Best candidate whose distinctive tokens appear in the text. Returns null when
+// nothing matches, or when two candidates tie — an ambiguous guess is worse than
+// admitting the question was ambiguous.
+export function matchByPartialName(text, candidates = []) {
+  const t = ` ${String(text ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ')} `
+  const dist = distinctiveNameTokens(candidates)
+  const scored = candidates
+    .map(c => ({ c, hits: (dist.get(c.id) ?? []).filter(tok => t.includes(` ${tok} `)).length }))
+    .filter(x => x.hits > 0)
+    .sort((a, b) => b.hits - a.hits)
+  if (!scored.length) return null
+  if (scored.length > 1 && scored[0].hits === scored[1].hits) {
+    return { ambiguous: scored.filter(x => x.hits === scored[0].hits).map(x => x.c) }
+  }
+  return { entity: scored[0].c }
 }

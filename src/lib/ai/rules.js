@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -898,10 +898,89 @@ async function runApproach(_params, text, ctx) {
   return { type: 'narrative', title: `${topic.label} — ${scopeLabel}`, body: parts.join('\n\n') }
 }
 
+
+// ── Readiness gate ────────────────────────────────────────────────────────────
+// A unit that has not been assessed is reported as not assessed, never as ready,
+// and is excluded from the ready count. An unanswered gate is not a passed one.
+async function runGates(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const clientId = scope.client?.id ?? (scope.proj ? data.projRollup.find(p => p.id === scope.proj.id)?.client_id : null)
+  let q = supabase.from('change_artifacts').select('client_id, title, data').eq('type', 'readiness_gate').eq('is_current', true)
+  if (clientId) q = q.eq('client_id', clientId)
+  const { data: arts } = await q
+  const art = (arts ?? [])[0]
+  if (!art) {
+    return { type: 'narrative', title: 'No readiness gate yet',
+      body: `No business readiness gate has been captured${scope.label ? ` for **${scope.label}**` : ''} yet.` }
+  }
+  const g = art.data ?? {}
+  const units = g.units ?? []
+  const RAG = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'a' }
+  const WORD = { ready: 'Ready', watch: 'Watch', at_risk: 'At risk', not_assessed: 'Not assessed' }
+  const rows = units.map(u => ({
+    rag: RAG[u.status] ?? 'a',
+    name: u.unit,
+    meta: `${u.met}/${u.total} criteria · ${WORD[u.status] ?? u.status}${u.owner ? ` · ${u.owner}` : ' · unassigned'}`,
+    due: u.open ?? '',
+  }))
+  const ready = units.filter(u => u.status === 'ready').length
+  const met = units.reduce((s, u) => s + (u.met ?? 0), 0)
+  const total = units.reduce((s, u) => s + (u.total ?? 0), 0)
+  const unassessed = units.filter(u => u.status === 'not_assessed')
+  const commentary = [
+    `**${met}/${total}** criteria met; **${ready}/${units.length}** units ready.`,
+    g.decision_due ? `Decision due ${new Date(g.decision_due + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}${g.owner ? `, owned by ${g.owner}` : ''}.` : null,
+    unassessed.length ? `${unassessed.map(u => u.unit).join(', ')} ${unassessed.length === 1 ? 'has' : 'have'} not been assessed and ${unassessed.length === 1 ? 'is' : 'are'} not counted as ready.` : null,
+  ].filter(Boolean).join(' ')
+  return { type: 'list', title: `${g.gate_name ?? art.title}${scope.suffix}`, rows, commentary, empty: 'No units on this gate.' }
+}
+
+// ── Comms plan ────────────────────────────────────────────────────────────────
+// Blocked is distinct from late: a comm can be on time and still unsendable because
+// the phase output it draws its audience from is unfinished. Saying only "overdue"
+// points at the wrong person.
+async function runComms(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const clientId = scope.client?.id ?? (scope.proj ? data.projRollup.find(p => p.id === scope.proj.id)?.client_id : null)
+  let q = supabase.from('change_artifacts').select('client_id, title, data').eq('type', 'comms_plan').eq('is_current', true)
+  if (clientId) q = q.eq('client_id', clientId)
+  const { data: arts } = await q
+  const art = (arts ?? [])[0]
+  if (!art) {
+    return { type: 'narrative', title: 'No comms plan yet',
+      body: `No comms plan has been captured${scope.label ? ` for **${scope.label}**` : ''} yet.` }
+  }
+  const c = art.data ?? {}
+  const items = c.items ?? []
+  const RAG = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', deferred: 'a' }
+  const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'
+  const rows = items.map(i => ({
+    rag: RAG[i.status] ?? 'a',
+    name: i.message,
+    meta: `${i.audience}${i.size ? ` · ${i.size}` : ''} · ${i.channel}${i.owner ? ` · ${i.owner}` : ' · no owner'}`,
+    due: `${fmt(i.date)}${i.status === 'blocked' ? ' · blocked' : i.status === 'overdue' ? ' · overdue' : i.status === 'deferred' ? ' · deferred' : ''}`,
+  }))
+  const sent = items.filter(i => i.status === 'sent').length
+  const blocked = items.filter(i => i.status === 'blocked')
+  const overdue = items.filter(i => i.status === 'overdue')
+  const deferred = items.filter(i => i.status === 'deferred')
+  const commentary = [
+    `**${sent}/${items.length}** sent, anchored to ${c.anchor ?? 'the timeline'}${c.anchor_date ? ` (${fmt(c.anchor_date)})` : ''}.`,
+    overdue.length ? `**${overdue.length} overdue** — the date has passed and nothing went out.` : null,
+    blocked.length ? `**${blocked.length} blocked**: ${blocked.map(b => `${b.message} — ${b.source}`).join('; ')}. Blocked is not the same as late; the upstream output is what needs finishing.` : null,
+    deferred.length ? `${deferred.length} deferred by decision, not by slippage.` : null,
+  ].filter(Boolean).join(' ')
+  return { type: 'list', title: `${art.title}${scope.suffix}`, rows, commentary, empty: 'No comms planned.' }
+}
+
 const RUNNERS = {
   report: runReport,
   approach: runApproach,
   heatmap: runHeatmap,
+  gates: runGates,
+  comms: runComms,
   my_progress: runMyJourney,
   my_readiness: runMyReadiness,
   clients: runClients,
@@ -952,11 +1031,33 @@ export async function noteCorrection(missText, matchedText, intent, userId) {
 
 // Public: try to answer with rules. Returns { matched, intent, descriptor } — descriptor is
 // null when no rule matched (router then escalates to the SLM).
+// A misspelt client or project name would otherwise be answered silently across the
+// whole portfolio, which looks like a correct answer to a question you didn't ask.
+// Every intent runner scopes through resolveScope, so the check belongs here — once,
+// at the choke point — rather than repeated in each of them.
+async function withDidYouMean(descriptor, text, ctx) {
+  if (!descriptor) return descriptor
+  try {
+    const data = await loadData()
+    const { didYouMean, ambiguous } = resolveScope(text, ctx, data)
+    if (ambiguous?.length) {
+      const names = ambiguous.map(a => a.name)
+      const note = `That name matches ${names.length} records (${names.join(', ')}). This answer covers all of them — name the client to narrow it.`
+      return { ...descriptor, ambiguous, commentary: descriptor.commentary ? `${note}\n\n${descriptor.commentary}` : note }
+    }
+    if (!didYouMean) return descriptor
+    const note = `I couldn't find “${didYouMean.typed}”. Did you mean **${didYouMean.name}**? This answer covers everything until you confirm.`
+    return { ...descriptor, didYouMean, commentary: descriptor.commentary ? `${note}\n\n${descriptor.commentary}` : note }
+  } catch {
+    return descriptor      // a suggestion is a nicety; never fail the answer over it
+  }
+}
+
 export async function runRules(text, ctx = {}) {
   // 1 ── Deterministic intent match
   const hit = matchIntent(text)
   if (hit) {
-    const descriptor = await RUNNERS[hit.intent](hit.params, text, ctx)
+    const descriptor = await withDidYouMean(await RUNNERS[hit.intent](hit.params, text, ctx), text, ctx)
     return { matched: true, intent: hit.intent, descriptor }
   }
 
@@ -966,7 +1067,7 @@ export async function runRules(text, ctx = {}) {
     const q = new Set(distinctiveTokens(text))
     const lp = learned.find(p => p.toks.every(t => q.has(t)))
     if (lp) {
-      const descriptor = await RUNNERS[lp.intent](null, text, ctx)
+      const descriptor = await withDidYouMean(await RUNNERS[lp.intent](null, text, ctx), text, ctx)
       return { matched: true, intent: lp.intent, learned: true, descriptor }
     }
   }

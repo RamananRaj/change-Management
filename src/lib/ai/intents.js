@@ -7,6 +7,12 @@
 export const INTENTS = [
   { intent: 'my_readiness',        re: /(my readiness|my surveys?|my (rag|score)|how ready am i)/i },
   { intent: 'my_progress',         re: /(my progress|my journey|my phases|my steps|my completion|how am i doing|where am i)/i },
+  // "Show me the comms plan" retrieves what exists; "define the comms approach" asks
+  // CORA to draft one. Same noun, opposite intent — so this must sit ahead of
+  // `approach` and match only the retrieval shape. Note "comms plan for X" stays with
+  // `approach` — an existing contract, and genuinely ambiguous either way.
+  { intent: 'comms',               re: /((show|list|see|view|display|what'?s?|whats|who|where)[\w\s]{0,20}(comms|communications?)\s*plan)|(comms|communications?)\s*plan\s*status|comms\s*(schedule|status|cascade)|who have we (told|communicated)/i },
+  { intent: 'gates',               re: /(readiness gate|business readiness|go\s*[-\/]?\s*no\s*[-\/]?\s*go|gate (review|status|criteria)|are we ready (to|for)|ready for go[- ]?live)/i },
   // "Define the comms approach" — advisory questions that ask CORA to draft a change deliverable
   // from the client's real data. Listed before `report` so "training plan" isn't read as a report.
   { intent: 'approach',            re: /((comms|communications?|training|cutover|go[- ]?live|adoption|engagement|train[- ]?the[- ]?trainer|trainer the trainer)\s*(approach|plan|strategy|framework))|((approach|plan|strategy)\s+(for|to)\s+(comms|communications?|training|cutover|go[- ]?live))|train[- ]?the[- ]?trainer|trainer the trainer/i },
