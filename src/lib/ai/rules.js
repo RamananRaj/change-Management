@@ -1043,7 +1043,7 @@ async function runStory(_params, text, ctx) {
     { heading: 'Which way it is moving', prose: byHeading('Which way it is moving'),
       widget: (snaps ?? []).length >= 2
         ? { type: 'trend', chart: buildTrendChart([{ name: p.name, points: (snaps ?? []).map(x => ({ captured_on: x.captured_on, pct: Number(x.pct) })) }],
-            { plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null, today }), verdict: trendSentence(trend, p.name) }
+            { plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null, today }), verdict: trendSentence(trend, fmtDate) }   // 2nd arg is a date formatter, not a name
         : null },
 
     { heading: 'What is in the way', prose: byHeading('What is in the way'),

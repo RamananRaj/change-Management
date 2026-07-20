@@ -593,7 +593,10 @@ export default function AiCanvas({ fill = false, context = 'Ask anything about y
       }
       // De-dupe: replace any existing card with the same title, moved fresh to the top.
       setWidgets(w => [{ ...d, query: label, key: Date.now() }, ...w.filter(x => x.title !== d.title)])
-    } catch {
+    } catch (err) {
+      // A bare `catch {}` here meant every runner failure looked identical and left
+      // nothing to debug from. Log it — the message is still friendly on screen.
+      console.error('CORA: query failed', { query: q, error: err })
       setWidgets(w => [{ type: 'narrative', title: 'Something went wrong', body: 'That query could not be answered. Please try again.', query: q, key: Date.now() }, ...w])
     } finally {
       setThinking(false); setProgress(null)
