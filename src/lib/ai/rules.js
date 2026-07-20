@@ -415,7 +415,11 @@ async function runReport(_params, text, ctx) {
 
   return { type: 'report', title: `Change report — ${scopeLabel}`,
     subtitle: `Generated ${data.today.toLocaleDateString('en', { day: 'numeric', month: 'long', year: 'numeric' })}${proj ? ' · project scope' : ''} · grounded in live data`,
-    client_id: cid ?? null, client_name: client?.name ?? null, project_id: proj?.id ?? null, sections }
+    client_id: cid ?? null, client_name: client?.name ?? null, project_id: proj?.id ?? null,
+    // Carried so the exported file can be named for the client and the day it covers,
+    // rather than inheriting whatever the card title happened to be.
+    scope_label: scopeLabel, generated_on: data.today.toISOString().slice(0, 10),
+    sections }
 }
 
 async function runUpcoming(_params, text, ctx) {

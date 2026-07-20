@@ -8,7 +8,16 @@ const LVL = lv => ({ vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Ver
 const stripMd = s => String(s ?? '').replace(/\*\*/g, '')
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 const mdHtml = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
-const safe = s => String(s ?? 'report').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_')
+
+// Client and date in the filename, matching the scheduled export's convention. A folder
+// of files all called "Change_report" is unusable once there is more than one client or
+// more than one week — and these get emailed on, where the name is all the context there is.
+const reportFileName = (report, ext) => {
+  const who = String(report.scope_label ?? report.client_name ?? report.title ?? 'report')
+    .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const when = report.generated_on ?? new Date().toISOString().slice(0, 10)
+  return `${who}-change-report-${when}.${ext}`
+}
 
 function download(content, name, type) {
   const blob = new Blob([content], { type })
@@ -24,7 +33,7 @@ export function exportReportDoc(report) {
     <style>body{font-family:Calibri,Arial,sans-serif;color:#1e293b;font-size:11pt}h1{color:#1F4E79}h2{color:#1F4E79;font-size:13pt;border-bottom:1px solid #cbd5e1;padding-bottom:3px;margin-top:18px}
     table{border-collapse:collapse;width:100%;margin:6px 0}td,th{border:1px solid #e2e8f0;padding:5px 8px;font-size:10pt;text-align:left}ul{margin:4px 0 4px 18px}</style></head>
     <body><h1>${esc(report.title)}</h1><p style="color:#64748b">${esc(report.subtitle || '')}</p>${body}</body></html>`
-  download('﻿' + html, `${safe(report.title)}.doc`, 'application/msword')
+  download('﻿' + html, reportFileName(report, 'doc'), 'application/msword')
 }
 function secDocHTML(s) {
   const h = `<h2>${esc(s.heading)}</h2>`
@@ -170,7 +179,7 @@ export async function exportReportPptx(report) {
     }
   })
 
-  pptx.writeFile({ fileName: `${safe(report.title)}.pptx` })
+  pptx.writeFile({ fileName: reportFileName(report, 'pptx') })
 }
 
 // Draw the heat map as a grid of coloured dots (matches the app + PDF).
