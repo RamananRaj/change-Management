@@ -222,7 +222,12 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     if (readOnly || !hasDomain) return
     ev.preventDefault(); ev.stopPropagation()
     dragRef.current = {
-      id: item.id ?? item.phase_number, mode, table,
+      // Phases are addressed by phase_number everywhere else — in live(), in DragTip,
+      // and in the update's .eq(). They also carry a uuid id from the table, and
+      // preferring that silently broke both preview and save: the preview never
+      // matched the row, and the update ran .eq('phase_number', <uuid>) against nothing.
+      id: table === 'project_phases' ? item.phase_number : item.id,
+      mode, table,
       s: item.starts_on ?? item.planned_start ?? item.milestone_date,
       e: item.ends_on ?? item.planned_end ?? null,
       x0: ev.clientX, dx: 0, y0: ev.clientY, dy: 0,
@@ -278,19 +283,26 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       if (!p) return
       // Paint the new dates locally first. Waiting on the round-trip is what made a
       // drag snap back to the old position for a moment before settling.
+      // Every branch reports rows touched, so a write that matches nothing is loud
+      // instead of looking like a successful drag that quietly reverts on refresh.
+      let res
       if (d.table === 'project_phases') {
         setPhases(prev => prev.map(x => x.phase_number === d.id ? { ...x, planned_start: p.s, planned_end: p.e } : x))
-        await supabase.from('project_phases').update({ planned_start: p.s, planned_end: p.e })
-          .eq('project_id', project.id).eq('phase_number', d.id)
+        res = await supabase.from('project_phases').update({ planned_start: p.s, planned_end: p.e })
+          .eq('project_id', project.id).eq('phase_number', d.id).select('phase_number')
       } else if (d.table === 'project_pathways') {
         patchRow(d.table, d.id, { starts_on: p.s, ends_on: p.e })
-        await supabase.from('project_pathways').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
+        res = await supabase.from('project_pathways').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id).select('id')
       } else if (p.e) {
         patchRow(d.table, d.id, { starts_on: p.s, ends_on: p.e })
-        await supabase.from('project_milestones').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
+        res = await supabase.from('project_milestones').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id).select('id')
       } else {
         patchRow(d.table, d.id, { milestone_date: p.s })
-        await supabase.from('project_milestones').update({ milestone_date: p.s }).eq('id', d.id)
+        res = await supabase.from('project_milestones').update({ milestone_date: p.s }).eq('id', d.id).select('id')
+      }
+      if (res?.error || !res?.data?.length) {
+        console.error('Timeline: drag did not save', { table: d.table, id: d.id, error: res?.error })
+        window.alert('That change could not be saved. The chart will reload to show the stored dates.')
       }
       load({ quiet: true })
     }
