@@ -19,6 +19,8 @@ const monthCeil  = d => new Date(d.getFullYear(), d.getMonth() + 1, 1)
 const fmtShort   = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 // While dragging we show the full date — month and year matter when you're pushing a bar out.
 const fmtLong    = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+// dd/mm for the compact labels sitting at the end of each bar.
+const ddmm = s => { const d = toDate(s); return d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` : '' }
 
 const emptyMs = { name: '', lane_id: '', kind: 'point', milestone_date: '', starts_on: '', ends_on: '', color: '' }
 
@@ -113,8 +115,20 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     setPhases(prev => prev.map(p => p.phase_number === n ? { ...p, [field]: val || null } : p))
   }
 
-  async function saveDates() {
+  // Edits in the Dates table are held locally until Save, so tabbing between fields
+  // doesn't fire a write per keystroke and a half-typed date never reaches the DB.
+  const [draft, setDraft] = useState({})       // { 'table:id': { field: value } }
+  const dirty = new Set(Object.keys(draft))
+  const dateVal = (r, field) => draft[`${r.table}:${r.id}`]?.[field] ?? r[field] ?? ''
+  function editDate(r, field, val) {
+    const k = `${r.table}:${r.id}`
+    setDraft(d => ({ ...d, [k]: { ...(d[k] ?? {}), [field]: val || null } }))
+  }
+
+  async function saveAllDates() {
     setSavingDates(true)
+    const failures = []
+
     for (const p of phases) {
       if (p.id) {
         await supabase.from('project_phases').update({ planned_start: p.planned_start, planned_end: p.planned_end }).eq('id', p.id)
@@ -122,7 +136,19 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         await supabase.from('project_phases').insert({ project_id: project.id, phase_number: p.phase_number, status: p.status ?? 'locked', planned_start: p.planned_start, planned_end: p.planned_end })
       }
     }
+
+    for (const [key, patch] of Object.entries(draft)) {
+      const [table, id] = [key.slice(0, key.indexOf(':')), key.slice(key.indexOf(':') + 1)]
+      const { data, error } = await supabase.from(table).update(patch).eq('id', id).select('id')
+      if (error || !data?.length) failures.push({ key, error })
+    }
+
     setSavingDates(false)
+    if (failures.length) {
+      console.error('Timeline: some dates did not save', failures)
+      window.alert(`${failures.length} item(s) could not be saved. The table will reload to show the stored dates.`)
+    }
+    setDraft({})
     load({ quiet: true })
   }
 
@@ -415,6 +441,12 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   {!inside && !multi && (
                     <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap" style={{ color: accent, ...(outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(r.name) - 4, 2) }) }}>{r.name}</span>
                   )}
+                  {/* Span in dd/mm at the tail of the bar, so a date can be read off the
+                      chart without hunting for the row's label column. */}
+                  <span className="absolute top-2.5 text-[9px] text-slate-400 whitespace-nowrap pointer-events-none"
+                    style={{ left: bx + bw + (inside || multi ? 4 : estTextW(r.name) + 8) }}>
+                    {ddmm(lv.s)}–{ddmm(lv.e)}
+                  </span>
                 </Fragment>
               )
             }
@@ -432,6 +464,10 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   {!multi && (
                     <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap z-[8]" style={{ color: accent, ...(labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(r.name) - 11, 2) }) }}>{r.name}</span>
                   )}
+                  <span className="absolute top-2.5 text-[9px] text-slate-400 whitespace-nowrap pointer-events-none z-[8]"
+                    style={{ left: dx + 11 + (multi ? 0 : estTextW(r.name)) }}>
+                    {ddmm(live(r.id, r.milestone_date, null).s)}
+                  </span>
                 </Fragment>
               )
             }
@@ -673,14 +709,53 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         <span className="flex items-center gap-1.5"><span className="w-px h-3.5 bg-red-500 inline-block" />Today</span>
       </div>
 
-      {/* Phase date editor */}
+      {/* Dates — everything on the chart in one place, so exact dates can be typed
+          without opening a dialog per bar. Lanes first, phases last. */}
       {!readOnly && (
         <div className="bg-white border border-slate-100 rounded-2xl p-4 mb-4">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Phase dates</p>
-          <div className="space-y-2">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Dates</p>
+            {dirty.size > 0 && <span className="text-[10px] text-amber-600">{dirty.size} unsaved</span>}
+          </div>
+
+          {laneTree.map(l => {
+            const st = laneStyle(l.tint)
+            const sub = [l, ...(l.children ?? [])]
+            return (
+              <div key={l.id} className="mb-3">
+                <p className="text-[11px] font-semibold mb-1.5" style={{ color: st.text }}>{l.name}</p>
+                {sub.map(lane => rowsIn(lane.id).map(r => (
+                  <div key={`${r.table}-${r.id}`} className="flex items-center gap-3 flex-wrap mb-1.5"
+                    style={{ paddingLeft: lane.id === l.id ? 0 : 14 }}>
+                    <span className="text-sm text-slate-700 w-40 shrink-0 truncate" title={r.name}>
+                      {lane.id !== l.id && <span className="text-slate-300 mr-1">↳</span>}{r.name}
+                    </span>
+                    {r.milestone_date !== null && !r.starts_on ? (
+                      <input type="date" value={dateVal(r, 'milestone_date')} onChange={e => editDate(r, 'milestone_date', e.target.value)}
+                        className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
+                    ) : (
+                      <>
+                        <input type="date" value={dateVal(r, 'starts_on')} onChange={e => editDate(r, 'starts_on', e.target.value)}
+                          className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
+                        <span className="text-slate-300 text-xs">→</span>
+                        <input type="date" value={dateVal(r, 'ends_on')} onChange={e => editDate(r, 'ends_on', e.target.value)}
+                          className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
+                      </>
+                    )}
+                  </div>
+                )))}
+                {sub.every(lane => rowsIn(lane.id).length === 0) && (
+                  <p className="text-[11px] text-slate-300">Nothing in this lane yet.</p>
+                )}
+              </div>
+            )
+          })}
+
+          <div className="mb-3">
+            <p className="text-[11px] font-semibold text-[#E8913A] mb-1.5">ChangeFlow phases</p>
             {phases.map(p => (
-              <div key={p.phase_number} className="flex items-center gap-3 flex-wrap">
-                <span className="text-sm text-slate-700 w-28 shrink-0">0{p.phase_number} {PHASE_NAMES[p.phase_number]}</span>
+              <div key={p.phase_number} className="flex items-center gap-3 flex-wrap mb-1.5">
+                <span className="text-sm text-slate-700 w-40 shrink-0">0{p.phase_number} {PHASE_NAMES[p.phase_number]}</span>
                 <input type="date" value={p.planned_start ?? ''} onChange={e => setPhaseDate(p.phase_number, 'planned_start', e.target.value)}
                   className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#1F4E79]" />
                 <span className="text-slate-300 text-xs">→</span>
@@ -689,9 +764,10 @@ export default function ProjectTimeline({ project, readOnly = false }) {
               </div>
             ))}
           </div>
-          <button onClick={saveDates} disabled={savingDates}
-            className="mt-3 bg-[#1F4E79] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
-            {savingDates ? 'Saving…' : 'Save phase dates'}
+
+          <button onClick={saveAllDates} disabled={savingDates}
+            className="bg-[#1F4E79] text-white text-xs font-semibold px-4 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+            {savingDates ? 'Saving…' : 'Save dates'}
           </button>
         </div>
       )}
