@@ -331,7 +331,33 @@ async function runReport(_params, text, ctx) {
   ].sort((a, b) => new Date(a._d) - new Date(b._d)).slice(0, 8)
 
   let heatSection = null, heatInsights = []
-  if (cid) {
+  // Audiences first, same as the canvas. The report used to read only the stored
+  // artifact, so editing a rating changed CORA's answer and left the Word pack
+  // showing the old grid — two answers to the same question, which is exactly how
+  // the bogus trend forecast survived in the last report.
+  if (cp.length === 1) {
+    const { data: auds } = await supabase.from('audiences')
+      .select('name, sort_order, headcount, impact_people, impact_process, impact_information, impact_technology, impact_note, impact_rated_on')
+      .eq('project_id', cp[0].id).order('sort_order')
+    const built = heatmapFromAudiences(auds ?? [])
+    if (built) {
+      const shaped = { cols: built.cols, rows: built.rows, commentary: built.commentary }
+      heatInsights = analyseHeatmap(shaped)
+      // Gaps are carried into the report too — a heat map missing a group must not
+      // read as complete just because it is rendered in Word.
+      const gaps = []
+      if (built.missing.length) gaps.push(`${built.missing.join(', ')} ${built.missing.length === 1 ? 'has' : 'have'} not been rated`)
+      if (built.unratedCells) gaps.push(`${built.unratedCells} domain rating${built.unratedCells === 1 ? '' : 's'} still blank`)
+      if (gaps.length) heatInsights = [...heatInsights, `**Gaps:** ${gaps.join('; ')}.`]
+      heatSection = {
+        heading: 'Change impact heat map', type: 'heatmap',
+        cols: built.cols, rows: built.rows,
+        source: built.ratedOn ? `audiences · rated ${fmtDate(built.ratedOn)}` : 'audiences',
+        headline: built.commentary, insights: heatInsights,
+      }
+    }
+  }
+  if (!heatSection && cid) {
     const { data: arts } = await supabase.from('change_artifacts').select('title, version, source, data').eq('client_id', cid).eq('type', 'stakeholder_heatmap').eq('is_current', true).order('version', { ascending: false }).limit(1)
     const a = arts?.[0]
     if (a) { heatInsights = analyseHeatmap(a.data); heatSection = { heading: 'Change impact heat map', type: 'heatmap', cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, headline: a.data.commentary, insights: heatInsights } }
