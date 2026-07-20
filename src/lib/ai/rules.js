@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, renderStory } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -464,8 +464,12 @@ async function runProgress(_params, text, ctx) {
   return {
     type: 'progress', title: `${scope.proj ? `${scope.proj.name} — progress by phase` : `Progress by project${scope.suffix}`}`, rows,
     empty: 'No projects yet.',
+    // With one project there is no spread to describe — naming it as both the drag
+    // and the leader reads like a bug, because it is one.
     commentary: rows.length && !scope.proj
-      ? `${avg}% average completion across ${rows.length} project${rows.length > 1 ? 's' : ''}.${drag ? ` ${drag.label} (${drag.value}%) is the drag; ${lead.label} (${lead.value}%) leads.` : ''}`
+      ? (rows.length > 1
+          ? `${avg}% average completion across ${rows.length} projects. ${drag.label} (${drag.value}%) is the drag; ${lead.label} (${lead.value}%) leads.`
+          : `${drag.label} is at ${drag.value}%. Ask for the story to see trend, risks and what needs a decision.`)
       : null,
   }
 }
@@ -975,7 +979,54 @@ async function runComms(_params, text, ctx) {
   return { type: 'list', title: `${art.title}${scope.suffix}`, rows, commentary, empty: 'No comms planned.' }
 }
 
+
+// ── Programme story ───────────────────────────────────────────────────────────
+// The update a change lead would give out loud: where we are, which way it is
+// moving, what is in the way, who it lands on, are we ready, what needs deciding.
+// Everything is read from data already captured; nothing is invented, and missing
+// inputs are named at the end rather than skipped over.
+async function runStory(_params, text, ctx) {
+  const data = await loadData()
+  const scope = resolveScope(text, ctx, data)
+  const cp = scopedProjects(data, scope)
+  if (!cp.length) return { type: 'narrative', title: 'No project in scope', body: 'Name a client or project and I will pull the update together.' }
+
+  // One project tells a story; a portfolio needs picking one.
+  const p = scope.proj ? cp[0] : cp.slice().sort((a, b) => b.pct - a.pct)[0]
+  const clientId = p.clientId ?? data.projRollup.find(x => x.id === p.id)?.client_id
+
+  const [{ data: arts }, { data: snaps }] = await Promise.all([
+    supabase.from('change_artifacts').select('type, data').eq('client_id', clientId).eq('is_current', true),
+    supabase.from('progress_snapshots').select('captured_on, pct').eq('project_id', p.id).order('captured_on'),
+  ])
+  const art = t => (arts ?? []).find(a => a.type === t)?.data ?? null
+
+  const today = data.today
+  const pEnds = p.phases.map(ph => ph.planned_end).filter(Boolean).sort()
+  const trend = computeTrend((snaps ?? []).map(x => ({ captured_on: x.captured_on, pct: Number(x.pct) })),
+    { plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null, today })
+
+  const atRisk = p.phases.filter(ph => ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0)
+    .map(ph => ({ name: ph.name, pct: ph.pct }))
+  const soon = new Date(today); soon.setDate(soon.getDate() + 60)
+  const milestones = (data.milestones ?? [])
+    .filter(m => m.project_id === p.id && m.milestone_date && new Date(m.milestone_date) >= today && new Date(m.milestone_date) <= soon)
+    .sort((a, b) => a.milestone_date.localeCompare(b.milestone_date))
+    .map(m => ({ name: m.name, date: m.milestone_date }))
+
+  const story = buildProgrammeStory({
+    projectName: p.name, clientName: p.clientName, today,
+    pct: p.pct, phases: p.phases.map(ph => ({ name: ph.name, pct: ph.pct })),
+    trend, milestones, atRisk,
+    heat: art('stakeholder_heatmap'), gate: art('readiness_gate'),
+    comms: art('comms_plan'), issues: art('issues_log'),
+  })
+
+  return { type: 'narrative', title: story.title, body: `_${story.subtitle}_\n\n${renderStory(story)}` }
+}
+
 const RUNNERS = {
+  story: runStory,
   report: runReport,
   approach: runApproach,
   heatmap: runHeatmap,

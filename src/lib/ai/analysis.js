@@ -546,3 +546,123 @@ export function matchByPartialName(text, candidates = []) {
   }
   return { entity: scored[0].c }
 }
+
+// ── Programme story ───────────────────────────────────────────────────────────
+// Composes the separate signals into the update a change lead would actually give:
+// where we are, which way it is moving, what is in the way, and what needs a
+// decision. Pure — the runner gathers, this shapes.
+//
+// Every section is omitted when its data is absent rather than padded with a
+// placeholder, and the closing section names what is missing. A story that reads
+// complete when half the inputs are empty is worse than a short one.
+export function buildProgrammeStory({
+  projectName, clientName, today = new Date(),
+  pct = 0, phases = [], trend = null, milestones = [], atRisk = [],
+  heat = null, gate = null, comms = null, issues = null,
+} = {}) {
+  const fmt = d => d ? new Date(typeof d === 'string' ? d + 'T00:00:00' : d)
+    .toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null
+  const sections = []
+  const gaps = []
+
+  // Where we are
+  const active = phases.find(p => p.pct > 0 && p.pct < 100)
+  const done = phases.filter(p => p.pct >= 100).length
+  let where = `**${projectName}** is **${pct}% complete**`
+  if (phases.length) where += `, with ${done} of ${phases.length} phases closed out`
+  if (active) where += ` and **${active.name}** underway at ${active.pct}%`
+  where += '.'
+  sections.push({ heading: 'Where we are', body: where })
+
+  // Which way it is moving
+  if (trend?.perWeek != null) {
+    const dir = trend.verdict === 'stalled' ? 'has stalled' : `is moving at about **${trend.perWeek}%/week**`
+    let body = `Progress ${dir}`
+    if (trend.forecast) body += `, which lands completion around **${fmt(trend.forecast)}**`
+    if (trend.slipDays > 0) body += ` — **${trend.slipDays} days past** the planned finish`
+    else if (trend.slipDays < 0) body += ` — ${Math.abs(trend.slipDays)} days ahead`
+    sections.push({ heading: 'Which way it is moving', body: body + '.' })
+  } else {
+    gaps.push('not enough history to compute velocity')
+  }
+
+  // What is in the way
+  const inWay = []
+  if (atRisk.length) inWay.push(`${atRisk.length} phase${atRisk.length === 1 ? ' is' : 's are'} past their planned end date (${atRisk.slice(0, 3).map(r => r.name).join(', ')})`)
+  const openIssues = (issues?.issues ?? []).filter(i => i.status === 'open')
+  const highIssues = openIssues.filter(i => i.severity === 'high')
+  if (openIssues.length) {
+    inWay.push(`${openIssues.length} open issue${openIssues.length === 1 ? '' : 's'}${highIssues.length ? `, ${highIssues.length} of them high severity` : ''}`)
+  }
+  const blockedComms = (comms?.items ?? []).filter(c => c.status === 'blocked')
+  if (blockedComms.length) {
+    inWay.push(`${blockedComms.length} communication${blockedComms.length === 1 ? ' is' : 's are'} blocked upstream (${blockedComms.map(c => c.message).join(', ')})`)
+  }
+  // A missing input is a gap whether or not the section happened to render from the
+  // other inputs. Reporting it only when the section is empty means a blocked comm
+  // can hide the fact that nobody is keeping an issues log at all.
+  if (!issues) gaps.push('no issues log')
+  if (inWay.length) {
+    let body = inWay.join('; ') + '.'
+    if (highIssues.length) {
+      body += ' ' + highIssues.map(i => `**${i.title}** (${i.ref}, ${i.owner ?? 'no owner'}) — ${i.detail}`).join(' ')
+    }
+    sections.push({ heading: 'What is in the way', body })
+  } else if (issues) {
+    sections.push({ heading: 'What is in the way', body: 'Nothing overdue and no open issues.' })
+  }
+
+  // Who it lands on
+  if (heat?.rows?.length) {
+    const ranked = heat.rows.map(r => ({
+      name: r.label,
+      total: (r.cells ?? []).reduce((s, lv) => s + (LV_W[lv] || 0), 0),
+      peak: (r.cells ?? []).reduce((m, lv) => ((LV_W[lv] || 0) > (LV_W[m] || 0) ? lv : m), 'none'),
+    })).sort((a, b) => b.total - a.total)
+    const top = ranked.slice(0, 2)
+    sections.push({
+      heading: 'Who it lands on',
+      body: `Impact concentrates on **${top.map(g => g.name).join('** and **')}** (${LV_LABEL[top[0].peak]} at its peak). ${heat.commentary ?? ''}`.trim(),
+    })
+  } else {
+    gaps.push('no impact assessment')
+  }
+
+  // Are we ready
+  if (gate?.units?.length) {
+    const ready = gate.units.filter(u => u.status === 'ready').length
+    const unassessed = gate.units.filter(u => u.status === 'not_assessed')
+    const risky = gate.units.filter(u => u.status === 'at_risk')
+    let body = `**${ready} of ${gate.units.length}** business units are ready for the ${gate.gate_name ?? 'gate'}${gate.decision_due ? `, decided ${fmt(gate.decision_due)}` : ''}.`
+    if (risky.length) body += ` ${risky.map(u => `**${u.unit}** is at risk — ${u.open}`).join(' ')}`
+    if (unassessed.length) body += ` ${unassessed.map(u => u.unit).join(' and ')} ${unassessed.length === 1 ? 'has' : 'have'} not been assessed at all, so ${unassessed.length === 1 ? 'it is' : 'they are'} not counted as ready.`
+    sections.push({ heading: 'Are we ready', body })
+  } else {
+    gaps.push('no readiness gate')
+  }
+
+  // What needs a decision
+  const pending = (issues?.decisions ?? []).filter(d => d.status === 'pending')
+  const next = milestones.slice(0, 2)
+  const decide = []
+  if (pending.length) decide.push(...pending.map(d => `**${d.title}** — ${d.detail} (${d.owner ?? 'unowned'})`))
+  if (next.length) decide.push(`Next up: ${next.map(m => `${m.name} (${fmt(m.date ?? m.milestone_date)})`).join(', ')}.`)
+  if (decide.length) sections.push({ heading: 'What needs a decision', body: decide.join(' ') })
+
+  return {
+    title: `${projectName} — programme update`,
+    subtitle: [clientName, fmt(today)].filter(Boolean).join(' · '),
+    sections,
+    gaps,
+  }
+}
+
+// Render the story as the markdown body a narrative widget expects.
+export function renderStory(story) {
+  if (!story) return ''
+  const parts = story.sections.map(s => `**${s.heading}**\n\n${s.body}`)
+  if (story.gaps?.length) {
+    parts.push(`_Not covered, because the data isn't there yet: ${story.gaps.join('; ')}._`)
+  }
+  return parts.join('\n\n')
+}

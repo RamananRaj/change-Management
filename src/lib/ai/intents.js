@@ -12,10 +12,13 @@ export const INTENTS = [
   // `approach` and match only the retrieval shape. Note "comms plan for X" stays with
   // `approach` — an existing contract, and genuinely ambiguous either way.
   { intent: 'comms',               re: /((show|list|see|view|display|what'?s?|whats|who|where)[\w\s]{0,20}(comms|communications?)\s*plan)|(comms|communications?)\s*plan\s*status|comms\s*(schedule|status|cascade)|who have we (told|communicated)/i },
-  { intent: 'gates',               re: /(readiness gate|business readiness|go\s*[-\/]?\s*no\s*[-\/]?\s*go|gate (review|status|criteria)|are we ready (to|for)|ready for go[- ]?live)/i },
+  { intent: 'gates',               re: /(readiness gate|business readiness|go\s*[-/]?\s*no\s*[-/]?\s*go|gate (review|status|criteria)|are we ready (to|for)|ready for go[- ]?live)/i },
   // "Define the comms approach" — advisory questions that ask CORA to draft a change deliverable
   // from the client's real data. Listed before `report` so "training plan" isn't read as a report.
   { intent: 'approach',            re: /((comms|communications?|training|cutover|go[- ]?live|adoption|engagement|train[- ]?the[- ]?trainer|trainer the trainer)\s*(approach|plan|strategy|framework))|((approach|plan|strategy)\s+(for|to)\s+(comms|communications?|training|cutover|go[- ]?live))|train[- ]?the[- ]?trainer|trainer the trainer/i },
+  // The whole picture as a narrative, not a card. Sits ahead of `report` (which
+  // generates a document) and ahead of `progress` (which returns bars).
+  { intent: 'story',               re: /(tell me the story|what'?s the story|programme? update|program update|give me (an|the) update|full update|brief me|walk me through|how is it really going|state of (play|the programme|the program))/i },
   { intent: 'report',              re: /(report|wrap[- ]?up|status (report|update|pack)|exec(utive)?[- ]?(pack|summary|report|brief(ing)?)|board[- ]?pack|briefing[- ]?pack|change[- ]?pack|full (picture|rundown))/i },
   // Stakeholder impact — people ask this many ways ("who's most impacted", "high impacted
   // stakeholders", "impact assessment"), so match the concept, not just the artifact's name.

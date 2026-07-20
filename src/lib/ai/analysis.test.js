@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory } from './analysis'
 
 const heat = {
   version: 1,
@@ -514,5 +514,72 @@ describe('partial name matching', () => {
 
   it('still prefers an exact full-name match', () => {
     expect(resolveScope('progress for Horizon Power', {}, data).client?.id).toBe('c2')
+  })
+})
+
+describe('buildProgrammeStory', () => {
+  const base = {
+    projectName: 'Customer Billing Transformation', clientName: 'Meridian Water',
+    today: new Date('2026-07-20T00:00:00'),
+    pct: 53,
+    phases: [{ name: 'Diagnose', pct: 100 }, { name: 'Design', pct: 100 }, { name: 'Engage', pct: 50 }, { name: 'Embed', pct: 0 }],
+    trend: { perWeek: 3.6, verdict: 'on_track', forecast: new Date('2026-10-12T00:00:00'), slipDays: -12 },
+    milestones: [{ name: 'Business readiness gate', date: '2027-01-29' }],
+    atRisk: [{ name: 'Engage', pct: 50 }],
+    heat: { rows: [
+      { label: 'Billing Operations', cells: ['vh', 'vh', 'h', 'h'] },
+      { label: 'Finance', cells: ['l', 'h', 'm', 'l'] },
+    ], commentary: 'Billing absorbs it end to end.' },
+    gate: { gate_name: 'Go-live readiness', decision_due: '2027-01-29', units: [
+      { unit: 'Billing Operations', status: 'ready' },
+      { unit: 'Contact Centre', status: 'at_risk', open: 'Scripts blocked on vendor' },
+      { unit: 'Information & Technology', status: 'not_assessed' },
+    ] },
+    comms: { items: [{ message: 'Training reminder', status: 'blocked' }, { message: 'Day one', status: 'planned' }] },
+    issues: {
+      issues: [
+        { ref: 'I-014', severity: 'high', status: 'open', title: 'Scripts blocked', detail: 'Vendor has not returned flows.', owner: 'S. Whitcombe' },
+        { ref: 'I-009', severity: 'high', status: 'resolved', title: 'Old thing', detail: 'done', owner: 'D. Okafor' },
+      ],
+      decisions: [{ title: 'Hypercare staffing', detail: 'Floor-walking vs hotline.', status: 'pending', owner: 'P. Raman' }],
+    },
+  }
+
+  it('leads with where the programme actually is', () => {
+    const s = buildProgrammeStory(base)
+    expect(s.sections[0].heading).toBe('Where we are')
+    expect(s.sections[0].body).toContain('53% complete')
+    expect(s.sections[0].body).toContain('2 of 4 phases closed out')
+    expect(s.sections[0].body).toContain('Engage')
+  })
+
+  it('counts only OPEN issues as being in the way', () => {
+    const s = buildProgrammeStory(base)
+    const body = s.sections.find(x => x.heading === 'What is in the way').body
+    expect(body).toContain('1 open issue')      // the resolved one is excluded
+    expect(body).toContain('Scripts blocked')
+    expect(body).toContain('1 communication is blocked')
+  })
+
+  it('never counts an unassessed unit as ready', () => {
+    const s = buildProgrammeStory(base)
+    const body = s.sections.find(x => x.heading === 'Are we ready').body
+    expect(body).toContain('1 of 3')
+    expect(body).toContain('not been assessed')
+  })
+
+  it('surfaces pending decisions, not agreed ones', () => {
+    const s = buildProgrammeStory(base)
+    const body = s.sections.find(x => x.heading === 'What needs a decision').body
+    expect(body).toContain('Hypercare staffing')
+  })
+
+  it('names what is missing instead of padding the story', () => {
+    const s = buildProgrammeStory({ ...base, heat: null, gate: null, issues: null, trend: null })
+    expect(s.gaps).toEqual(expect.arrayContaining([
+      'not enough history to compute velocity', 'no issues log', 'no impact assessment', 'no readiness gate',
+    ]))
+    expect(s.sections.find(x => x.heading === 'Who it lands on')).toBeUndefined()
+    expect(renderStory(s)).toContain("Not covered, because the data isn't there yet")
   })
 })
