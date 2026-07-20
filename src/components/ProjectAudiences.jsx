@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { LV_LABEL, HEAT_DOMAINS } from '../lib/ai/analysis'
+import { LV_LABEL, HEAT_DOMAINS, overallImpact } from '../lib/ai/analysis'
 
 // Impact colours match the heat map exactly — the same rating must not look like two
 // different things depending on which screen you are on.
 const LV_DOT = { vh: '#991B1B', h: '#DC2626', m: '#E8913A', l: '#16A34A', vl: '#86EFAC', none: '#E2E8F0' }
 const LEVELS = ['none', 'vl', 'l', 'm', 'h', 'vh']   // ascending: a scale, not a ranking
 
-const empty = { name: '', headcount: '', impact_level: '', owner_name: '', notes: '', parent_id: '',
+const empty = { name: '', headcount: '', owner_name: '', notes: '', parent_id: '',
   impact_people: '', impact_process: '', impact_information: '', impact_technology: '', impact_note: '' }
 
 export default function ProjectAudiences({ project, readOnly = false }) {
@@ -38,7 +38,6 @@ export default function ProjectAudiences({ project, readOnly = false }) {
       // nobody knows is not a group of nobody — and 0 would make every coverage
       // percentage that divides by it silently wrong.
       headcount: form.headcount === '' || form.headcount === null ? null : Number(form.headcount),
-      impact_level: form.impact_level || null,
       owner_name: form.owner_name?.trim() || null,
       parent_id: form.parent_id || null,
       notes: form.notes?.trim() || null,
@@ -79,8 +78,15 @@ export default function ProjectAudiences({ project, readOnly = false }) {
 
   const Row = ({ a, nested = false }) => (
     <div className="flex items-center gap-3 py-2.5 border-b border-slate-50 group" style={{ paddingLeft: nested ? 22 : 0 }}>
-      <span className="w-2.5 h-2.5 rounded-full shrink-0" title={LV_LABEL[a.impact_level] ?? 'Not rated'}
-        style={{ background: LV_DOT[a.impact_level] ?? '#E2E8F0' }} />
+      {/* The overall dot is the PEAK of the four domains, computed. It used to be a
+          separately stored field, which let a row contradict itself — an overall of
+          "not rated" beside three High domains. */}
+      {(() => {
+        const peak = overallImpact(a)
+        return <span className="w-2.5 h-2.5 rounded-full shrink-0"
+          title={peak ? `Overall: ${LV_LABEL[peak]} (highest of the four domains)` : 'Not rated'}
+          style={{ background: peak ? LV_DOT[peak] : 'transparent', border: peak ? 'none' : '1px solid #E2E8F0' }} />
+      })()}
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-slate-800 truncate">
           {nested && <span className="text-slate-300 mr-1">↳</span>}{a.name}
@@ -109,7 +115,7 @@ export default function ProjectAudiences({ project, readOnly = false }) {
       </div>
       {!readOnly && (
         <div className="w-20 text-right shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => setForm({ ...empty, ...a, headcount: a.headcount ?? '', impact_level: a.impact_level ?? '', owner_name: a.owner_name ?? '', notes: a.notes ?? '', parent_id: a.parent_id ?? '',
+          <button onClick={() => setForm({ ...empty, ...a, headcount: a.headcount ?? '', owner_name: a.owner_name ?? '', notes: a.notes ?? '', parent_id: a.parent_id ?? '',
               impact_people: a.impact_people ?? '', impact_process: a.impact_process ?? '',
               impact_information: a.impact_information ?? '', impact_technology: a.impact_technology ?? '',
               impact_note: a.impact_note ?? '' })}
@@ -204,23 +210,13 @@ export default function ProjectAudiences({ project, readOnly = false }) {
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Headcount</label>
-                    <input type="number" min="0" value={form.headcount}
-                      onChange={e => setForm({ ...form, headcount: e.target.value })}
-                      placeholder="leave blank if unknown"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
-                    <p className="text-[10px] text-slate-400 mt-1">Blank stays “unknown”. Don’t enter 0 — that reads as a group with nobody in it.</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Impact</label>
-                    <select value={form.impact_level} onChange={e => setForm({ ...form, impact_level: e.target.value })}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
-                      <option value="">Not rated</option>
-                      {[...LEVELS].reverse().map(k => <option key={k} value={k}>{LV_LABEL[k]}</option>)}
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Headcount</label>
+                  <input type="number" min="0" value={form.headcount}
+                    onChange={e => setForm({ ...form, headcount: e.target.value })}
+                    placeholder="leave blank if unknown"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                  <p className="text-[10px] text-slate-400 mt-1">Blank stays “unknown”. Don’t enter 0 — that reads as a group with nobody in it.</p>
                 </div>
 
                 <div>

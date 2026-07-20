@@ -749,3 +749,15 @@ export function heatmapFromAudiences(audiences = []) {
     missing: (audiences ?? []).filter(a => !HEAT_DOMAINS.some(d => a?.[d.key])).map(a => a.name),
   }
 }
+
+// An audience's overall impact is the PEAK of its four domain ratings, never a
+// separately stored field. Storing both let the row contradict itself: an overall
+// of "not rated" sitting beside three High domains. Peak rather than average,
+// because a group whose work changes completely in one domain is highly impacted
+// even if the other three are untouched — averaging would hide exactly the case
+// that matters most.
+export function overallImpact(audience) {
+  const rated = HEAT_DOMAINS.map(d => audience?.[d.key]).filter(Boolean)
+  if (!rated.length) return null
+  return rated.reduce((peak, lv) => ((LV_W[lv] ?? 0) > (LV_W[peak] ?? 0) ? lv : peak), 'none')
+}

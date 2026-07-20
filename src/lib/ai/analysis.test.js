@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact } from './analysis'
 
 const heat = {
   version: 1,
@@ -695,5 +695,22 @@ describe('heatmapFromAudiences', () => {
     const h = heatmapFromAudiences(auds)
     expect(h.ratedOn).toBe('2026-06-14')
     expect(h.commentary).toContain('Billing Operations')
+  })
+})
+
+describe('overallImpact', () => {
+  it('is the peak of the domains, not an average', () => {
+    // Very High on People with three Lows is a highly impacted group. An average
+    // would call it Medium and bury the domain that actually matters.
+    expect(overallImpact({ impact_people: 'vh', impact_process: 'l', impact_information: 'l', impact_technology: 'l' })).toBe('vh')
+  })
+
+  it('ignores unrated domains rather than treating them as none', () => {
+    expect(overallImpact({ impact_people: 'h' })).toBe('h')
+  })
+
+  it('returns null when nothing is rated, so the row shows unrated not none', () => {
+    expect(overallImpact({})).toBeNull()
+    expect(overallImpact(null)).toBeNull()
   })
 })
