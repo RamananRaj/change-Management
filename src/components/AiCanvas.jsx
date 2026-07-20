@@ -243,7 +243,9 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
             {c.plannedX != null && (
               <>
                 <line x1={c.plannedX} x2={c.plannedX} y1={c.topY} y2={c.baseY} stroke="#E8913A" strokeWidth="1" strokeDasharray="3 2" />
-                <text x={c.plannedX} y={c.topY - 4} textAnchor="middle" fontSize="7" fill="#E8913A">planned</text>
+                <text x={c.plannedX} y={c.topY - 4} textAnchor={c.plannedOffScale ? 'end' : 'middle'} fontSize="7" fill="#E8913A">
+                  {c.plannedOffScale ? 'planned →' : 'planned'}
+                </text>
               </>
             )}
 
@@ -410,7 +412,8 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
           </table>
         </div>
         <div className="flex flex-wrap gap-2.5 mt-3 text-[10.5px] text-slate-400">
-          {['vh', 'h', 'm', 'l', 'vl', 'none'].map(k => <span key={k} className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ background: LV[k] }} />{NAME[k]}</span>)}
+          {/* Ascending: a legend that runs Very High → None reads as a ranking, not a scale. */}
+          {['none', 'vl', 'l', 'm', 'h', 'vh'].map(k => <span key={k} className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full" style={{ background: LV[k] }} />{NAME[k]}</span>)}
         </div>
         {(d.headline || d.insights?.length) && (
           <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 border-l-[3px] border-l-[#1F4E79] px-4 py-3.5">
@@ -446,7 +449,7 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
           return (
             <Tag key={i} onClick={onClick ?? undefined}
               className={`w-full text-left flex items-center gap-3 border border-slate-200 rounded-xl px-3 py-2.5 ${onClick ? 'cursor-pointer hover:border-[#1F4E79] hover:bg-slate-50 transition-colors' : ''}`}>
-              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.rag === 'r' ? 'bg-red-500' : r.rag === 'a' ? 'bg-amber-500' : 'bg-green-500'}`} />
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.rag === 'r' ? 'bg-red-500' : r.rag === 'a' ? 'bg-amber-500' : r.rag === 'n' ? 'bg-white border-2 border-slate-300' : 'bg-green-500'}`} />
               <div className="min-w-0">
                 <p className="font-semibold text-sm text-slate-800 truncate">{r.name}</p>
                 <p className="text-xs text-slate-400 truncate">{r.meta}</p>

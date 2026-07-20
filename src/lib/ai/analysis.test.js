@@ -612,3 +612,49 @@ describe('buildProgrammeStory · forecast sanity', () => {
     expect(body).toContain('64 days past')
   })
 })
+
+describe('buildTrendChart · axis does not collapse the data', () => {
+  const points = Array.from({ length: 12 }, (_, i) => ({
+    captured_on: new Date(2026, 4, 4 + i * 7).toISOString().slice(0, 10),
+    pct: 18 + i * 4,
+  }))
+
+  it('caps the axis when the planned end is far past the last snapshot', () => {
+    const c = buildTrendChart([{ name: 'X', points }], { plannedEnd: '2027-02-26', today: new Date('2026-07-20') })
+    expect(c.plannedOffScale).toBe(true)
+    expect(c.plannedX).toBe(c.w - c.pad)              // pinned to the edge
+    const xs = c.series[0].coords.map(p => p.x)
+    // Data should use most of the width, not be squashed into the first third.
+    expect(Math.max(...xs)).toBeGreaterThan(c.w * 0.6)
+  })
+
+  it('leaves the axis alone when the planned end is close to the data', () => {
+    const c = buildTrendChart([{ name: 'X', points }], { plannedEnd: '2026-08-15', today: new Date('2026-07-20') })
+    // Sitting at the right edge is correct here — the planned end IS the last date
+    // on the axis. What matters is that it is drawn in its true position, not pinned.
+    expect(c.plannedOffScale).toBe(false)
+    expect(c.lastLabel.getTime()).toBe(new Date('2026-08-15').getTime())
+  })
+})
+
+describe('computeTrend · forecast sanity is universal', () => {
+  const weekly = (n, step) => Array.from({ length: n }, (_, i) => ({
+    captured_on: new Date(2026, 4, 4 + i * 7).toISOString().slice(0, 10),
+    pct: Math.min(100, 18 + i * step),
+  }))
+
+  it('flags a projection that lands before the plan still runs', () => {
+    const t = computeTrend(weekly(12, 4), { plannedEnd: '2027-02-26', today: new Date('2026-07-20') })
+    expect(t.forecastBeforePlan).toBe(true)
+    // Every consumer reads the flag, so the Word report and the canvas cannot diverge.
+    const say = trendSentence(t, d => new Date(d).toISOString().slice(0, 10))
+    expect(say).toContain('health signal rather than a finish date')
+    expect(say).not.toContain('puts completion around')
+  })
+
+  it('reports the date normally when the projection lands after the plan', () => {
+    const t = computeTrend(weekly(12, 1), { plannedEnd: '2026-08-01', today: new Date('2026-07-20') })
+    expect(t.forecastBeforePlan).toBe(false)
+    expect(trendSentence(t, d => new Date(d).toISOString().slice(0, 10))).toContain('puts completion around')
+  })
+})

@@ -42,12 +42,21 @@ function secDocHTML(s) {
     return h + `<p>${mdHtml(s.body)}</p><table>${head}${rows}</table>`
   }
   if (s.type === 'progress') return h + `<table><tr><th>Item</th><th>Detail</th><th>Progress</th></tr>${(s.rows || []).map(r => `<tr><td>${esc(r.label)}</td><td>${esc(r.sub || '')}</td><td>${r.value}%</td></tr>`).join('')}</table>`
-  if (s.type === 'list') return h + ((s.rows || []).length ? `<table><tr><th>Item</th><th>Detail</th><th>Status</th></tr>${s.rows.map(r => `<tr><td>${esc(r.name)}</td><td>${esc(r.meta || '')}</td><td>${esc(r.due || '')}</td></tr>`).join('')}</table>` : `<p style="color:#94a3b8">${esc(s.empty || '—')}</p>`)
+  if (s.type === 'list') {
+    // RAG was dropped entirely in the export, so a red row and a green row read the
+    // same in Word. 'n' is not-assessed — deliberately hollow, never amber.
+    const RAG_CSS = { r: '#DC2626', a: '#E8913A', g: '#16A34A', n: '#CBD5E1' }
+    const dot = rag => `<span style="color:${RAG_CSS[rag] || RAG_CSS.a};font-size:13pt;line-height:1">${rag === 'n' ? '&#9675;' : '&#9679;'}</span>`
+    const body = (s.rows || []).length
+      ? `<table><tr><th></th><th>Item</th><th>Detail</th><th>Status</th></tr>${s.rows.map(r => `<tr><td style="text-align:center">${dot(r.rag)}</td><td>${esc(r.name)}</td><td>${esc(r.meta || '')}</td><td>${esc(r.due || '')}</td></tr>`).join('')}</table>`
+      : `<p style="color:#94a3b8">${esc(s.empty || '—')}</p>`
+    return h + body + (s.commentary ? `<p style="color:#475569">${mdHtml(s.commentary)}</p>` : '')
+  }
   if (s.type === 'heatmap') {
     const head = `<tr><th></th>${s.cols.map(c => `<th style="text-align:center;font-size:9pt">${esc(c)}</th>`).join('')}</tr>`
     const dot = lv => `<span style="color:${LV_CSS[lv] || LV_CSS.none};font-size:16pt;line-height:1">&#9679;</span>`
     const rows = s.rows.map(r => `<tr><td style="border:none"><b>${esc(r.label)}</b></td>${r.cells.map(lv => `<td style="border:none;text-align:center" title="${LVL(lv)}">${dot(lv)}</td>`).join('')}</tr>`).join('')
-    const legend = `<p style="font-size:8pt;color:#64748b">${['vh', 'h', 'm', 'l', 'vl', 'none'].map(k => `${dot(k).replace('16pt', '11pt')} ${LVL(k)}`).join('&nbsp;&nbsp;')}</p>`
+    const legend = `<p style="font-size:8pt;color:#64748b">${['none', 'vl', 'l', 'm', 'h', 'vh'].map(k => `${dot(k).replace('16pt', '11pt')} ${LVL(k)}`).join('&nbsp;&nbsp;')}</p>`
     const ins = (s.insights || []).length ? `<ul>${s.insights.map(i => `<li>${mdHtml(i)}</li>`).join('')}</ul>` : ''
     return `${h}<table style="border-collapse:collapse">${head}${rows}</table>${legend}${s.headline ? `<p>${mdHtml(s.headline)}</p>` : ''}${ins}`
   }
@@ -131,8 +140,11 @@ export async function exportReportPptx(report) {
       const rows = [[{ text: 'Item', options: { bold: true } }, { text: 'Progress', options: { bold: true } }], ...(s.rows || []).map(r => [r.label, `${r.value}%`])]
       sl.addTable(rows, { x: 0.5, y: 1.1, w: 12.3, fontSize: 13, border: { pt: 0.5, color: 'E2E8F0' }, color: '334155' })
     } else if (s.type === 'list') {
-      const src = (s.rows || []).length ? s.rows.map(r => [r.name, r.meta || '', r.due || '']) : [[s.empty || '—', '', '']]
-      sl.addTable([[{ text: 'Item', options: { bold: true } }, { text: 'Detail', options: { bold: true } }, { text: 'Status', options: { bold: true } }], ...src], { x: 0.5, y: 1.1, w: 12.3, fontSize: 12, border: { pt: 0.5, color: 'E2E8F0' }, color: '334155' })
+      const RAG_HEX = { r: 'DC2626', a: 'E8913A', g: '16A34A', n: '94A3B8' }
+      const src = (s.rows || []).length
+        ? s.rows.map(r => [{ text: r.rag === 'n' ? '○' : '●', options: { color: RAG_HEX[r.rag] || RAG_HEX.a } }, r.name, r.meta || '', r.due || ''])
+        : [['', s.empty || '—', '', '']]
+      sl.addTable([[{ text: '', options: { bold: true } }, { text: 'Item', options: { bold: true } }, { text: 'Detail', options: { bold: true } }, { text: 'Status', options: { bold: true } }], ...src], { x: 0.5, y: 1.1, w: 12.3, fontSize: 12, border: { pt: 0.5, color: 'E2E8F0' }, color: '334155' })
     } else if (s.type === 'heatmap') {
       // Dot matrix on the left (matches the app/PDF), AI insight on the right.
       heatmapDotsPptx(sl, P, s)

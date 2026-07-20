@@ -209,12 +209,20 @@ export function computeTrend(snapshots = [], { plannedEnd = null, today = new Da
     const due = new Date(plannedEnd)
     const slipDays = Math.round(daysBetween(due, forecast))
     verdict = slipDays <= 0 ? 'ahead' : slipDays <= 7 ? 'on_track' : 'behind'
+    // Activity completion burns down fast in early phases and slowly in late ones, so a
+    // straight-line projection routinely "finishes" months before the remaining phases
+    // are even scheduled to start. That is arithmetic, not a forecast, and reporting it
+    // as a date invites a decision on something that cannot happen. Flagged here — at
+    // source — so every consumer (canvas, story, Word, PowerPoint) inherits the caveat
+    // instead of each one re-deriving it and one of them forgetting.
+    const forecastBeforePlan = forecast != null && forecast.getTime() < due.getTime()
     return {
       status: 'ok', points: pts, current: latest.pct,
       delta7: wk ? latest.pct - wk.pct : null,
       delta28: mo ? latest.pct - mo.pct : null,
       perWeek: Math.round(perWeek * 10) / 10,
       forecast, weeksLeft: Math.round(weeksLeft * 10) / 10, verdict, slipDays,
+      forecastBeforePlan, plannedEnd,
     }
   } else verdict = 'moving'
 
@@ -252,10 +260,24 @@ export function buildTrendChart(seriesList = [], { plannedEnd = null, today = ne
 
   const first = allPts.length ? new Date(Math.min(...allPts.map(p => p.on.getTime()))) : now
   const ends = [now, plannedEnd ? new Date(plannedEnd) : null, ...prepared.map(s => s.forecast ? new Date(s.forecast) : null)].filter(Boolean)
-  const last = new Date(Math.max(...ends.map(d => d.getTime())))
+  const fullLast = new Date(Math.max(...ends.map(d => d.getTime())))
+
+  // A planned end far beyond the last snapshot squeezes every data point into the
+  // left edge and leaves most of the chart empty — the line becomes unreadable to
+  // protect a marker. Cap the axis at the data plus 35% headroom and pin anything
+  // beyond it to the right edge, flagged so the renderer can show it as off-scale.
+  const dataLast = allPts.length ? new Date(Math.max(...allPts.map(p => p.on.getTime()), now.getTime())) : now
+  const dataSpan = Math.max(1, dataLast.getTime() - first.getTime())
+  const cap = new Date(dataLast.getTime() + dataSpan * 0.35)
+  const clamped = fullLast.getTime() > cap.getTime()
+  const last = clamped ? cap : fullLast
   const span = Math.max(1, last.getTime() - first.getTime())
 
-  const x = d => Math.round((pad + ((new Date(d).getTime() - first.getTime()) / span) * (w - pad * 2)) * 10) / 10
+  // Anything past the capped axis pins to the right edge rather than running off it.
+  const x = d => {
+    const t = Math.min(new Date(d).getTime(), last.getTime())
+    return Math.round((pad + ((t - first.getTime()) / span) * (w - pad * 2)) * 10) / 10
+  }
   const y = pct => Math.round((h - pad - (pct / 100) * (h - pad * 2)) * 10) / 10
 
   const single = prepared.length === 1
@@ -276,6 +298,9 @@ export function buildTrendChart(seriesList = [], { plannedEnd = null, today = ne
   return {
     w, h, pad, sparse, series, multi: prepared.length > 1,
     plannedX: plannedEnd ? x(plannedEnd) : null,
+    // True when the planned end sits beyond the drawn axis, so its marker is at the
+    // edge rather than at its real position — the label should say so.
+    plannedOffScale: !!(plannedEnd && clamped && new Date(plannedEnd).getTime() > last.getTime()),
     todayX: x(now),
     baseY: y(0), topY: y(100), midY: y(50),
     firstLabel: first, lastLabel: last,
@@ -292,6 +317,11 @@ export function trendSentence(t, fmtDate = d => new Date(d).toLocaleDateString('
   if (t.verdict === 'complete') return `${head} Delivery is complete.`
   if (t.verdict === 'stalled') return `${head} **Progress has stalled** — no measurable movement, so no completion can be forecast. This is the finding to act on.`
   const rate = `Averaging **${t.perWeek}% per week**`
+  // Suppress the date when the projection lands before the plan still runs — say the
+  // rate, and say why the date is meaningless, rather than quietly printing a fiction.
+  if (t.forecastBeforePlan) {
+    return `${head} ${rate}. At that rate the activity burn-down finishes early, but the plan still runs to **${fmtDate(t.plannedEnd)}** — the remaining phases are scheduled, not merely unstarted, so treat the rate as a health signal rather than a finish date.`
+  }
   const eta = t.forecast ? `, which puts completion around **${fmtDate(t.forecast)}**` : ''
   if (t.verdict === 'ahead') return `${head} ${rate}${eta} — **ahead of the planned end date**.`
   if (t.verdict === 'on_track') return `${head} ${rate}${eta} — **on track** against the planned end date.`
@@ -582,7 +612,7 @@ export function buildProgrammeStory({
     // straight-line projection off it routinely "finishes" months before the last
     // phase is even scheduled to begin. Reporting that as a forecast date is worse
     // than reporting no date: it invites a decision on a number that cannot happen.
-    const impossible = trend.forecast && plannedEnd && new Date(trend.forecast) < new Date(plannedEnd + 'T00:00:00')
+    const impossible = trend.forecastBeforePlan ?? (trend.forecast && plannedEnd && new Date(trend.forecast) < new Date(plannedEnd + 'T00:00:00'))
     if (trend.forecast && !impossible) {
       body += `, which lands completion around **${fmt(trend.forecast)}**`
       if (trend.slipDays > 0) body += ` — **${trend.slipDays} days past** the planned finish`

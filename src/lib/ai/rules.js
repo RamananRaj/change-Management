@@ -344,8 +344,55 @@ async function runReport(_params, text, ctx) {
     }
   } catch { /* snapshots are optional — the report still stands without them */ }
 
+  // Gate and comms were built after this report and never wired in, so the Word output
+  // was missing the two sections the canvas leads with. Read from the same artifacts.
+  try {
+    const clientIds = [...new Set(cp.map(p => data.projRollup.find(x => x.id === p.id)?.client_id).filter(Boolean))]
+    if (clientIds.length === 1) {
+      const { data: arts } = await supabase.from('change_artifacts')
+        .select('type, data').eq('client_id', clientIds[0]).eq('is_current', true)
+      const of = t => (arts ?? []).find(a => a.type === t)?.data ?? null
+
+      const gate = of('readiness_gate')
+      if (gate?.units?.length) {
+        const RAG = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'n' }
+        const ready = gate.units.filter(u => u.status === 'ready').length
+        const unassessed = gate.units.filter(u => u.status === 'not_assessed')
+        sections.push({
+          heading: 'Business readiness', type: 'list',
+          rows: gate.units.map(u => ({ rag: RAG[u.status] ?? 'a', name: u.unit,
+            meta: `${u.met}/${u.total} criteria${u.owner ? ` · ${u.owner}` : ' · unassigned'}`, due: u.open ?? '' })),
+          commentary: `**${ready} of ${gate.units.length}** units ready${gate.decision_due ? `, decided ${fmtDate(gate.decision_due)}` : ''}.` +
+            (unassessed.length ? ` ${unassessed.map(u => u.unit).join(' and ')} not assessed — not counted as ready.` : ''),
+          empty: 'No gate captured.',
+        })
+      }
+
+      const comms = of('comms_plan')
+      if (comms?.items?.length) {
+        const RAG = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', deferred: 'a' }
+        const sent = comms.items.filter(i => i.status === 'sent').length
+        const blocked = comms.items.filter(i => i.status === 'blocked')
+        sections.push({
+          heading: 'Comms plan', type: 'list',
+          rows: comms.items.map(i => ({ rag: RAG[i.status] ?? 'a', name: i.message,
+            meta: `${i.audience}${i.size ? ` · ${i.size}` : ''} · ${i.channel}${i.owner ? ` · ${i.owner}` : ' · no owner'}`,
+            due: `${i.date ? fmtDate(i.date) : '—'} · ${i.status}` })),
+          commentary: `**${sent}/${comms.items.length}** sent, anchored to ${comms.anchor ?? 'the timeline'}.` +
+            (blocked.length ? ` ${blocked.length} blocked upstream — the source output needs finishing, not the comm.` : ''),
+          empty: 'No comms planned.',
+        })
+      }
+    }
+  } catch { /* artifacts are optional — the report stands without them */ }
+
   const recs = []
-  if (heatInsights.length) recs.push(heatInsights[heatInsights.length - 1].replace(/^\*\*Recommendation:\*\*\s*/, ''))
+  // The stored insight is a sentence fragment continuing "Recommendation:", so it starts
+  // lowercase. Dropping the prefix left the paragraph beginning mid-sentence.
+  if (heatInsights.length) {
+    const r = heatInsights[heatInsights.length - 1].replace(/^\*\*Recommendation:\*\*\s*/, '')
+    recs.push(r.charAt(0).toUpperCase() + r.slice(1))
+  }
   if (atRisk.length) recs.push(`Clear the ${atRisk.length} overdue phase${atRisk.length === 1 ? '' : 's'} first — they gate go-live.`)
   if (avg != null && avg < 3.5) recs.push('Lift survey readiness with targeted comms before the next gate.')
   if (!recs.length) recs.push('On track — maintain cadence and re-run this report as data updates.')
@@ -922,7 +969,9 @@ async function runGates(_params, text, ctx) {
   }
   const g = art.data ?? {}
   const units = g.units ?? []
-  const RAG = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'a' }
+  // 'n' = not assessed. Deliberately not amber: amber says "nearly there",
+  // and the truth is that nobody has looked at it yet.
+  const RAG = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'n' }
   const WORD = { ready: 'Ready', watch: 'Watch', at_risk: 'At risk', not_assessed: 'Not assessed' }
   const rows = units.map(u => ({
     rag: RAG[u.status] ?? 'a',
@@ -1032,7 +1081,7 @@ async function runStory(_params, text, ctx) {
   const comms = art('comms_plan')
   const byHeading = h => story.sections.find(x => x.heading === h)?.body ?? null
 
-  const RAG_GATE = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'a' }
+  const RAG_GATE = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'n' }
   const RAG_COMM = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', deferred: 'a' }
   const fmtD = dd => dd ? new Date(dd + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'
 
