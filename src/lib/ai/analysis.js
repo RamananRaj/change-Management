@@ -378,18 +378,22 @@ export function buildLaneTree(lanes = []) {
   }))
 }
 
+// A pct outside 0–100 would draw a fill wider than its bar, so it is clamped at
+// the boundary rather than trusted from the row.
+export const clampPct = v => Math.max(0, Math.min(100, Math.round(Number(v) || 0)))
+
 // Milestones and dated activities share a row shape so the renderer and the drag
 // machinery don't need to care which table a bar came from.
 export function rowsForLane(laneId, milestones = [], activities = []) {
   const ms = milestones.filter(m => m.lane_id === laneId).map(m => ({
     id: m.id, table: 'project_milestones', name: m.name, color: m.color,
     starts_on: m.starts_on, ends_on: m.ends_on, milestone_date: m.milestone_date,
-    sort_order: m.sort_order ?? 0, lane_id: laneId,
+    sort_order: m.sort_order ?? 0, lane_id: laneId, pct: clampPct(m.pct),
   }))
   const acts = activities.filter(a => a.lane_id === laneId).map(a => ({
     id: a.id, table: 'project_pathways', name: a.name, color: a.color,
     starts_on: a.starts_on, ends_on: a.ends_on, milestone_date: null,
-    sort_order: a.sort_order ?? 0, lane_id: laneId, activity: true,
+    sort_order: a.sort_order ?? 0, lane_id: laneId, activity: true, pct: clampPct(a.pct), derivedPct: true,
     undated: !a.starts_on || !a.ends_on,
   }))
   return [...ms, ...acts].sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))

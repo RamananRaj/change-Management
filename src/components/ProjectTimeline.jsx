@@ -22,7 +22,7 @@ const fmtLong    = d => d.toLocaleDateString(undefined, { day: 'numeric', month:
 // dd/mm for the compact labels sitting at the end of each bar.
 const ddmm = s => { const d = toDate(s); return d ? `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` : '' }
 
-const emptyMs = { name: '', lane_id: '', kind: 'point', milestone_date: '', starts_on: '', ends_on: '', color: '' }
+const emptyMs = { name: '', lane_id: '', kind: 'point', milestone_date: '', starts_on: '', ends_on: '', color: '', pct: 0 }
 
 // Bar colours. Empty = use the lane default, so existing items keep the look they have today.
 const BAR_COLORS = [
@@ -38,6 +38,13 @@ const BAR_COLORS = [
 ]
 // A solid bar needs light text; the pale lane defaults need dark text.
 const onColor = hex => (hex ? '#ffffff' : null)
+// The unfilled part of a bar: the same hue at low opacity, so a bar at 40% reads as
+// one bar partly done rather than two bars of different colours butted together.
+const tintOf = hex => {
+  if (!hex?.startsWith('#') || hex.length !== 7) return hex
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+  return `rgba(${r},${g},${b},0.22)`
+}
 
 export default function ProjectTimeline({ project, readOnly = false }) {
   const [phases,      setPhases]      = useState([])   // 5 rows (some may be unsaved)
@@ -63,18 +70,30 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       supabase.from('project_lanes').select('*').eq('project_id', project.id)
         .order('sort_order', { ascending: true }),
       supabase.from('project_pathways')
-        .select('id, phase_number, pathway_step, starts_on, ends_on, lane_id, color, sort_order, phase_content(title)')
+        .select('id, phase_number, pathway_step, content_id, starts_on, ends_on, lane_id, color, sort_order, phase_content(title)')
         .eq('project_id', project.id)
         .order('sort_order', { ascending: true }).order('pathway_step', { ascending: true }),
     ])
     const byNum = new Map((ph ?? []).map(p => [p.phase_number, p]))
     setPhases(PHASES.map(n => byNum.get(n) ?? { phase_number: n, status: 'locked', planned_start: null, planned_end: null }))
-    setLanes(ln ?? [])
+
+    // A project with no lanes at all can't show anything, and it's reachable by
+    // deleting the seeded ones. Put Delivery and Change back rather than leaving
+    // the chart empty with no obvious way forward.
+    let laneRows = ln ?? []
+    if (!laneRows.length && !readOnly) {
+      const { data: seeded } = await supabase.from('project_lanes').insert([
+        { project_id: project.id, name: 'Delivery', tint: '#eff6ff', sort_order: 0 },
+        { project_id: project.id, name: 'Change',   tint: '#f0fdfa', sort_order: 1 },
+      ]).select()
+      laneRows = seeded ?? []
+    }
+    setLanes(laneRows)
+    const ln2 = laneRows
     // Legacy rows predate lane_id and carry a 'delivery'/'change' text lane instead.
     // Resolve them to a lane row by name so the two never diverge on screen.
-    const laneByName = new Map((ln ?? []).filter(l => !l.parent_id).map(l => [l.name.toLowerCase(), l.id]))
+    const laneByName = new Map(ln2.filter(l => !l.parent_id).map(l => [l.name.toLowerCase(), l.id]))
     setMilestones((ms ?? []).map(m => ({ ...m, lane_id: m.lane_id ?? laneByName.get((m.lane ?? '').toLowerCase()) ?? null })))
-    setActivities((dated ?? []).map(a => ({ ...a, name: a.phase_content?.title ?? 'Untitled activity' })))
 
     // Team-aggregate progress, scoped to THIS project's pathway items only
     // (not the whole content library): completed pathway activities ÷ (pathway items × members).
@@ -97,6 +116,18 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     }
     const dCount = {}
     acts.forEach(a => { dCount[a.phase_number] = (dCount[a.phase_number] || 0) + 1 })
+
+    // An activity bar reports how many of the assigned members have ticked it off.
+    // That figure already exists, so the timeline reads it rather than asking anyone
+    // to keep a second percentage up to date by hand.
+    const perContent = {}
+    acts.forEach(a => { perContent[a.content_id] = (perContent[a.content_id] || 0) + 1 })
+    const team = Math.max(memberIds.length, 1)
+    setActivities((dated ?? []).map(a => ({
+      ...a,
+      name: a.phase_content?.title ?? 'Untitled activity',
+      pct: Math.round(((perContent[a.content_id] || 0) / team) * 100),
+    })))
     const prog = {}
     PHASES.forEach(n => { prog[n] = { done: dCount[n] || 0, total: (cCount[n] || 0) * Math.max(memberIds.length, 1) } })
     setProgress(prog)
@@ -146,6 +177,8 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       ends_on:   msForm.kind === 'band' ? (msForm.ends_on || null) : null,
       color:     msForm.color || null,
       sort_order: Number(msForm.sort_order) || 0,
+      // A point milestone is either reached or not; a percentage on it is meaningless.
+      pct: msForm.kind === 'band' ? (Number(msForm.pct) || 0) : 0,
     }
     if (msForm.id) await supabase.from('project_milestones').update(payload).eq('id', msForm.id)
     else           await supabase.from('project_milestones').insert(payload)
@@ -403,8 +436,14 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   <div onPointerDown={e => beginDrag(e, r, 'move', r.table)}
                     title={readOnly ? '' : 'Drag to move · drag an edge to change duration · drag onto another lane to move it there'}
                     className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
-                    style={{ left: bx, width: bw, background: r.color || dim, border: `1px solid ${r.color || dim}`, ...(dragLift(r.id) || {}) }}>
-                    {inside && <span className="text-[10px] font-semibold whitespace-nowrap select-none" style={{ color: onColor(r.color) || accent }}>{r.name}</span>}
+                    style={{ left: bx, width: bw, background: tintOf(r.color || dim), border: `1px solid ${r.color || dim}`, ...(dragLift(r.id) || {}) }}>
+                    {/* Completed portion, drawn in the bar's own colour against a
+                        lightened track — so the fill reads as progress rather than
+                        as a differently-coloured bar. */}
+                    {r.pct > 0 && (
+                      <div className="absolute inset-y-0 left-0 rounded-l" style={{ width: `${r.pct}%`, background: r.color || dim }} />
+                    )}
+                    {inside && <span className="relative text-[10px] font-semibold whitespace-nowrap select-none" style={{ color: r.pct >= 60 ? (onColor(r.color) || accent) : accent }}>{r.name}</span>}
                   </div>
                   {!readOnly && (
                     <>
@@ -481,13 +520,14 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     }
     if (r.table === 'project_pathways') {
       setMsForm({ ...emptyMs, activityId: r.id, name: r.name, kind: 'band', lane_id: r.lane_id,
-        starts_on: r.starts_on ?? '', ends_on: r.ends_on ?? '', color: r.color ?? '', sort_order: r.sort_order ?? 0 })
+        starts_on: r.starts_on ?? '', ends_on: r.ends_on ?? '', color: r.color ?? '', sort_order: r.sort_order ?? 0,
+        derivedPct: r.pct ?? 0 })
       return
     }
     const m = milestones.find(x => x.id === r.id) ?? r
     setMsForm({ ...emptyMs, ...m, kind: (m.starts_on && m.ends_on) ? 'band' : 'point',
       milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '', color: m.color ?? '',
-      sort_order: m.sort_order ?? 0 })
+      sort_order: m.sort_order ?? 0, pct: m.pct ?? 0 })
   }
 
   // Lane bands span the full width with no side borders or horizontal padding, so
@@ -778,6 +818,24 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   </select>
                   <p className="text-[10px] text-slate-400 mt-1">Put a milestone on the same line as the band it closes — Go-Live on Build, say.</p>
                 </div>
+                )}
+
+                {!msForm.phaseNumber && msForm.kind === 'band' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Complete</label>
+                    {msForm.activityId ? (
+                      <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                        {msForm.derivedPct ?? 0}% — taken from how many assigned members have ticked this activity off. Not editable here.
+                      </p>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input type="range" min="0" max="100" step="5" value={Number(msForm.pct) || 0}
+                          onChange={e => setMsForm({ ...msForm, pct: Number(e.target.value) })}
+                          className="flex-1 accent-[#1F4E79]" />
+                        <span className="text-xs font-semibold text-slate-700 w-10 text-right">{Number(msForm.pct) || 0}%</span>
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {!msForm.phaseNumber && (

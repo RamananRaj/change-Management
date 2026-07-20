@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct } from './analysis'
 
 const heat = {
   version: 1,
@@ -412,5 +412,14 @@ describe('shared timeline lines', () => {
   it('treats a missing sort_order as line zero', () => {
     const [row] = groupLaneRows([{ id: 'x', name: 'X' }, { id: 'y', name: 'Y', sort_order: 0 }])
     expect(row.items).toHaveLength(2)
+  })
+})
+
+describe('clampPct', () => {
+  it('keeps a fill from ever exceeding its bar', () => {
+    expect(clampPct(140)).toBe(100)
+    expect(clampPct(-20)).toBe(0)
+    expect(clampPct('62.4')).toBe(62)
+    expect(clampPct(undefined)).toBe(0)
   })
 })
