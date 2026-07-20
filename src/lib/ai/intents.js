@@ -18,7 +18,7 @@ export const INTENTS = [
   { intent: 'approach',            re: /((comms|communications?|training|cutover|go[- ]?live|adoption|engagement|train[- ]?the[- ]?trainer|trainer the trainer)\s*(approach|plan|strategy|framework))|((approach|plan|strategy)\s+(for|to)\s+(comms|communications?|training|cutover|go[- ]?live))|train[- ]?the[- ]?trainer|trainer the trainer/i },
   // The whole picture as a narrative, not a card. Sits ahead of `report` (which
   // generates a document) and ahead of `progress` (which returns bars).
-  { intent: 'story',               re: /(tell me the story|what'?s the story|programme? update|program update|give me (an|the) update|full update|brief me|walk me through|how is it really going|state of (play|the programme|the program))/i },
+  { intent: 'story',               re: /(tell me the story|what'?s the story|programme? update|program update|give me (an|the) update|full update|brief me|walk me through|state of (play|the programme|the program)|tracking|on track|how('?s| is| are) .* (going|doing|tracking)|how is it really going)/i },
   { intent: 'report',              re: /(report|wrap[- ]?up|status (report|update|pack)|exec(utive)?[- ]?(pack|summary|report|brief(ing)?)|board[- ]?pack|briefing[- ]?pack|change[- ]?pack|full (picture|rundown))/i },
   // Stakeholder impact — people ask this many ways ("who's most impacted", "high impacted
   // stakeholders", "impact assessment"), so match the concept, not just the artifact's name.
@@ -29,7 +29,7 @@ export const INTENTS = [
   { intent: 'milestones',          re: /(milestone|due (this|next|soon|in)|deadline|what('?s| is) due)/i },
   { intent: 'clients',             re: /(clients|which client|list client|show client|all client)/i },
   { intent: 'people',              re: /(all people|list people|show people|people list|team members?|everyone|who('?s| is) on the)/i },
-  { intent: 'progress',            re: /(progress|completion|how far|on track|tracking|track(ing)? (well|ok|badly)|how('?s| is| are) .* (going|doing|tracking)|percent|% (done|complete))/i },
+  { intent: 'progress',            re: /(progress|completion|how far|percent|% (done|complete))/i },
   { intent: 'readiness',           re: /(readiness|rag status|how are we|overall health|summary|summarise|summarize|how('?s| is) it going)/i },
 ]
 

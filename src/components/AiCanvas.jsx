@@ -284,6 +284,37 @@ function WidgetBody({ d, onDrill, onNavigate, onConfirmDraft, onCancel }) {
   if (d.type === 'narrative')
     return <p className="text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap"><Bold text={d.body} /></p>
 
+  // A story is prose interleaved with the real widgets — the heat map grid, the gate
+  // list, the trend chart — rather than a written description of them. Each block
+  // recurses back through this same dispatcher, so every renderer is reused as-is
+  // and a new widget type becomes available to the narrative for free.
+  if (d.type === 'story') {
+    return (
+      <div className="space-y-5">
+        {d.blocks.map((b, i) => (
+          <div key={i}>
+            {b.heading && (
+              <p className="text-[11px] font-bold tracking-widest text-slate-400 uppercase mb-1.5">{b.heading}</p>
+            )}
+            {b.prose && (
+              <p className="text-[14px] leading-relaxed text-slate-700 whitespace-pre-wrap mb-2"><Bold text={b.prose} /></p>
+            )}
+            {b.widget && (
+              <div className="rounded-xl border border-slate-100 bg-slate-50/50 p-3">
+                <WidgetBody d={b.widget} onDrill={onDrill} onNavigate={onNavigate} />
+              </div>
+            )}
+          </div>
+        ))}
+        {d.gaps?.length > 0 && (
+          <p className="text-[12px] text-slate-400 italic border-t border-slate-100 pt-3">
+            Not covered, because the data isn't there yet: {d.gaps.join('; ')}.
+          </p>
+        )}
+      </div>
+    )
+  }
+
   if (d.type === 'report') return <ReportBody d={d} onDrill={onDrill} onNavigate={onNavigate} />
 
 

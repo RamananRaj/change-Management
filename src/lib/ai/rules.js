@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, renderStory } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -1025,7 +1025,46 @@ async function runStory(_params, text, ctx) {
     comms: art('comms_plan'), issues: art('issues_log'),
   })
 
-  return { type: 'narrative', title: story.title, body: `_${story.subtitle}_\n\n${renderStory(story)}` }
+  // Prose AND the real widgets, interleaved. Describing a heat map in words when the
+  // grid itself is one line away is the thing that made this feel thin.
+  const heat = art('stakeholder_heatmap')
+  const gate = art('readiness_gate')
+  const comms = art('comms_plan')
+  const byHeading = h => story.sections.find(x => x.heading === h)?.body ?? null
+
+  const RAG_GATE = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'a' }
+  const RAG_COMM = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', deferred: 'a' }
+  const fmtD = dd => dd ? new Date(dd + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'
+
+  const blocks = [
+    { heading: 'Where we are', prose: byHeading('Where we are'),
+      widget: { type: 'progress', rows: p.phases.map(ph => ({ label: ph.name, value: ph.pct, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet' })) } },
+
+    { heading: 'Which way it is moving', prose: byHeading('Which way it is moving'),
+      widget: (snaps ?? []).length >= 2
+        ? { type: 'trend', chart: buildTrendChart([{ name: p.name, points: (snaps ?? []).map(x => ({ captured_on: x.captured_on, pct: Number(x.pct) })) }],
+            { plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null, today }), verdict: trendSentence(trend, p.name) }
+        : null },
+
+    { heading: 'What is in the way', prose: byHeading('What is in the way'),
+      widget: comms?.items?.some(i => i.status === 'blocked' || i.status === 'overdue')
+        ? { type: 'list', rows: comms.items.filter(i => i.status === 'blocked' || i.status === 'overdue')
+            .map(i => ({ rag: RAG_COMM[i.status] ?? 'r', name: i.message, meta: `${i.audience} · ${i.channel}${i.owner ? ` · ${i.owner}` : ' · no owner'}`, due: `${fmtD(i.date)} · ${i.status}` })) }
+        : null },
+
+    { heading: 'Who it lands on', prose: byHeading('Who it lands on'),
+      widget: heat?.rows?.length ? { type: 'heatmap', cols: heat.cols, rows: heat.rows } : null },
+
+    { heading: 'Are we ready', prose: byHeading('Are we ready'),
+      widget: gate?.units?.length
+        ? { type: 'list', rows: gate.units.map(u => ({ rag: RAG_GATE[u.status] ?? 'a', name: u.unit,
+            meta: `${u.met}/${u.total} criteria${u.owner ? ` · ${u.owner}` : ' · unassigned'}`, due: u.open ?? '' })) }
+        : null },
+
+    { heading: 'What needs a decision', prose: byHeading('What needs a decision'), widget: null },
+  ].filter(b => b.prose || b.widget)
+
+  return { type: 'story', title: story.title, subtitle: story.subtitle, blocks, gaps: story.gaps }
 }
 
 const RUNNERS = {

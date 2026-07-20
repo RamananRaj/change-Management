@@ -74,16 +74,23 @@ describe('matchIntent', () => {
   })
 })
 
-describe('progress intent — natural phrasings', () => {
-  it('matches the way people actually ask', () => {
+describe('conversational phrasings route to the story, not a bare bar', () => {
+  it('gives the full picture when asked how something is going', () => {
+    // These read as "tell me how it is going", and a single percentage bar is a
+    // poor answer to that. They belong to the story, which shows prose AND widgets.
     for (const q of [
       'How is Meridian tracking',
       "how's the RSR Program going",
       'how are we doing on Phase 2',
       'is Meridian on track',
-      'what percent complete is billing',
     ]) {
-      expect(matchIntent(q)?.intent).toBe('progress')
+      expect(matchIntent(q)?.intent, q).toBe('story')
+    }
+  })
+
+  it('keeps literal progress questions on the progress widget', () => {
+    for (const q of ['what percent complete is billing', 'progress by project', 'how far through are we']) {
+      expect(matchIntent(q)?.intent, q).toBe('progress')
     }
   })
 })
