@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { LV_LABEL } from '../lib/ai/analysis'
+import { LV_LABEL, HEAT_DOMAINS } from '../lib/ai/analysis'
 
 // Impact colours match the heat map exactly — the same rating must not look like two
 // different things depending on which screen you are on.
 const LV_DOT = { vh: '#991B1B', h: '#DC2626', m: '#E8913A', l: '#16A34A', vl: '#86EFAC', none: '#E2E8F0' }
 const LEVELS = ['none', 'vl', 'l', 'm', 'h', 'vh']   // ascending: a scale, not a ranking
 
-const empty = { name: '', headcount: '', impact_level: '', owner_name: '', notes: '', parent_id: '' }
+const empty = { name: '', headcount: '', impact_level: '', owner_name: '', notes: '', parent_id: '',
+  impact_people: '', impact_process: '', impact_information: '', impact_technology: '', impact_note: '' }
 
 export default function ProjectAudiences({ project, readOnly = false }) {
   const [rows, setRows]       = useState([])
@@ -42,7 +43,16 @@ export default function ProjectAudiences({ project, readOnly = false }) {
       parent_id: form.parent_id || null,
       notes: form.notes?.trim() || null,
       sort_order: form.sort_order ?? rows.length,
+      impact_people:      form.impact_people || null,
+      impact_process:     form.impact_process || null,
+      impact_information: form.impact_information || null,
+      impact_technology:  form.impact_technology || null,
+      impact_note:        form.impact_note?.trim() || null,
     }
+    // Stamp the rating date only when a rating exists, so an unrated audience never
+    // looks like it was assessed and found to have no impact.
+    const anyRated = HEAT_DOMAINS.some(d => payload[d.key])
+    payload.impact_rated_on = anyRated ? (form.impact_rated_on ?? new Date().toISOString().slice(0, 10)) : null
     const q = form.id
       ? supabase.from('audiences').update(payload).eq('id', form.id).select('id')
       : supabase.from('audiences').insert(payload).select('id')
@@ -77,6 +87,14 @@ export default function ProjectAudiences({ project, readOnly = false }) {
         </p>
         {a.notes && <p className="text-[11px] text-slate-400 truncate">{a.notes}</p>}
       </div>
+      <div className="hidden sm:flex items-center gap-1.5 w-24 shrink-0 justify-center" title="People · Process · Information · Technology">
+        {HEAT_DOMAINS.map(d => (
+          <span key={d.key} className="w-2 h-2 rounded-full"
+            title={`${d.label}: ${LV_LABEL[a[d.key]] ?? 'not rated'}`}
+            style={{ background: a[d.key] ? (LV_DOT[a[d.key]] ?? '#E2E8F0') : 'transparent',
+                     border: a[d.key] ? 'none' : '1px solid #E2E8F0' }} />
+        ))}
+      </div>
       <div className="w-24 text-right shrink-0">
         {a.headcount == null
           // Amber, not a dash: an unknown size is a gap someone should close, and it
@@ -91,7 +109,10 @@ export default function ProjectAudiences({ project, readOnly = false }) {
       </div>
       {!readOnly && (
         <div className="w-20 text-right shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={() => setForm({ ...empty, ...a, headcount: a.headcount ?? '', impact_level: a.impact_level ?? '', owner_name: a.owner_name ?? '', notes: a.notes ?? '', parent_id: a.parent_id ?? '' })}
+          <button onClick={() => setForm({ ...empty, ...a, headcount: a.headcount ?? '', impact_level: a.impact_level ?? '', owner_name: a.owner_name ?? '', notes: a.notes ?? '', parent_id: a.parent_id ?? '',
+              impact_people: a.impact_people ?? '', impact_process: a.impact_process ?? '',
+              impact_information: a.impact_information ?? '', impact_technology: a.impact_technology ?? '',
+              impact_note: a.impact_note ?? '' })}
             className="text-[11px] text-[#1F4E79] hover:underline">Edit</button>
           <button onClick={() => remove(a)} className="text-[11px] text-red-400 hover:underline ml-2">Del</button>
         </div>
@@ -151,6 +172,7 @@ export default function ProjectAudiences({ project, readOnly = false }) {
             <div className="flex items-center gap-3 pb-2 text-[10px] text-slate-400 uppercase tracking-widest border-b border-slate-100">
               <span className="w-2.5 shrink-0" />
               <span className="flex-1">Audience</span>
+              <span className="hidden sm:block w-24 text-center shrink-0">Impact</span>
               <span className="w-24 text-right shrink-0">Headcount</span>
               <span className="w-36 text-right shrink-0">Owner</span>
               {!readOnly && <span className="w-20 shrink-0" />}
@@ -216,6 +238,26 @@ export default function ProjectAudiences({ project, readOnly = false }) {
                     <option value="">— top level —</option>
                     {tops.filter(t => t.id !== form.id).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
+                </div>
+
+                <div className="border-t border-slate-100 pt-4">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Impact by domain</label>
+                  <p className="text-[10px] text-slate-400 mb-2">These four ratings are the stakeholder heat map. Leave a domain blank if it hasn’t been assessed — blank is reported as a gap, not as “no impact”.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {HEAT_DOMAINS.map(d => (
+                      <div key={d.key}>
+                        <label className="block text-[10px] text-slate-500 mb-0.5">{d.label}</label>
+                        <select value={form[d.key] ?? ''} onChange={e => setForm({ ...form, [d.key]: e.target.value })}
+                          className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-[13px] bg-white focus:outline-none focus:border-[#1F4E79]">
+                          <option value="">Not rated</option>
+                          {[...LEVELS].reverse().map(k => <option key={k} value={k}>{LV_LABEL[k]}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  <input value={form.impact_note ?? ''} onChange={e => setForm({ ...form, impact_note: e.target.value })}
+                    placeholder="Why is it rated this way? (appears on the heat map)"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm mt-2 focus:outline-none focus:border-[#1F4E79]" />
                 </div>
 
                 <div>

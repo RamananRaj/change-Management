@@ -705,3 +705,47 @@ export function renderStory(story) {
   }
   return parts.join('\n\n')
 }
+
+// ── Heat map from audiences ───────────────────────────────────────────────────
+// The heat map used to exist only as a hand-authored artifact. Audiences carry a
+// rating per domain, so the table a client fills in anyway becomes the heat map.
+export const HEAT_DOMAINS = [
+  { key: 'impact_people',      label: 'People' },
+  { key: 'impact_process',     label: 'Process' },
+  { key: 'impact_information', label: 'Information' },
+  { key: 'impact_technology',  label: 'Technology' },
+]
+
+// Returns the same shape the heatmap widget already renders, or null when no audience
+// has been rated — an unrated set must not draw a grid of grey dots that looks like a
+// real assessment saying "no impact anywhere".
+export function heatmapFromAudiences(audiences = []) {
+  const rated = (audiences ?? []).filter(a => HEAT_DOMAINS.some(d => a?.[d.key]))
+  if (!rated.length) return null
+
+  const rows = rated
+    .slice()
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .map(a => ({
+      label: a.name,
+      // A domain nobody rated is 'none' for rendering, but see unratedCount below —
+      // partial ratings are reported rather than passed off as complete.
+      cells: HEAT_DOMAINS.map(d => a[d.key] ?? 'none'),
+      headcount: a.headcount ?? null,
+    }))
+
+  const unrated = rated.reduce((n, a) => n + HEAT_DOMAINS.filter(d => !a[d.key]).length, 0)
+  const notes = rated.filter(a => a.impact_note).map(a => `**${a.name}** — ${a.impact_note}`)
+  const dates = rated.map(a => a.impact_rated_on).filter(Boolean).sort()
+
+  return {
+    cols: HEAT_DOMAINS.map(d => d.label),
+    rows,
+    commentary: notes.length ? notes.join(' ') : null,
+    ratedOn: dates.length ? dates[dates.length - 1] : null,
+    unratedCells: unrated,
+    // Audiences that exist but carry no rating at all. Reported, not hidden: a heat map
+    // missing a whole group is a different thing from one where a group scores low.
+    missing: (audiences ?? []).filter(a => !HEAT_DOMAINS.some(d => a?.[d.key])).map(a => a.name),
+  }
+}

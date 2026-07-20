@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences } from './analysis'
 
 const heat = {
   version: 1,
@@ -656,5 +656,44 @@ describe('computeTrend · forecast sanity is universal', () => {
     const t = computeTrend(weekly(12, 1), { plannedEnd: '2026-08-01', today: new Date('2026-07-20') })
     expect(t.forecastBeforePlan).toBe(false)
     expect(trendSentence(t, d => new Date(d).toISOString().slice(0, 10))).toContain('puts completion around')
+  })
+})
+
+describe('heatmapFromAudiences', () => {
+  const auds = [
+    { name: 'Billing Operations', sort_order: 0, headcount: 180, impact_people: 'vh', impact_process: 'vh', impact_information: 'h', impact_technology: 'h', impact_note: 'Role and system move together.', impact_rated_on: '2026-06-12' },
+    { name: 'Finance', sort_order: 1, headcount: 45, impact_people: 'l', impact_process: 'h', impact_information: 'm', impact_technology: 'l', impact_rated_on: '2026-06-14' },
+    { name: 'Field Services', sort_order: 2, headcount: null },   // exists but unrated
+  ]
+
+  it('builds the shape the heat map widget already renders', () => {
+    const h = heatmapFromAudiences(auds)
+    expect(h.cols).toEqual(['People', 'Process', 'Information', 'Technology'])
+    expect(h.rows.map(r => r.label)).toEqual(['Billing Operations', 'Finance'])
+    expect(h.rows[0].cells).toEqual(['vh', 'vh', 'h', 'h'])
+  })
+
+  it('reports an unrated audience rather than drawing it as no-impact', () => {
+    // A group shown as four grey dots reads as "assessed, low impact". It wasn't assessed.
+    const h = heatmapFromAudiences(auds)
+    expect(h.rows).toHaveLength(2)
+    expect(h.missing).toEqual(['Field Services'])
+  })
+
+  it('counts partially rated domains', () => {
+    const h = heatmapFromAudiences([{ name: 'X', impact_people: 'h' }])
+    expect(h.unratedCells).toBe(3)
+  })
+
+  it('returns null when nothing has been rated at all', () => {
+    // Better no heat map than a grid of greys that looks like a finished assessment.
+    expect(heatmapFromAudiences([{ name: 'X' }, { name: 'Y' }])).toBeNull()
+    expect(heatmapFromAudiences([])).toBeNull()
+  })
+
+  it('carries the latest rating date and joins the notes', () => {
+    const h = heatmapFromAudiences(auds)
+    expect(h.ratedOn).toBe('2026-06-14')
+    expect(h.commentary).toContain('Billing Operations')
   })
 })

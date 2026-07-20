@@ -10,7 +10,7 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, heatmapFromAudiences } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -202,7 +202,48 @@ function analyseHeatmap(data) {
 //  • names a client  → that client's current heat map
 //  • no client, one available (RLS-scoped) → show it
 //  • no client, several → ask which
-async function runHeatmap(_params, text) {
+async function runHeatmap(_params, text, ctx) {
+  // Audiences first. A heat map built from the audiences a client actually maintains
+  // beats a hand-authored artifact that goes stale the day it is captured — and it
+  // means a client can produce one at all, which was not previously possible.
+  try {
+    const data0 = await loadData()
+    const scope = resolveScope(text, ctx ?? {}, data0)
+    const projIds = scopedProjects(data0, scope).map(p => p.id)
+    if (projIds.length === 1) {
+      const { data: auds } = await supabase.from('audiences')
+        .select('name, sort_order, headcount, impact_people, impact_process, impact_information, impact_technology, impact_note, impact_rated_on')
+        .eq('project_id', projIds[0]).order('sort_order')
+      const built = heatmapFromAudiences(auds ?? [])
+      if (built) {
+        const ranked = built.rows.map(r => ({
+          name: r.label,
+          total: r.cells.reduce((s2, lv) => s2 + (LV_W[lv] || 0), 0),
+          peak: r.cells.reduce((m, lv) => ((LV_W[lv] || 0) > (LV_W[m] || 0) ? lv : m), 'none'),
+          highs: r.cells.filter(lv => lv === 'vh' || lv === 'h').length,
+        })).sort((a, b) => b.total - a.total)
+        const top = ranked.filter(g => g.peak === 'vh' || g.peak === 'h')
+        const lead = top.length
+          ? `The most impacted groups are **${top.slice(0, 3).map(g => g.name).join('**, **')}**. ` +
+            top.slice(0, 3).map(g => `${g.name} peaks at ${LV_LABEL[g.peak]} across ${g.highs} domain${g.highs === 1 ? '' : 's'}`).join('; ') +
+            '. Focus engagement and comms there first.'
+          : ranked.length ? `No group is rated High or Very High — the heaviest is **${ranked[0].name}**.` : null
+        // Gaps are stated, not hidden: a heat map missing a group entirely is a
+        // different thing from one where that group scores low.
+        const gaps = []
+        if (built.missing.length) gaps.push(`${built.missing.join(', ')} ${built.missing.length === 1 ? 'has' : 'have'} not been rated`)
+        if (built.unratedCells) gaps.push(`${built.unratedCells} domain rating${built.unratedCells === 1 ? '' : 's'} still blank`)
+        return {
+          type: 'heatmap', title: `${scope.label ?? 'Impact'} — stakeholder impact${scope.suffix}`,
+          cols: built.cols, rows: built.rows,
+          source: built.ratedOn ? `audiences · rated ${fmtDate(built.ratedOn)}` : 'audiences',
+          intro: lead, headline: built.commentary,
+          insights: gaps.length ? [`**Gaps:** ${gaps.join('; ')}.`] : [],
+        }
+      }
+    }
+  } catch { /* fall through to the stored artifact */ }
+
   const [{ data: arts }, { data: clients }] = await Promise.all([
     supabase.from('change_artifacts').select('client_id, title, version, source, data').eq('type', 'stakeholder_heatmap').eq('is_current', true).order('version', { ascending: false }),
     supabase.from('clients').select('id, name'),
