@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane } from './analysis'
 
 const heat = {
   version: 1,
@@ -345,5 +345,44 @@ describe('matchKnowledgeRule', () => {
 
   it('tolerates rules with no triggers', () => {
     expect(matchKnowledgeRule('training', [{ topic: 'x' }, ...rules]).topic).toBe('training')
+  })
+})
+
+describe('timeline swimlanes', () => {
+  const lanes = [
+    { id: 'a', name: 'Delivery', tint: '#eff6ff', sort_order: 0, parent_id: null },
+    { id: 'b', name: 'Change',   tint: '#f0fdfa', sort_order: 1, parent_id: null },
+    { id: 'b1', name: 'Comms',   tint: '#f8fafc', sort_order: 0, parent_id: 'b' },
+    { id: 'b2', name: 'Training',tint: '#f8fafc', sort_order: 1, parent_id: 'b' },
+  ]
+
+  it('nests sub-lanes under their parent, in order', () => {
+    const tree = buildLaneTree(lanes)
+    expect(tree.map(l => l.id)).toEqual(['a', 'b'])
+    expect(tree[1].children.map(c => c.id)).toEqual(['b1', 'b2'])
+  })
+
+  it('surfaces an orphan rather than dropping it', () => {
+    const tree = buildLaneTree([...lanes, { id: 'z', name: 'Lost', parent_id: 'gone', sort_order: 9 }])
+    expect(tree.map(l => l.id)).toContain('z')
+  })
+
+  it('derives a readable title colour from the tint', () => {
+    expect(laneStyle('#eff6ff').text).toBe('#1e40af')
+    expect(laneStyle('#nonsense').text).toBe(laneStyle('#f8fafc').text)  // falls back, never undefined
+  })
+
+  it('merges milestones and activities into one ordered row set', () => {
+    const rows = rowsForLane('a',
+      [{ id: 'm1', lane_id: 'a', name: 'Go-Live', milestone_date: '2026-09-01', sort_order: 1 }],
+      [{ id: 'p1', lane_id: 'a', name: 'Build', starts_on: '2026-07-01', ends_on: '2026-08-01', sort_order: 0 }])
+    expect(rows.map(r => r.id)).toEqual(['p1', 'm1'])
+    expect(rows[0].table).toBe('project_pathways')
+    expect(rows[1].table).toBe('project_milestones')
+  })
+
+  it('flags an activity missing either date as undated', () => {
+    const [row] = rowsForLane('a', [], [{ id: 'p', lane_id: 'a', name: 'X', starts_on: '2026-07-01', ends_on: null }])
+    expect(row.undated).toBe(true)
   })
 })

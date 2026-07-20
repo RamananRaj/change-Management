@@ -344,3 +344,53 @@ export function distinctiveTokens(text, entityNames = []) {
   entityNames.forEach(n => { const nn = normPhrase(n); if (nn.length >= 3) s = s.split(nn).join(' ') })
   return [...new Set(s.split(/\s+/).filter(w => w.length >= 3 && !LEARN_STOP.has(w)))]
 }
+
+// ── Timeline swimlanes ────────────────────────────────────────────────────────
+// Pale fills for lane bands. Deliberately separate from the saturated bar palette:
+// a lane tinted as dark as a bar would swallow any bar drawn on top of it.
+export const LANE_TINTS = [
+  { tint: '#eff6ff', border: '#bfdbfe', text: '#1e40af', label: 'Blue' },
+  { tint: '#f0fdfa', border: '#99f6e4', text: '#0f766e', label: 'Teal' },
+  { tint: '#fef3c7', border: '#fde68a', text: '#92400e', label: 'Amber' },
+  { tint: '#f0fdf4', border: '#bbf7d0', text: '#15803d', label: 'Green' },
+  { tint: '#fef2f2', border: '#fecaca', text: '#b91c1c', label: 'Red' },
+  { tint: '#faf5ff', border: '#e9d5ff', text: '#7e22ce', label: 'Violet' },
+  { tint: '#fdf2f8', border: '#fbcfe8', text: '#be185d', label: 'Pink' },
+  { tint: '#f8fafc', border: '#e2e8f0', text: '#475569', label: 'Slate' },
+]
+
+// The border and title colour are derived from the tint rather than stored, so a
+// lane can never end up with a title that's invisible against its own background.
+export function laneStyle(tint) {
+  return LANE_TINTS.find(t => t.tint === tint) ?? LANE_TINTS[LANE_TINTS.length - 1]
+}
+
+// Flat lane rows -> one level of nesting. Anything pointing at a missing or
+// already-nested parent is surfaced at top level rather than silently dropped.
+export function buildLaneTree(lanes = []) {
+  const tops = lanes.filter(l => !l.parent_id)
+  const topIds = new Set(tops.map(l => l.id))
+  const byOrder = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  const orphans = lanes.filter(l => l.parent_id && !topIds.has(l.parent_id))
+  return [...tops, ...orphans].sort(byOrder).map(l => ({
+    ...l,
+    children: lanes.filter(c => c.parent_id === l.id).sort(byOrder),
+  }))
+}
+
+// Milestones and dated activities share a row shape so the renderer and the drag
+// machinery don't need to care which table a bar came from.
+export function rowsForLane(laneId, milestones = [], activities = []) {
+  const ms = milestones.filter(m => m.lane_id === laneId).map(m => ({
+    id: m.id, table: 'project_milestones', name: m.name, color: m.color,
+    starts_on: m.starts_on, ends_on: m.ends_on, milestone_date: m.milestone_date,
+    sort_order: m.sort_order ?? 0, lane_id: laneId,
+  }))
+  const acts = activities.filter(a => a.lane_id === laneId).map(a => ({
+    id: a.id, table: 'project_pathways', name: a.name, color: a.color,
+    starts_on: a.starts_on, ends_on: a.ends_on, milestone_date: null,
+    sort_order: a.sort_order ?? 0, lane_id: laneId, activity: true,
+    undated: !a.starts_on || !a.ends_on,
+  }))
+  return [...ms, ...acts].sort((a, b) => (a.sort_order - b.sort_order) || a.name.localeCompare(b.name))
+}

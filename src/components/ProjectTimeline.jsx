@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { Fragment, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { LANE_TINTS, laneStyle, buildLaneTree, rowsForLane } from '../lib/ai/analysis'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -19,7 +20,22 @@ const fmtShort   = d => d.toLocaleDateString(undefined, { day: 'numeric', month:
 // While dragging we show the full date — month and year matter when you're pushing a bar out.
 const fmtLong    = d => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
-const emptyMs = { name: '', lane: 'delivery', kind: 'point', milestone_date: '', starts_on: '', ends_on: '' }
+const emptyMs = { name: '', lane_id: '', kind: 'point', milestone_date: '', starts_on: '', ends_on: '', color: '' }
+
+// Bar colours. Empty = use the lane default, so existing items keep the look they have today.
+const BAR_COLORS = [
+  { hex: '',        label: 'Lane default' },
+  { hex: '#1F4E79', label: 'ChangeFlow navy' },
+  { hex: '#0d9488', label: 'Teal' },
+  { hex: '#E8913A', label: 'Amber' },
+  { hex: '#16a34a', label: 'Green' },
+  { hex: '#dc2626', label: 'Red' },
+  { hex: '#7c3aed', label: 'Violet' },
+  { hex: '#0891b2', label: 'Cyan' },
+  { hex: '#64748b', label: 'Slate' },
+]
+// A solid bar needs light text; the pale lane defaults need dark text.
+const onColor = hex => (hex ? '#ffffff' : null)
 
 export default function ProjectTimeline({ project, readOnly = false }) {
   const [phases,      setPhases]      = useState([])   // 5 rows (some may be unsaved)
@@ -29,19 +45,33 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const [savingDates, setSavingDates] = useState(false)
   const [msForm,      setMsForm]      = useState(null)  // milestone being added/edited
   const [msSaving,    setMsSaving]    = useState(false)
+  const [lanes,       setLanes]       = useState([])   // project_lanes, flat; parent_id makes a sub-lane
+  const [activities,  setActivities]  = useState([])   // dated project_pathways rows
+  const [laneForm,    setLaneForm]    = useState(null) // lane being added/edited
 
   useEffect(() => { if (project?.id) load() /* eslint-disable-next-line */ }, [project?.id])
 
   async function load() {
     setLoading(true)
-    const [{ data: ph }, { data: ms }] = await Promise.all([
+    const [{ data: ph }, { data: ms }, { data: ln }, { data: dated }] = await Promise.all([
       supabase.from('project_phases').select('*').eq('project_id', project.id).order('phase_number'),
       supabase.from('project_milestones').select('*').eq('project_id', project.id)
         .order('sort_order', { ascending: true }).order('milestone_date', { ascending: true }),
+      supabase.from('project_lanes').select('*').eq('project_id', project.id)
+        .order('sort_order', { ascending: true }),
+      supabase.from('project_pathways')
+        .select('id, phase_number, pathway_step, starts_on, ends_on, lane_id, color, sort_order, phase_content(title)')
+        .eq('project_id', project.id)
+        .order('sort_order', { ascending: true }).order('pathway_step', { ascending: true }),
     ])
     const byNum = new Map((ph ?? []).map(p => [p.phase_number, p]))
     setPhases(PHASES.map(n => byNum.get(n) ?? { phase_number: n, status: 'locked', planned_start: null, planned_end: null }))
-    setMilestones(ms ?? [])
+    setLanes(ln ?? [])
+    // Legacy rows predate lane_id and carry a 'delivery'/'change' text lane instead.
+    // Resolve them to a lane row by name so the two never diverge on screen.
+    const laneByName = new Map((ln ?? []).filter(l => !l.parent_id).map(l => [l.name.toLowerCase(), l.id]))
+    setMilestones((ms ?? []).map(m => ({ ...m, lane_id: m.lane_id ?? laneByName.get((m.lane ?? '').toLowerCase()) ?? null })))
+    setActivities((dated ?? []).map(a => ({ ...a, name: a.phase_content?.title ?? 'Untitled activity' })))
 
     // Team-aggregate progress, scoped to THIS project's pathway items only
     // (not the whole content library): completed pathway activities ÷ (pathway items × members).
@@ -88,16 +118,32 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   }
 
   async function saveMilestone() {
-    if (!msForm.name.trim()) return
+    setMsSaving(true)
+    // An activity row belongs to the pathway; the timeline only schedules and colours it.
+    if (msForm.activityId) {
+      await supabase.from('project_pathways').update({
+        starts_on: msForm.starts_on || null,
+        ends_on:   msForm.ends_on || null,
+        lane_id:   msForm.lane_id || null,
+        color:     msForm.color || null,
+      }).eq('id', msForm.activityId)
+      setMsSaving(false); setMsForm(null); load()
+      return
+    }
+    if (!msForm.name.trim()) { setMsSaving(false); return }
+    const laneRow = lanes.find(l => l.id === msForm.lane_id)
     const payload = {
       project_id: project.id,
       name: msForm.name.trim(),
-      lane: msForm.lane,
+      lane_id: msForm.lane_id || null,
+      // The legacy text column has a CHECK constraint on ('delivery','change'), so a
+      // custom lane can't be written there. Keep it valid; lane_id is what's read.
+      lane: ['delivery', 'change'].includes((laneRow?.name ?? '').toLowerCase()) ? laneRow.name.toLowerCase() : 'delivery',
       milestone_date: msForm.kind === 'point' ? (msForm.milestone_date || null) : null,
       starts_on: msForm.kind === 'band' ? (msForm.starts_on || null) : null,
       ends_on:   msForm.kind === 'band' ? (msForm.ends_on || null) : null,
+      color:     msForm.color || null,
     }
-    setMsSaving(true)
     if (msForm.id) await supabase.from('project_milestones').update(payload).eq('id', msForm.id)
     else           await supabase.from('project_milestones').insert(payload)
     setMsSaving(false)
@@ -108,6 +154,33 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   async function deleteMilestone(id) {
     if (!window.confirm('Delete this timeline item?')) return
     await supabase.from('project_milestones').delete().eq('id', id)
+    load()
+  }
+
+  async function saveLane() {
+    if (!laneForm.name.trim()) return
+    const payload = {
+      project_id: project.id,
+      parent_id: laneForm.parent_id ?? null,
+      name: laneForm.name.trim(),
+      tint: laneForm.tint || '#f8fafc',
+      sort_order: laneForm.sort_order ?? lanes.length,
+    }
+    if (laneForm.id) await supabase.from('project_lanes').update(payload).eq('id', laneForm.id)
+    else             await supabase.from('project_lanes').insert(payload)
+    setLaneForm(null)
+    load()
+  }
+
+  async function deleteLane(lane) {
+    const kids = lanes.filter(l => l.parent_id === lane.id).length
+    const rows = rowsForLane(lane.id, milestones, activities).length
+    const warn = kids || rows
+      ? `Delete “${lane.name}”? Its ${kids ? `${kids} sub-lane(s) and ` : ''}${rows} item(s) stay in the project but lose their lane.`
+      : `Delete “${lane.name}”?`
+    if (!window.confirm(warn)) return
+    // ON DELETE SET NULL on both FKs means bars survive; they just fall out of a lane.
+    await supabase.from('project_lanes').delete().eq('id', lane.id)
     load()
   }
 
@@ -142,7 +215,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       s: item.starts_on ?? item.planned_start ?? item.milestone_date,
       e: item.ends_on ?? item.planned_end ?? null,
       x0: ev.clientX, dx: 0, y0: ev.clientY, dy: 0,
-      lane: item.lane, name: item.name ?? PHASE_NAMES[item.phase_number],
+      laneId: item.lane_id ?? null, name: item.name ?? PHASE_NAMES[item.phase_number],
     }
     bump()
     const move = e2 => {
@@ -159,15 +232,16 @@ export default function ProjectTimeline({ project, readOnly = false }) {
 
       // Vertical drag reorders the row within its lane. Phases keep their fixed 1–5 sequence.
       const steps = Math.round(d.dy / ROW_H)
-      if (steps && d.table === 'project_milestones' && d.mode === 'move') {
-        const lane = (d.lane === 'change' ? changeItems : deliveryItems).slice()
+      if (steps && d.laneId && d.mode === 'move') {
+        const lane = rowsForLane(d.laneId, milestones, activities)
         const from = lane.findIndex(x => x.id === d.id)
         const to = Math.max(0, Math.min(lane.length - 1, from + steps))
         if (from !== -1 && from !== to) {
           const [moved] = lane.splice(from, 1)
           lane.splice(to, 0, moved)
+          // Rows in a lane can come from either table, so each update is routed by its own.
           await Promise.all(lane.map((x, i) =>
-            supabase.from('project_milestones').update({ sort_order: i }).eq('id', x.id)))
+            supabase.from(x.table).update({ sort_order: i }).eq('id', x.id)))
         }
       }
 
@@ -177,6 +251,8 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       if (d.table === 'project_phases') {
         await supabase.from('project_phases').update({ planned_start: p.s, planned_end: p.e })
           .eq('project_id', project.id).eq('phase_number', d.id)
+      } else if (d.table === 'project_pathways') {
+        await supabase.from('project_pathways').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
       } else if (p.e) {
         await supabase.from('project_milestones').update({ starts_on: p.s, ends_on: p.e }).eq('id', d.id)
       } else {
@@ -198,7 +274,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
 
   // Grab handles on a band: middle moves, edges resize.
   const handleStyle = 'absolute top-0 h-full w-2 cursor-ew-resize'
-  const DragTip = ({ id, s, e }) => {
+  const DragTip = ({ id }) => {
     void dragTick            // re-render on every pointer move while dragging
     const d = dragRef.current
     if (!d || d.id !== id) return null
@@ -218,6 +294,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const allDates = []
   phases.forEach(p => { if (p.planned_start) allDates.push(toDate(p.planned_start)); if (p.planned_end) allDates.push(toDate(p.planned_end)) })
   milestones.forEach(m => { [m.milestone_date, m.starts_on, m.ends_on].forEach(d => d && allDates.push(toDate(d))) })
+  activities.forEach(a => { [a.starts_on, a.ends_on].forEach(d => d && allDates.push(toDate(d))) })
   const hasDomain = allDates.length > 0
   const domainStart = hasDomain ? monthFloor(new Date(Math.min(...allDates))) : null
   const domainEnd   = hasDomain ? monthCeil(new Date(Math.max(...allDates))) : null
@@ -231,8 +308,118 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const todayX = todayIn ? posOf(today) : null
   const estTextW = t => (t?.length ?? 0) * 6.3 + 12  // rough px width for a 10px label
 
-  const deliveryItems = milestones.filter(m => m.lane === 'delivery')
-  const changeItems   = milestones.filter(m => m.lane === 'change')
+  const laneTree = buildLaneTree(lanes)
+  const rowsIn = laneId => rowsForLane(laneId, milestones, activities)
+
+  // A single row renderer for every lane. Milestones and activities differ only in
+  // which table an edit writes back to, so one component covers both and the two
+  // lanes stop drifting apart the way the old copy-pasted blocks did.
+  const TimelineRow = ({ r, accent, dim }) => {
+    const isBand = r.starts_on && r.ends_on
+    const dates = isBand ? `${fmtShort(toDate(r.starts_on))} – ${fmtShort(toDate(r.ends_on))}`
+      : (r.milestone_date ? fmtShort(toDate(r.milestone_date)) : 'No dates set')
+    return (
+      <div className="flex items-center border-b border-slate-50 group">
+        <div className="w-[190px] shrink-0 pr-3 pl-3">
+          <p className={`text-xs font-semibold truncate ${r.undated ? 'text-slate-400' : ''}`} style={r.undated ? {} : { color: accent }}>{r.name}</p>
+          <p className={`text-[10px] ${r.undated ? 'text-amber-500' : 'text-slate-400'}`}>{dates}</p>
+        </div>
+        <div className="relative flex-1 h-8" style={{ width: trackW }}>
+          <TodayLine />
+          {isBand ? (() => {
+            const lv = live(r.id, r.starts_on, r.ends_on)
+            const bx = posOf(lv.s)
+            const bw = Math.max(posOf(lv.e) - bx, 8)
+            const inside = bw >= estTextW(r.name)
+            const outRight = bx + bw + estTextW(r.name) <= trackW
+            return (
+              <>
+                <DragTip id={r.id} />
+                <div onPointerDown={e => beginDrag(e, r, 'move', r.table)}
+                  title={readOnly ? '' : 'Drag to move · drag an edge to change duration'}
+                  className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
+                  style={{ left: bx, width: bw, background: r.color || dim, border: `1px solid ${r.color || dim}`, ...(dragLift(r.id) || {}) }}>
+                  {inside && <span className="text-[10px] font-semibold whitespace-nowrap select-none" style={{ color: onColor(r.color) || accent }}>{r.name}</span>}
+                </div>
+                {!readOnly && (
+                  <>
+                    <div className={handleStyle} style={{ left: bx - 3 }} onPointerDown={e => beginDrag(e, r, 'start', r.table)} />
+                    <div className={handleStyle} style={{ left: bx + bw - 5 }} onPointerDown={e => beginDrag(e, r, 'end', r.table)} />
+                  </>
+                )}
+                {!inside && (
+                  <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap" style={{ color: accent, ...(outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(r.name) - 4, 2) }) }}>{r.name}</span>
+                )}
+              </>
+            )
+          })() : r.milestone_date ? (() => {
+            const dx = posOf(live(r.id, r.milestone_date, null).s)
+            const labelRight = dx + 12 + estTextW(r.name) <= trackW
+            return (
+              <>
+                <DragTip id={r.id} />
+                <div className={`absolute z-[5] ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`} style={{ left: dx - 7, top: 6, ...(dragLift(r.id) || {}) }}
+                  title={readOnly ? '' : 'Drag to move this milestone'}
+                  onPointerDown={e => beginDrag(e, r, 'move', r.table)}>
+                  <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={r.color || accent} /></svg>
+                </div>
+                <span className="absolute top-2 text-[10px] font-semibold whitespace-nowrap" style={{ color: accent, ...(labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(r.name) - 11, 2) }) }}>{r.name}</span>
+              </>
+            )
+          })() : (
+            // No dates: draw nothing on the track rather than guessing a position.
+            // The amber "No dates set" in the label column is the whole signal.
+            <span className="absolute top-2 left-2 text-[10px] text-slate-300 italic">not scheduled</span>
+          )}
+        </div>
+        {!readOnly && (
+          <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+            <button onClick={() => openRowEditor(r)} className="text-[10px] hover:underline" style={{ color: accent }}>Edit</button>
+            {r.table === 'project_milestones' && (
+              <button onClick={() => deleteMilestone(r.id)} className="text-[10px] text-red-400 hover:underline ml-1.5">Del</button>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Activities are owned by the pathway, so the timeline edits their dates and colour
+  // but never their name or existence — that stays in the pathway builder.
+  function openRowEditor(r) {
+    if (r.table === 'project_pathways') {
+      setMsForm({ ...emptyMs, activityId: r.id, name: r.name, kind: 'band', lane_id: r.lane_id,
+        starts_on: r.starts_on ?? '', ends_on: r.ends_on ?? '', color: r.color ?? '' })
+      return
+    }
+    const m = milestones.find(x => x.id === r.id) ?? r
+    setMsForm({ ...emptyMs, ...m, kind: (m.starts_on && m.ends_on) ? 'band' : 'point',
+      milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '', color: m.color ?? '' })
+  }
+
+  const LaneBand = ({ lane, nested = false }) => {
+    const st = laneStyle(lane.tint)
+    const rows = rowsIn(lane.id)
+    return (
+      <div className="rounded-lg mb-2" style={{ background: nested ? '#ffffff' : st.tint, border: `1px solid ${st.border}`, marginLeft: nested ? 12 : 0 }}>
+        <div className="flex items-center justify-between px-3 pt-2 pb-1">
+          <span className={`font-semibold ${nested ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: st.text }}>{lane.name}</span>
+          {!readOnly && (
+            <span className="opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity flex gap-1.5">
+              <button onClick={() => setLaneForm({ ...lane })} className="text-[10px] hover:underline" style={{ color: st.text }}>Edit</button>
+              {!nested && <button onClick={() => setLaneForm({ project_id: project.id, parent_id: lane.id, name: '', tint: '#f8fafc', sort_order: (lane.children?.length ?? 0) })} className="text-[10px] hover:underline" style={{ color: st.text }}>+ Sub-lane</button>}
+              <button onClick={() => deleteLane(lane)} className="text-[10px] text-red-400 hover:underline">Del</button>
+            </span>
+          )}
+        </div>
+        {rows.length === 0 && (lane.children?.length ?? 0) === 0 && (
+          <div className="px-3 pb-2 text-[11px] text-slate-400">Nothing in this lane yet.</div>
+        )}
+        {rows.map(r => <TimelineRow key={`${r.table}-${r.id}`} r={r} accent={st.text} dim={st.border} />)}
+        {(lane.children ?? []).map(c => <div key={c.id} className="px-2 pb-2"><LaneBand lane={c} nested /></div>)}
+      </div>
+    )
+  }
 
   const LabelCol = ({ name, dates, accent }) => (
     <div className="w-[190px] shrink-0 pr-3">
@@ -252,10 +439,16 @@ export default function ProjectTimeline({ project, readOnly = false }) {
           Delivery milestones and the ChangeFlow phases for <strong>{project.name}</strong>, on a shared timeline.
         </p>
         {!readOnly && (
-          <button onClick={() => setMsForm(emptyMs)}
-            className="bg-[#E8913A] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#d07e2e] transition-colors shrink-0">
-            + Timeline item
-          </button>
+          <div className="flex gap-2 shrink-0">
+            <button onClick={() => setLaneForm({ project_id: project.id, parent_id: null, name: '', tint: LANE_TINTS[0].tint, sort_order: lanes.filter(l => !l.parent_id).length })}
+              className="border border-slate-200 text-slate-600 text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors">
+              + Swimlane
+            </button>
+            <button onClick={() => setMsForm({ ...emptyMs, lane_id: laneTree[0]?.id ?? '' })}
+              className="bg-[#E8913A] text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-[#d07e2e] transition-colors">
+              + Timeline item
+            </button>
+          </div>
         )}
       </div>
 
@@ -282,138 +475,13 @@ export default function ProjectTimeline({ project, readOnly = false }) {
               </div>
             </div>
 
-            {/* DELIVERY group */}
-            <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-widest text-slate-400">DELIVERY / PROJECT</div>
-            {deliveryItems.length === 0 && (
-              <div className="px-3 pb-2 text-[11px] text-slate-300">No delivery milestones yet.</div>
-            )}
-            {deliveryItems.map(m => {
-              const isBand = m.starts_on && m.ends_on
-              return (
-                <div key={m.id} className="flex items-center border-b border-slate-50 group">
-                  <LabelCol name={m.name} dates={isBand ? `${fmtShort(toDate(m.starts_on))} – ${fmtShort(toDate(m.ends_on))}` : (m.milestone_date ? fmtShort(toDate(m.milestone_date)) : '—')} accent="text-[#1F4E79]" />
-                  <div className="relative flex-1 h-8" style={{ width: trackW }}>
-                    <TodayLine />
-                    {isBand ? (() => {
-                      const lv = live(m.id, m.starts_on, m.ends_on)
-                      const bx = posOf(lv.s)
-                      const bw = Math.max(posOf(lv.e) - bx, 8)
-                      const inside = bw >= estTextW(m.name)
-                      const outRight = bx + bw + estTextW(m.name) <= trackW
-                      return (
-                        <>
-                          <DragTip id={m.id} s={lv.s} e={lv.e} />
-                          <div onPointerDown={e => beginDrag(e, m, 'move', 'project_milestones')}
-                            title={readOnly ? '' : 'Drag to move · drag an edge to change duration'}
-                            className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
-                            style={{ left: bx, width: bw, background: '#e2e8f0', border: '1px solid #cbd5e1', ...(dragLift(m.id) || {}) }}>
-                            {inside && <span className="text-[10px] font-semibold text-slate-600 whitespace-nowrap select-none">{m.name}</span>}
-                          </div>
-                          {!readOnly && (
-                            <>
-                              <div className={handleStyle} style={{ left: bx - 3 }} onPointerDown={e => beginDrag(e, m, 'start', 'project_milestones')} />
-                              <div className={handleStyle} style={{ left: bx + bw - 5 }} onPointerDown={e => beginDrag(e, m, 'end', 'project_milestones')} />
-                            </>
-                          )}
-                          {!inside && (
-                            <span className="absolute top-2 text-[10px] font-semibold text-slate-600 whitespace-nowrap"
-                              style={outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(m.name) - 4, 2) }}>{m.name}</span>
-                          )}
-                        </>
-                      )
-                    })() : m.milestone_date && (() => {
-                      const dx = posOf(live(m.id, m.milestone_date, null).s)
-                      const labelRight = dx + 12 + estTextW(m.name) <= trackW
-                      return (
-                        <>
-                          <DragTip id={m.id} s={live(m.id, m.milestone_date, null).s} e={null} />
-                          <div className={`absolute z-[5] ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`} style={{ left: dx - 7, top: 6, ...(dragLift(m.id) || {}) }}
-                            title={readOnly ? '' : 'Drag to move this milestone'}
-                            onPointerDown={e => beginDrag(e, m, 'move', 'project_milestones')}>
-                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={m.color || '#1F4E79'} /></svg>
-                          </div>
-                          <span className="absolute top-2 text-[10px] font-semibold text-[#1F4E79] whitespace-nowrap"
-                            style={labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(m.name) - 11, 2) }}>{m.name}</span>
-                        </>
-                      )
-                    })()}
-                  </div>
-                  {!readOnly && (
-                    <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setMsForm({ ...emptyMs, ...m, kind: isBand ? 'band' : 'point', milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '' })} className="text-[10px] text-[#1F4E79] hover:underline">Edit</button>
-                      <button onClick={() => deleteMilestone(m.id)} className="text-[10px] text-red-400 hover:underline ml-1.5">Del</button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            {/* CHANGE group */}
-            <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-widest text-teal-600">CHANGE</div>
-            {changeItems.length === 0 && (
-              <div className="px-3 pb-2 text-[11px] text-slate-300">No change milestones yet.</div>
-            )}
-            {changeItems.map(m => {
-              const isBand = m.starts_on && m.ends_on
-              return (
-                <div key={m.id} className="flex items-center border-b border-slate-50 group">
-                  <LabelCol name={m.name} dates={isBand ? `${fmtShort(toDate(m.starts_on))} – ${fmtShort(toDate(m.ends_on))}` : (m.milestone_date ? fmtShort(toDate(m.milestone_date)) : '—')} accent="text-teal-600" />
-                  <div className="relative flex-1 h-8" style={{ width: trackW }}>
-                    <TodayLine />
-                    {isBand ? (() => {
-                      const lv = live(m.id, m.starts_on, m.ends_on)
-                      const bx = posOf(lv.s)
-                      const bw = Math.max(posOf(lv.e) - bx, 8)
-                      const inside = bw >= estTextW(m.name)
-                      const outRight = bx + bw + estTextW(m.name) <= trackW
-                      return (
-                        <>
-                          <DragTip id={m.id} s={lv.s} e={lv.e} />
-                          <div onPointerDown={e => beginDrag(e, m, 'move', 'project_milestones')}
-                            title={readOnly ? '' : 'Drag to move · drag an edge to change duration'}
-                            className={`absolute top-1.5 h-5 rounded flex items-center px-1.5 overflow-hidden ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`}
-                            style={{ left: bx, width: bw, background: '#ccfbf1', border: '1px solid #5eead4', ...(dragLift(m.id) || {}) }}>
-                            {inside && <span className="text-[10px] font-semibold text-teal-700 whitespace-nowrap select-none">{m.name}</span>}
-                          </div>
-                          {!readOnly && (
-                            <>
-                              <div className={handleStyle} style={{ left: bx - 3 }} onPointerDown={e => beginDrag(e, m, 'start', 'project_milestones')} />
-                              <div className={handleStyle} style={{ left: bx + bw - 5 }} onPointerDown={e => beginDrag(e, m, 'end', 'project_milestones')} />
-                            </>
-                          )}
-                          {!inside && (
-                            <span className="absolute top-2 text-[10px] font-semibold text-teal-700 whitespace-nowrap"
-                              style={outRight ? { left: bx + bw + 4 } : { left: Math.max(bx - estTextW(m.name) - 4, 2) }}>{m.name}</span>
-                          )}
-                        </>
-                      )
-                    })() : m.milestone_date && (() => {
-                      const dx = posOf(live(m.id, m.milestone_date, null).s)
-                      const labelRight = dx + 12 + estTextW(m.name) <= trackW
-                      return (
-                        <>
-                          <DragTip id={m.id} s={live(m.id, m.milestone_date, null).s} e={null} />
-                          <div className={`absolute z-[5] ${readOnly ? '' : 'cursor-grab active:cursor-grabbing'}`} style={{ left: dx - 7, top: 6, ...(dragLift(m.id) || {}) }}
-                            title={readOnly ? '' : 'Drag to move this milestone'}
-                            onPointerDown={e => beginDrag(e, m, 'move', 'project_milestones')}>
-                            <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 0 l8 8 -8 8 -8 -8 z" fill={m.color || '#0d9488'} /></svg>
-                          </div>
-                          <span className="absolute top-2 text-[10px] font-semibold text-teal-700 whitespace-nowrap"
-                            style={labelRight ? { left: dx + 11 } : { left: Math.max(dx - estTextW(m.name) - 11, 2) }}>{m.name}</span>
-                        </>
-                      )
-                    })()}
-                  </div>
-                  {!readOnly && (
-                    <div className="w-16 shrink-0 pr-2 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setMsForm({ ...emptyMs, ...m, kind: isBand ? 'band' : 'point', milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '' })} className="text-[10px] text-teal-600 hover:underline">Edit</button>
-                      <button onClick={() => deleteMilestone(m.id)} className="text-[10px] text-red-400 hover:underline ml-1.5">Del</button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
+            {/* Swimlanes */}
+            <div className="p-2">
+              {laneTree.length === 0 && (
+                <div className="px-3 py-4 text-[11px] text-slate-400">No swimlanes yet. Add one to group your bars.</div>
+              )}
+              {laneTree.map(l => <LaneBand key={l.id} lane={l} />)}
+            </div>
             {/* CHANGEFLOW group */}
             <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-widest text-[#E8913A]">CHANGEFLOW PHASES</div>
             {phases.map(p => {
@@ -450,7 +518,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                       const outRight = startX + barW + estTextW(label) <= trackW
                       return (
                         <>
-                          <DragTip id={p.phase_number} s={plv.s} e={plv.e} />
+                          <DragTip id={p.phase_number} />
                           {!readOnly && plv.s && plv.e && (
                             <>
                               <div className={handleStyle} style={{ left: startX - 3 }} onPointerDown={ev => beginDrag(ev, p, 'start', 'project_phases')} />
@@ -520,28 +588,36 @@ export default function ProjectTimeline({ project, readOnly = false }) {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-md">
               <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-bold text-slate-800">{msForm.id ? 'Edit timeline item' : 'New timeline item'}</h3>
+                <h3 className="font-bold text-slate-800">{msForm.activityId ? 'Schedule activity' : msForm.id ? 'Edit timeline item' : 'New timeline item'}</h3>
                 <button onClick={() => setMsForm(null)} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">✕</button>
               </div>
               <div className="px-6 py-5 space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Name *</label>
-                  <input value={msForm.name} onChange={e => setMsForm({ ...msForm, name: e.target.value })} autoFocus
-                    placeholder="e.g. Go-Live" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Name {msForm.activityId ? '' : '*'}</label>
+                  <input value={msForm.name} onChange={e => setMsForm({ ...msForm, name: e.target.value })} autoFocus={!msForm.activityId}
+                    disabled={!!msForm.activityId}
+                    placeholder="e.g. Go-Live" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79] disabled:bg-slate-50 disabled:text-slate-500" />
+                  {msForm.activityId && <p className="text-[10px] text-slate-400 mt-1">Activity names come from the pathway. Rename it there.</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Lane</label>
-                    <select value={msForm.lane} onChange={e => setMsForm({ ...msForm, lane: e.target.value })}
+                    <select value={msForm.lane_id ?? ''} onChange={e => setMsForm({ ...msForm, lane_id: e.target.value })}
                       className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
-                      <option value="delivery">Delivery / Project</option>
-                      <option value="change">Change</option>
+                      <option value="">— no lane —</option>
+                      {buildLaneTree(lanes).map(l => (
+                        <Fragment key={l.id}>
+                          <option value={l.id}>{l.name}</option>
+                          {(l.children ?? []).map(c => <option key={c.id} value={c.id}>&nbsp;&nbsp;↳ {c.name}</option>)}
+                        </Fragment>
+                      ))}
                     </select>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Type</label>
                     <select value={msForm.kind} onChange={e => setMsForm({ ...msForm, kind: e.target.value })}
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79]">
+                      disabled={!!msForm.activityId}
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] disabled:bg-slate-50 disabled:text-slate-500">
                       <option value="point">Milestone (a date)</option>
                       <option value="band">Band (start–end)</option>
                     </select>
@@ -567,12 +643,93 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                     </div>
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Colour</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {BAR_COLORS.map(c => {
+                      const on = (msForm.color || '') === c.hex
+                      return (
+                        <button key={c.label} type="button" title={c.label}
+                          onClick={() => setMsForm({ ...msForm, color: c.hex })}
+                          className={`w-7 h-7 rounded-lg border-2 transition-colors ${on ? 'border-[#1F4E79]' : 'border-slate-200 hover:border-slate-300'}`}
+                          style={c.hex
+                            ? { background: c.hex }
+                            : { background: 'repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 4px,#e2e8f0 4px,#e2e8f0 8px)' }}>
+                          {on && <span className="text-[11px] font-bold" style={{ color: c.hex ? '#fff' : '#1F4E79' }}>✓</span>}
+                        </button>
+                      )
+                    })}
+                    <label className="flex items-center gap-1.5 text-[11px] text-slate-500 ml-1">
+                      <input type="color" value={msForm.color || '#1F4E79'}
+                        onChange={e => setMsForm({ ...msForm, color: e.target.value })}
+                        className="w-7 h-7 p-0 border border-slate-200 rounded-lg cursor-pointer bg-white" />
+                      Custom
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">“Lane default” keeps the standard Delivery / Change styling.</p>
+                </div>
               </div>
               <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
                 <button onClick={() => setMsForm(null)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
                 <button onClick={saveMilestone} disabled={msSaving}
                   className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
-                  {msSaving ? 'Saving…' : msForm.id ? 'Save' : 'Add'}
+                  {msSaving ? 'Saving…' : msForm.id || msForm.activityId ? 'Save' : 'Add'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {laneForm && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setLaneForm(null)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl shadow-2xl pointer-events-auto w-full max-w-md">
+              <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="font-bold text-slate-800">
+                  {laneForm.id ? 'Edit swimlane' : laneForm.parent_id ? 'New sub-swimlane' : 'New swimlane'}
+                </h3>
+                <button onClick={() => setLaneForm(null)} className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs">✕</button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Name *</label>
+                  <input value={laneForm.name} onChange={e => setLaneForm({ ...laneForm, name: e.target.value })} autoFocus
+                    placeholder={laneForm.parent_id ? 'e.g. Training' : 'e.g. Delivery'}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#1F4E79]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Lane tint</label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {LANE_TINTS.map(t => {
+                      const on = laneForm.tint === t.tint
+                      return (
+                        <button key={t.tint} type="button" title={t.label}
+                          onClick={() => setLaneForm({ ...laneForm, tint: t.tint })}
+                          className="w-9 h-8 rounded-lg flex items-center justify-center transition-colors"
+                          style={{ background: t.tint, border: `2px solid ${on ? t.text : t.border}` }}>
+                          {on && <span className="text-[11px] font-bold" style={{ color: t.text }}>✓</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Tints stay pale on purpose — a saturated lane would swallow the bars drawn on it.
+                  </p>
+                </div>
+                {!laneForm.id && !laneForm.parent_id && (
+                  <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">
+                    Add sub-swimlanes from the lane header once this one exists.
+                  </p>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button onClick={() => setLaneForm(null)} className="text-sm text-slate-500 px-4 py-2">Cancel</button>
+                <button onClick={saveLane} disabled={!laneForm.name.trim()}
+                  className="bg-[#1F4E79] text-white text-sm font-semibold px-6 py-2 rounded-lg hover:bg-[#163a5c] transition-colors disabled:opacity-60">
+                  {laneForm.id ? 'Save' : 'Add'}
                 </button>
               </div>
             </div>
