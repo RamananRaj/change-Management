@@ -314,17 +314,20 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   // A single row renderer for every lane. Milestones and activities differ only in
   // which table an edit writes back to, so one component covers both and the two
   // lanes stop drifting apart the way the old copy-pasted blocks did.
-  const TimelineRow = ({ r, accent, dim }) => {
+  const TimelineRow = ({ r, accent, dim, depth = 0 }) => {
     const isBand = r.starts_on && r.ends_on
     const dates = isBand ? `${fmtShort(toDate(r.starts_on))} – ${fmtShort(toDate(r.ends_on))}`
       : (r.milestone_date ? fmtShort(toDate(r.milestone_date)) : 'No dates set')
     return (
       <div className="flex items-center border-b border-slate-50 group">
-        <div className="w-[190px] shrink-0 pr-3 pl-3">
+        {/* Nesting indents the LABEL only. Indenting the row would shift the track
+            and every bar in a sub-lane would sit at the wrong date. */}
+        <div className="w-[190px] shrink-0 pr-3" style={{ paddingLeft: 12 + depth * 14 }}>
           <p className={`text-xs font-semibold truncate ${r.undated ? 'text-slate-400' : ''}`} style={r.undated ? {} : { color: accent }}>{r.name}</p>
           <p className={`text-[10px] ${r.undated ? 'text-amber-500' : 'text-slate-400'}`}>{dates}</p>
         </div>
         <div className="relative flex-1 h-8" style={{ width: trackW }}>
+          <MonthGrid />
           <TodayLine />
           {isBand ? (() => {
             const lv = live(r.id, r.starts_on, r.ends_on)
@@ -397,32 +400,39 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       milestone_date: m.milestone_date ?? '', starts_on: m.starts_on ?? '', ends_on: m.ends_on ?? '', color: m.color ?? '' })
   }
 
-  const LaneBand = ({ lane, nested = false }) => {
+  // Lane bands span the full width with no side borders or horizontal padding, so
+  // every row in the chart shares one track origin. Depth is expressed by indenting
+  // the label column and by the header, never by insetting the band itself.
+  const LaneBand = ({ lane, depth = 0 }) => {
     const st = laneStyle(lane.tint)
     const rows = rowsIn(lane.id)
+    const nested = depth > 0
     return (
-      <div className="rounded-lg mb-2" style={{ background: nested ? '#ffffff' : st.tint, border: `1px solid ${st.border}`, marginLeft: nested ? 12 : 0 }}>
-        <div className="flex items-center justify-between px-3 pt-2 pb-1">
-          <span className={`font-semibold ${nested ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: st.text }}>{lane.name}</span>
+      <div style={{ background: nested ? '#ffffff' : st.tint, borderTop: `1px solid ${st.border}`, borderBottom: `1px solid ${st.border}` }}>
+        <div className="flex items-center justify-between pr-3 pt-2 pb-1 group/lane" style={{ paddingLeft: 12 + depth * 14 }}>
+          <span className={`font-semibold ${nested ? 'text-[10px]' : 'text-[11px]'}`} style={{ color: st.text }}>
+            {nested && <span className="opacity-50 mr-1">↳</span>}{lane.name}
+          </span>
           {!readOnly && (
-            <span className="opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity flex gap-1.5">
-              <button onClick={() => setLaneForm({ ...lane })} className="text-[10px] hover:underline" style={{ color: st.text }}>Edit</button>
+            <span className="flex gap-2 opacity-60 group-hover/lane:opacity-100 transition-opacity">
+              <button onClick={() => setLaneForm({ ...lane })} className="text-[10px] hover:underline" style={{ color: st.text }}>Edit lane</button>
               {!nested && <button onClick={() => setLaneForm({ project_id: project.id, parent_id: lane.id, name: '', tint: '#f8fafc', sort_order: (lane.children?.length ?? 0) })} className="text-[10px] hover:underline" style={{ color: st.text }}>+ Sub-lane</button>}
-              <button onClick={() => deleteLane(lane)} className="text-[10px] text-red-400 hover:underline">Del</button>
+              <button onClick={() => deleteLane(lane)} className="text-[10px] text-red-400 hover:underline">Delete</button>
             </span>
           )}
         </div>
         {rows.length === 0 && (lane.children?.length ?? 0) === 0 && (
-          <div className="px-3 pb-2 text-[11px] text-slate-400">Nothing in this lane yet.</div>
+          <div className="pb-2 text-[11px] text-slate-400" style={{ paddingLeft: 12 + depth * 14 }}>Nothing in this lane yet.</div>
         )}
-        {rows.map(r => <TimelineRow key={`${r.table}-${r.id}`} r={r} accent={st.text} dim={st.border} />)}
-        {(lane.children ?? []).map(c => <div key={c.id} className="px-2 pb-2"><LaneBand lane={c} nested /></div>)}
+        {rows.map(r => <TimelineRow key={`${r.table}-${r.id}`} r={r} accent={st.text} dim={st.border} depth={depth} />)}
+        {(lane.children ?? []).map(c => <LaneBand key={c.id} lane={c} depth={depth + 1} />)}
       </div>
     )
   }
 
+  // Same 12px left inset as TimelineRow, so phase labels and lane labels line up.
   const LabelCol = ({ name, dates, accent }) => (
-    <div className="w-[190px] shrink-0 pr-3">
+    <div className="w-[190px] shrink-0 pr-3 pl-3">
       <p className={`text-xs font-semibold truncate ${accent ?? 'text-slate-800'}`}>{name}</p>
       {dates && <p className="text-[10px] text-slate-400">{dates}</p>}
     </div>
@@ -431,6 +441,22 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const TodayLine = () => todayX != null ? (
     <div className="absolute top-0 bottom-0 w-px bg-red-500 z-10" style={{ left: todayX }} />
   ) : null
+
+  // Month boundaries drawn behind every row: a hairline at each start plus a very
+  // faint wash on alternate months, so you can read across to a date without
+  // tracing back up to the axis. Pointer-events off — bars stay draggable.
+  const MonthGrid = () => (
+    <div className="absolute inset-0 pointer-events-none">
+      {months.map((m, i) => (
+        <div key={i} className="absolute top-0 bottom-0"
+          style={{
+            left: i * MONTHW, width: MONTHW,
+            borderLeft: '1px solid rgba(148,163,184,0.16)',
+            background: i % 2 ? 'rgba(148,163,184,0.05)' : 'transparent',
+          }} />
+      ))}
+    </div>
+  )
 
   return (
     <div>
@@ -463,27 +489,36 @@ export default function ProjectTimeline({ project, readOnly = false }) {
         <div className="border border-slate-200 rounded-2xl overflow-x-auto mb-6">
           <div style={{ minWidth: 190 + trackW + 16 }}>
             {/* Month axis */}
-            <div className="flex border-b border-slate-100 bg-slate-50/60">
+            <div className="flex border-b border-slate-200 bg-white sticky top-0 z-20">
               <div className="w-[190px] shrink-0" />
-              <div className="relative" style={{ width: trackW, height: 26 }}>
-                {months.map((m, i) => (
-                  <div key={i} className="absolute top-0 h-full border-l border-slate-100 text-[10px] text-slate-400 pl-1 pt-1"
-                    style={{ left: i * MONTHW, width: MONTHW }}>
-                    {m.toLocaleDateString(undefined, { month: 'short' })}{m.getMonth() === 0 ? ` ’${String(m.getFullYear()).slice(2)}` : ''}
-                  </div>
-                ))}
+              <div className="relative" style={{ width: trackW, height: 30 }}>
+                {months.map((m, i) => {
+                  const jan = m.getMonth() === 0
+                  return (
+                    <div key={i} className="absolute top-0 h-full flex items-center"
+                      style={{
+                        left: i * MONTHW, width: MONTHW,
+                        // January gets a stronger rule — a year boundary is worth more ink.
+                        borderLeft: `1px solid ${jan ? 'rgba(100,116,139,0.35)' : 'rgba(148,163,184,0.22)'}`,
+                        background: i % 2 ? 'rgba(148,163,184,0.05)' : 'transparent',
+                      }}>
+                      <span className={`text-[10px] pl-2 tracking-wide ${jan ? 'text-slate-600 font-semibold' : 'text-slate-400'}`}>
+                        {m.toLocaleDateString(undefined, { month: 'short' })}{jan ? ` ’${String(m.getFullYear()).slice(2)}` : ''}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
 
-            {/* Swimlanes */}
-            <div className="p-2">
-              {laneTree.length === 0 && (
-                <div className="px-3 py-4 text-[11px] text-slate-400">No swimlanes yet. Add one to group your bars.</div>
-              )}
-              {laneTree.map(l => <LaneBand key={l.id} lane={l} />)}
-            </div>
+            {/* Swimlanes. No wrapper padding — the track must start at the same x as
+                the phase rows below, or the two halves of the chart disagree on dates. */}
+            {laneTree.length === 0 && (
+              <div className="px-3 py-4 text-[11px] text-slate-400">No swimlanes yet. Add one to group your bars.</div>
+            )}
+            {laneTree.map(l => <LaneBand key={l.id} lane={l} />)}
             {/* CHANGEFLOW group */}
-            <div className="px-3 pt-3 pb-1 text-[10px] font-bold tracking-widest text-[#E8913A]">CHANGEFLOW PHASES</div>
+            <div className="pt-3 pb-1 text-[10px] font-bold tracking-widest text-[#E8913A]" style={{ paddingLeft: 12 }}>CHANGEFLOW PHASES</div>
             {phases.map(p => {
               const pr = progress[p.phase_number] ?? { done: 0, total: 0 }
               const pct = pr.total > 0 ? Math.round((pr.done / pr.total) * 100) : 0
@@ -510,6 +545,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   <LabelCol name={`0${p.phase_number} ${PHASE_NAMES[p.phase_number]}`}
                     dates={s || e ? `${s ? fmtShort(toDate(s)) : '?'} – ${e ? fmtShort(toDate(e)) : '?'} · ${pct}% (${pr.done}/${pr.total})` : `not scheduled · ${pct}%`} />
                   <div className="relative flex-1 h-8" style={{ width: trackW }}>
+                    <MonthGrid />
                     <TodayLine />
                     {startX != null && (() => {
                       const barW = Math.max((endX ?? startX) - startX, 8)

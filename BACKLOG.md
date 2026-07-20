@@ -44,6 +44,13 @@ A running list of open work and considerations. Grouped by priority. Check off a
 - [ ] **AI-assisted form/template creation** — (after the admin cockpit) attach a template file (Excel/doc) in Platform Admin and have the AI parse it and create the content/template entry (infer columns, phase, type). Builds on the existing Excel→column import in the Templates builder + the admin Ask pill.
 - [ ] **Lean entity resolver (when data grows)** — the generic resolver in `rules.js` currently does a full `loadData()` per freeform question to match a named client/project/person/stakeholder. Fine at current size; when it gets slow, switch to a cheap name-only index first (query just id+name per table), then load full detail only on a hit, and cache the catalog. Extend candidates to surveys/invites/content as those become question-worthy.
 
+## Solution size review (follow-up)
+
+- [ ] **Review the size of the solution** — two related things, worth one sitting:
+  - *Bundle*: production build is a single 977 kB chunk (246 kB gzipped) and Vite now warns on it. Fine at current user counts; the first lever is route-level `React.lazy` on the admin surfaces (`Admin.jsx`, `SystemAdmin.jsx`, `AdminClients.jsx` are ~4,900 lines between them and most users never open them).
+  - *Codebase*: ~16,300 lines across `src/`. The largest files are `Admin.jsx` (2,008), `AdminClients.jsx` (1,632), `SystemAdmin.jsx` (1,278), `rules.js` (1,036). `SystemAdmin.jsx` in particular is now seven unrelated sub-tabs in one file and is the obvious first split.
+  - Decide at review time whether either is actually causing pain (slow first load, hard-to-navigate files) or whether it's just large-but-fine. Splitting has a cost and shouldn't be done on principle alone.
+
 ## Recently shipped (context)
 
 - System Health sub-tab (DB ping, table/RPC/Edge-function live checks) + Vitest suite (17 tests, auth matrix).
