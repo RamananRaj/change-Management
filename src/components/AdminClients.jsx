@@ -73,6 +73,47 @@ const TAB_GROUPS = [
   { key: 'artifacts',label: '✦ Artifacts',  leaves: [['artifacts', 'Artifacts']] },
 ]
 
+
+// What each client page is FOR, in the user's language rather than the schema's.
+// Kept as data next to TAB_GROUPS so a new tab has an obvious place to describe
+// itself, and so the wording can be reviewed in one screenful instead of hunted
+// through the JSX.
+//
+// Each entry: a bolded claim, then the one thing people get wrong about the page.
+const TAB_INTRO = {
+  projects:  ['The programmes running at {client}.',
+    'A client is the organisation; a project is a change being delivered inside it. Almost everything else on these tabs hangs off a project, so this comes first.'],
+  pathway:   ['The guided journey {client} works through.',
+    'Phases unlock in sequence and carry the content, templates and activities their team sees. This is the client-facing experience, not an internal plan.'],
+  content:   ['Reading and guidance, filed by phase.',
+    'Items with no client are global and available to everyone; items here belong to {client} alone. You can promote a good one to global, or copy a global one down to tailor it.'],
+  templates: ['Reusable documents, filed by phase.',
+    'Same global-or-client rule as Content. Templates carry {{tokens}} that CORA fills from real programme data, so a drafted comms plan already has the right audiences and dates in it.'],
+  audiences: ['The groups this change lands on.',
+    'The foundation for four other things: the impact heat map is built from the domain ratings here, and comms, readiness gates and training all report against these groups. Get the headcount and the owner right and the rest follows.'],
+  training:  ['What each group has to be able to do after go-live.',
+    'The grid IS the training needs analysis — groups down the side, modules across, a mark where a need exists. An empty cell means not required, which is a real answer.'],
+  coverage:  ['How far through the training each group is.',
+    'Reported by each group\'s leader as a count and a date, not by naming individuals. A blank is never shown as 0% — the screen says whether nobody was asked, nobody answered, or the group has no size yet.'],
+  timeline:  ['When everything happens.',
+    'Swimlanes, phases, milestones and activities on one canvas. Drag to move or resize, click any bar to edit its dates, colour and percent complete.'],
+  progress:  ['How {client} is actually tracking.',
+    'Snapshots taken daily, so this answers "are we moving?" and not just "where are we?". The trend and any forecast come from that history.'],
+  artifacts: ['Everything captured for {client}.',
+    'Working artifacts the AI generated or that were uploaded. This store is shrinking by design — the heat map already moved to Audiences, and gates and comms follow as they get proper homes.'],
+}
+
+function TabIntro({ tab, client }) {
+  const entry = TAB_INTRO[tab]
+  if (!entry) return null
+  const fill = t => t.replace(/\{client\}/g, client ?? 'this client')
+  return (
+    <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
+      <span className="font-semibold text-[#1F4E79]">{fill(entry[0])}</span>{' '}{fill(entry[1])}
+    </div>
+  )
+}
+
 export default function AdminClients({ allRoles = [], lockedClientId = null, initialClientId = null }) {
   const { user } = useAuth()
   const [clients,        setClients]        = useState([])
@@ -928,7 +969,8 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
             </>
           )
         })()}
-        <div className="mb-6" />
+        <div className="mb-5" />
+        <TabIntro tab={clientTab} client={selectedClient?.name} />
 
         {/* ── PROJECTS TAB ── */}
         {clientTab === 'projects' && (
@@ -1442,12 +1484,6 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
         {/* ── ARTIFACTS TAB ── */}
         {clientTab === 'artifacts' && (
           <div>
-            <div className="bg-[#1F4E79]/5 border border-[#1F4E79]/15 rounded-xl px-4 py-3 text-xs text-slate-600 leading-relaxed mb-5">
-              <span className="font-semibold text-[#1F4E79]">Everything captured for {selectedClient.name}.</span>{' '}
-              Working artifacts the AI has generated or that were uploaded — heat maps, stakeholder maps, timelines. Loading one via
-              AI (e.g. "add the stakeholder heat map for {selectedClient.name}") makes it appear here, version-tracked.
-            </div>
-
             {artLoading ? (
               <p className="text-sm text-slate-400">Loading…</p>
             ) : artifacts.filter(a => a.is_current).length === 0 ? (
