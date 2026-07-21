@@ -859,7 +859,14 @@ export function summariseCoverage(rows, { asOf = new Date().toISOString().slice(
   const needed  = countable.reduce((s, r) => s + (r.people_needed ?? 0), 0)
   const trained = countable.reduce((s, r) => s + (r.trained ?? 0), 0)
 
-  const blocked = list.filter(r => r.module_status && r.module_status !== 'ready')
+  // Only material that is LATE counts as blocking. A module still 'planned' whose
+  // delivery window opens in three months is correct forward planning, not a problem —
+  // flagging it turns the banner into noise and trains people to ignore it. The test
+  // is whether delivery should already have started.
+  const blocked = list.filter(r => {
+    if (!r.module_status || r.module_status === 'ready' || r.module_status === 'retired') return false
+    return r.window_start != null && r.window_start <= asOf
+  })
   const stale   = countable.filter(r => isStale(r.last_checked, asOf))
 
   return {

@@ -781,7 +781,8 @@ describe('training coverage', () => {
     row({ audience_name: 'Billing', module_name: 'Console', people_needed: 180, trained: 158, pct: 88 }),
     row({ audience_name: 'Finance', module_name: 'Month-end', people_needed: 45, trained: 0, pct: 0 }),
     row({ audience_name: 'Field',   module_name: 'Mobile', people_needed: null, trained: null, pct: null, gap_reason: 'size_unknown', last_checked: null }),
-    row({ audience_name: 'Billing', module_name: 'Refunds', people_needed: 30, trained: null, pct: null, gap_reason: 'never_reported', module_status: 'in_build', last_checked: null }),
+    // Window already open, so this one is genuinely late rather than merely scheduled.
+    row({ audience_name: 'Billing', module_name: 'Refunds', people_needed: 30, trained: null, pct: null, gap_reason: 'never_reported', module_status: 'in_build', window_start: '2026-11-01', last_checked: null }),
     row({ audience_name: 'Finance', module_name: 'SCV', people_needed: 45, trained: 45, pct: 100, necessity: 'recommended' }),
   ]
 
@@ -867,5 +868,25 @@ describe('coverageVerdict', () => {
 
   it('says unknown rather than fail when nothing has been reported at all', () => {
     expect(coverageVerdict({ ...base, countable: 0, pct: null }).verdict).toBe('unknown')
+  })
+})
+
+describe('summariseCoverage — blocked material', () => {
+  const row = o => ({ necessity: 'mandatory', people_needed: 100, trained: 10, pct: 10,
+    gap_reason: null, last_checked: '2026-12-14', audience_name: 'A', module_name: 'M', ...o })
+
+  it('does not flag a planned module whose window has not opened', () => {
+    const s = summariseCoverage([row({ module_status: 'planned', window_start: '2027-02-09' })], { asOf: '2026-12-15' })
+    expect(s.blocked).toEqual([])
+  })
+
+  it('flags a module that should already be delivering but is not ready', () => {
+    const s = summariseCoverage([row({ module_status: 'in_build', window_start: '2026-11-01' })], { asOf: '2026-12-15' })
+    expect(s.blocked).toHaveLength(1)
+  })
+
+  it('does not flag material with no window at all rather than guessing', () => {
+    const s = summariseCoverage([row({ module_status: 'planned', window_start: null })], { asOf: '2026-12-15' })
+    expect(s.blocked).toEqual([])
   })
 })
