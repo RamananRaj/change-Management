@@ -30,7 +30,7 @@ export default function MasterAdminDashboard() {
       const [{ data: m }, { data: pw }, { data: ph }] = await Promise.all([
         supabase.from('project_members').select('project_id, user_id').in('project_id', projIds),
         supabase.from('project_pathways').select('project_id, phase_number, content_id').in('project_id', projIds),
-        supabase.from('project_phases').select('project_id, phase_number, planned_end').in('project_id', projIds),
+        supabase.from('project_phases').select('project_id, phase_number, planned_end, lane_id').in('project_id', projIds),
       ])
       members = m ?? []; pathways = pw ?? []; phaseRows = ph ?? []
       const memberIds = [...new Set(members.map(x => x.user_id))]
@@ -44,13 +44,19 @@ export default function MasterAdminDashboard() {
     let gDone = 0, gTotal = 0, atRisk = 0
     ;(projects ?? []).forEach(p => {
       const pMembers = [...new Set(members.filter(m => m.project_id === p.id).map(m => m.user_id))]
-      PHASES.forEach(n => {
+      // Only the phases this project is running. A deferred phase adds a denominator and
+      // no completions, so counting it drags the portfolio number down for work nobody
+      // has been asked to do. Same rule as ClientAdminDashboard — these two rollups have
+      // to answer the question identically or the two admin views disagree.
+      const pRows      = phaseRows.filter(r => r.project_id === p.id)
+      const scopedNums = pRows.length ? pRows.filter(r => r.lane_id).map(r => r.phase_number) : PHASES
+      scopedNums.forEach(n => {
         const cIds = new Set(pathways.filter(pw => pw.project_id === p.id && pw.phase_number === n).map(pw => pw.content_id))
         const steps = cIds.size
         const total = steps * Math.max(pMembers.length, 1)
         const done  = acts.filter(a => pMembers.includes(a.user_id) && cIds.has(a.content_id)).length
         gDone += done; gTotal += total
-        const row = phaseRows.find(r => r.project_id === p.id && r.phase_number === n)
+        const row = pRows.find(r => r.phase_number === n)
         const pct = total > 0 ? Math.round((done / total) * 100) : 0
         if (row?.planned_end && new Date(row.planned_end) < today && pct < 100 && steps > 0) atRisk++
       })

@@ -8,6 +8,39 @@ import SystemAdmin from '../components/SystemAdmin'
 import AdminCockpit from '../components/AdminCockpit'
 import ClientPicker from '../components/ClientPicker'
 
+
+// A phase dot. Four states, not three: done, underway, not started yet, and NOT PART OF
+// THIS PROGRAMME. The last one used to render as the same grey dot as "not started",
+// which reads as work outstanding when there is none. A hollow ring keeps the five
+// positions comparable across projects while saying plainly that this one is not ours.
+function PhaseDots({ phases, size = 'w-1.5 h-1.5', tone = 'light' }) {
+  const rows = phases ?? []
+  const scopeChosen = rows.some(p => p.id)
+  return (
+    <div className="flex gap-1 shrink-0">
+      {[1, 2, 3, 4, 5].map(n => {
+        const ph       = rows.find(p => p.phase_number === n)
+        const deferred = scopeChosen && ph && !ph.lane_id
+        if (deferred) {
+          return (
+            <div key={n} title={`Phase ${n} — not part of this programme`}
+              className={`${size} rounded-full border border-dashed ${
+                tone === 'dark' ? 'border-white/40' : 'border-slate-300'} bg-transparent`} />
+          )
+        }
+        return (
+          <div key={n} title={`Phase ${n} — ${ph?.status ?? 'not started'}`}
+            className={`${size} rounded-full ${
+              ph?.status === 'completed' ? (tone === 'dark' ? 'bg-green-300' : 'bg-green-400') :
+              ph?.status === 'active'    ? (tone === 'dark' ? 'bg-[#E8913A]' : 'bg-[#1F4E79]') :
+                                           (tone === 'dark' ? 'bg-white/30' : 'bg-slate-200')
+            }`} />
+        )
+      })}
+    </div>
+  )
+}
+
 const PHASES = [
   { num: 1, label: '01 Diagnose' },
   { num: 2, label: '02 Design' },
@@ -942,18 +975,7 @@ export default function Admin() {
                           <p className="font-semibold text-sm leading-tight truncate">{name}</p>
                           <p className={`text-[11px] mt-0.5 truncate ${isSelected ? 'text-white/70' : 'text-slate-400'}`}>{roleLbl}</p>
                         </div>
-                        <div className="flex gap-1 shrink-0">
-                          {[1,2,3,4,5].map(n => {
-                            const ph = proj.phases.find(p => p.phase_number === n)
-                            return (
-                              <div key={n} className={`w-1.5 h-1.5 rounded-full ${
-                                ph?.status === 'completed' ? (isSelected ? 'bg-green-300' : 'bg-green-400') :
-                                ph?.status === 'active'    ? (isSelected ? 'bg-[#E8913A]' : 'bg-[#1F4E79]') :
-                                                             (isSelected ? 'bg-white/30' : 'bg-slate-200')
-                              }`} />
-                            )
-                          })}
-                        </div>
+                        <PhaseDots phases={proj.phases} tone={isSelected ? 'dark' : 'light'} />
                       </button>
                     )
                   })}
@@ -974,17 +996,7 @@ export default function Admin() {
                           : selectedProject.profiles?.industry ?? '—'}
                       </p>
                     </div>
-                    <div className="flex gap-1">
-                      {[1,2,3,4,5].map(n => {
-                        const ph = selectedProject.phases.find(p => p.phase_number === n)
-                        return (
-                          <div key={n} className={`w-2 h-2 rounded-full ${
-                            ph?.status === 'completed' ? 'bg-green-400' :
-                            ph?.status === 'active'    ? 'bg-[#1F4E79]' : 'bg-slate-200'
-                          }`} />
-                        )
-                      })}
-                    </div>
+                    <PhaseDots phases={selectedProject.phases} size="w-2 h-2" />
                   </div>
 
                   <div className="divide-y divide-slate-50">
