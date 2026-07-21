@@ -362,6 +362,54 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     await loadProjectPhases(projectId)
   }
 
+
+  // ── Programme scope ─────────────────────────────────────────────────────────
+  // Which of the five phases this project is actually running. Lane membership IS
+  // scope — a phase in the project's lane is being run, one in no lane is not — so
+  // there is a single place to look rather than a flag that can disagree with a lane.
+  //
+  // This is the decision everything else hangs off: percentages are averaged over the
+  // phases selected here, the timeline draws these and not the others, and CORA reports
+  // completion of what was scoped rather than of the full methodology.
+  async function togglePhaseScope(projectId, phaseNum, currentlyInScope) {
+    if (currentlyInScope) {
+      // Out of scope. The phase row stays — the methodology is unchanged and any dates
+      // or status already captured are kept, in case it is brought back in.
+      await supabase.from('project_phases').update({ lane_id: null })
+        .eq('project_id', projectId).eq('phase_number', phaseNum)
+    } else {
+      // Into scope: reuse the project's programme lane, creating it on first use.
+      let laneId = (projectPhases[projectId] ?? []).find(p => p.lane_id)?.lane_id
+      if (!laneId) {
+        const { data: existing } = await supabase.from('project_lanes')
+          .select('id').eq('project_id', projectId).eq('name', 'Change programme').limit(1)
+        laneId = existing?.[0]?.id
+        if (!laneId) {
+          const { data: made, error } = await supabase.from('project_lanes')
+            .insert({ project_id: projectId, name: 'Change programme', tint: '#eff6ff', sort_order: 0 })
+            .select('id').single()
+          if (error) { alert(`Could not create the programme lane: ${error.message}`); return }
+          laneId = made.id
+        }
+      }
+      const { error } = await supabase.from('project_phases')
+        .upsert({ project_id: projectId, phase_number: phaseNum, lane_id: laneId,
+                  status: getPhaseStatus(projectId, phaseNum) },
+                { onConflict: 'project_id,phase_number' })
+      if (error) { alert(`Could not add the phase: ${error.message}`); return }
+    }
+    await loadProjectPhases(projectId)
+  }
+
+  function isPhaseInScope(projectId, phaseNum) {
+    const rows = projectPhases[projectId] ?? []
+    // A project with no phase rows at all has not been set up yet; treat every phase as
+    // in scope so a brand-new project behaves as it always did rather than reading as
+    // "running nothing".
+    if (!rows.length) return true
+    return rows.find(p => p.phase_number === phaseNum)?.lane_id != null
+  }
+
   function getPhaseStatus(projectId, phaseNum) {
     return (projectPhases[projectId] ?? []).find(p => p.phase_number === phaseNum)?.status ?? 'locked'
   }
@@ -1019,7 +1067,15 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
                           {members.length > 0 ? `${members.length} member${members.length !== 1 ? 's' : ''}` : 'No members yet'}
-                          {activePhaseCount > 0 ? ` · ${activePhaseCount} phase${activePhaseCount !== 1 ? 's' : ''} unlocked` : ' · All phases locked'}
+                          {/* Phases load on expand, so a collapsed card does not know the
+                              scope yet. Saying nothing is right; guessing "5 of 5" would be
+                              a confident wrong number on a narrowed programme. */}
+                          {phases.length > 0 && (
+                            <>
+                              {` · ${phases.filter(p => p.lane_id).length} of ${PHASES.length} phases in scope`}
+                              {activePhaseCount > 0 ? ` · ${activePhaseCount} unlocked` : ' · all locked'}
+                            </>
+                          )}
                         </p>
                       </div>
                       <div className="flex gap-2 shrink-0 items-center">
@@ -1037,11 +1093,55 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                     {isExpanded && (
                       <div className="border-t border-slate-100 px-5 py-4 space-y-5 bg-slate-50/50">
 
-                        {/* Phase access */}
+                        {/* Programme scope — the decision everything else follows from */}
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                            Phases in this programme — click to include or defer
+                          </p>
+                          <p className="text-[11px] text-slate-400 mb-2">
+                            Some clients run part of the methodology now and the rest as a later programme.
+                            Deferred phases are excluded from every percentage, and the report says so.
+                          </p>
+                          <div className="flex gap-2 flex-wrap">
+                            {PHASES.map(ph => {
+                              const inScope = isPhaseInScope(project.id, ph)
+                              return (
+                                <button key={ph}
+                                  onClick={() => togglePhaseScope(project.id, ph, inScope)}
+                                  title={inScope ? 'In this programme — click to defer' : 'Deferred — click to include'}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                                    inScope
+                                      ? 'bg-[#1F4E79]/10 text-[#1F4E79] border-[#1F4E79]/30'
+                                      : 'bg-white text-slate-300 border-slate-200 line-through'}`}>
+                                  <span>{inScope ? '✓' : '—'}</span>
+                                  <span>{String(ph).padStart(2,'0')} {PHASE_NAMES[ph]}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                          {(() => {
+                            const inCount = PHASES.filter(ph => isPhaseInScope(project.id, ph)).length
+                            if (inCount === PHASES.length) return null
+                            // Stated rather than left to be inferred: the same rule as
+                            // everywhere else — a narrowed denominator has to be visible.
+                            return (
+                              <p className="text-[11px] text-amber-600 mt-2">
+                                Running {inCount} of {PHASES.length} phases, so each is worth{' '}
+                                {inCount ? Math.round((100 / inCount) * 10) / 10 : 0}% of this programme.
+                                {inCount === 0 && ' Nothing is in scope, so no progress can be reported.'}
+                              </p>
+                            )
+                          })()}
+                        </div>
+
+                        {/* Phase access — only for the phases being run. Asking whether a
+                            deferred phase is locked or done is a question about work that
+                            is not happening, and the two controls contradicted each other
+                            when both showed all five. */}
                         <div>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Phase Access — click to cycle: Locked → Active → Done</p>
                           <div className="flex gap-2 flex-wrap">
-                            {PHASES.map(ph => {
+                            {PHASES.filter(ph => isPhaseInScope(project.id, ph)).map(ph => {
                               const status = getPhaseStatus(project.id, ph)
                               const cfg    = PHASE_STATUS_DISPLAY[status] ?? PHASE_STATUS_DISPLAY.locked
                               return (
@@ -1053,6 +1153,9 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                                 </button>
                               )
                             })}
+                            {PHASES.every(ph => !isPhaseInScope(project.id, ph)) && (
+                              <p className="text-xs text-slate-400">Select at least one phase above.</p>
+                            )}
                           </div>
                         </div>
 
