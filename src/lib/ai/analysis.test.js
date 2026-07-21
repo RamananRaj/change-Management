@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale } from './analysis'
 
 const heat = {
   version: 1,
@@ -772,5 +772,100 @@ describe('summariseDemand', () => {
     expect(s.places).toBe(0)
     expect(s.modules).toBe(0)
     expect(s.unsizedGroups).toEqual([])
+  })
+})
+
+describe('training coverage', () => {
+  const row = (o) => ({ necessity: 'mandatory', module_status: 'ready', gap_reason: null, last_checked: '2026-12-14', ...o })
+  const rows = [
+    row({ audience_name: 'Billing', module_name: 'Console', people_needed: 180, trained: 158, pct: 88 }),
+    row({ audience_name: 'Finance', module_name: 'Month-end', people_needed: 45, trained: 0, pct: 0 }),
+    row({ audience_name: 'Field',   module_name: 'Mobile', people_needed: null, trained: null, pct: null, gap_reason: 'size_unknown', last_checked: null }),
+    row({ audience_name: 'Billing', module_name: 'Refunds', people_needed: 30, trained: null, pct: null, gap_reason: 'never_reported', module_status: 'in_build', last_checked: null }),
+    row({ audience_name: 'Finance', module_name: 'SCV', people_needed: 45, trained: 45, pct: 100, necessity: 'recommended' }),
+  ]
+
+  it('computes coverage across countable rows only', () => {
+    const s = summariseCoverage(rows, { asOf: '2026-12-15' })
+    expect(s.needed).toBe(225)          // 180 + 45, excludes the two blanks
+    expect(s.trained).toBe(158)
+    expect(s.pct).toBe(70)
+  })
+
+  it('excludes recommended needs from the mandatory number', () => {
+    expect(summariseCoverage(rows, { asOf: '2026-12-15' }).total).toBe(4)
+  })
+
+  it('returns null coverage rather than 0 when nothing is countable', () => {
+    const s = summariseCoverage([row({ people_needed: null, trained: null, pct: null, gap_reason: 'never_reported' })], { asOf: '2026-12-15' })
+    expect(s.pct).toBeNull()
+  })
+
+  it('counts an answered zero as real coverage, not as a gap', () => {
+    const s = summariseCoverage(rows, { asOf: '2026-12-15' })
+    expect(s.countable).toBe(2)         // the 0% Finance row is an answer
+    expect(s.gaps.never_reported).toEqual(['Billing · Refunds'])
+  })
+
+  it('reports blocked modules separately from leader gaps', () => {
+    const s = summariseCoverage(rows, { asOf: '2026-12-15' })
+    expect(s.blocked).toEqual([{ audience: 'Billing', module: 'Refunds', status: 'in_build' }])
+  })
+
+  it('flags a check older than the stale window', () => {
+    expect(isStale('2026-11-01', '2026-12-15')).toBe(true)
+    expect(isStale('2026-12-14', '2026-12-15')).toBe(false)
+    expect(isStale(null, '2026-12-15')).toBe(false)
+  })
+
+  it('names stale rows so an old number cannot be quoted as current', () => {
+    const old = [row({ audience_name: 'Billing', module_name: 'Console', people_needed: 180, trained: 158, pct: 88, last_checked: '2026-10-01' })]
+    expect(summariseCoverage(old, { asOf: '2026-12-15' }).stale[0].days).toBe(75)
+  })
+})
+
+describe('coverageTrend', () => {
+  it('reports movement between the two most recent answers', () => {
+    expect(coverageTrend([
+      { as_at: '2026-11-30', trained: 110 }, { as_at: '2026-12-14', trained: 158 },
+    ])).toMatchObject({ delta: 48, direction: 'up' })
+  })
+
+  it('calls it flat when the number has not moved, not silent', () => {
+    expect(coverageTrend([
+      { as_at: '2026-11-30', trained: 0 }, { as_at: '2026-12-14', trained: 0 },
+    ])).toMatchObject({ delta: 0, direction: 'flat' })
+  })
+
+  it('ignores unanswered checks when picking the two to compare', () => {
+    expect(coverageTrend([
+      { as_at: '2026-11-30', trained: 95 }, { as_at: '2026-12-07', trained: null }, { as_at: '2026-12-14', trained: 98 },
+    ])).toMatchObject({ delta: 3 })
+  })
+
+  it('returns null with fewer than two answers rather than inventing a direction', () => {
+    expect(coverageTrend([{ as_at: '2026-12-14', trained: 98 }])).toBeNull()
+    expect(coverageTrend([])).toBeNull()
+  })
+})
+
+describe('coverageVerdict', () => {
+  const base = { countable: 4, total: 4, gaps: {}, unreported: 0 }
+
+  it('passes when coverage clears the threshold and nothing is missing', () => {
+    expect(coverageVerdict({ ...base, pct: 97 }).verdict).toBe('pass')
+  })
+
+  it('says short when everything is reported but coverage is low', () => {
+    expect(coverageVerdict({ ...base, pct: 70 }).verdict).toBe('short')
+  })
+
+  it('never passes on a partial picture, however high the reported number', () => {
+    const v = coverageVerdict({ ...base, pct: 100, countable: 2, gaps: { never_reported: ['Field · Mobile'] }, unreported: 1 })
+    expect(v.verdict).toBe('incomplete')
+  })
+
+  it('says unknown rather than fail when nothing has been reported at all', () => {
+    expect(coverageVerdict({ ...base, countable: 0, pct: null }).verdict).toBe('unknown')
   })
 })

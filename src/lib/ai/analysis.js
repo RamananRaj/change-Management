@@ -822,3 +822,85 @@ export function summariseDemand(demand) {
     notReadyModules: notReady.map(d => ({ name: d.module_name, status: d.module_status })),
   }
 }
+
+// ── Training coverage (people-leader self-report) ────────────────────────────
+export const GAP_REASON_LABEL = {
+  never_reported:  'never reported',
+  not_answered:    'asked, not answered',
+  size_unknown:    'group size unknown',
+  nobody_to_train: 'nobody to train',
+}
+
+// A check older than this is reported as stale rather than current. Three weeks is a
+// missed fortnightly cycle plus a week of grace — long enough not to nag, short enough
+// that "88% trained" from six weeks ago cannot be quoted at a go-live gate as if it
+// were today's number.
+export const STALE_AFTER_DAYS = 21
+
+export function daysBetween(from, to) {
+  if (!from || !to) return null
+  const a = new Date(from), b = new Date(to)
+  if (isNaN(a) || isNaN(b)) return null
+  return Math.round((b - a) / 86400000)
+}
+
+export function isStale(lastChecked, asOf, days = STALE_AFTER_DAYS) {
+  const d = daysBetween(lastChecked, asOf)
+  return d == null ? false : d > days
+}
+
+// Rolls coverage rows into the numbers a steering committee is shown. Every branch
+// here exists to stop an unknown being presented as a fact.
+export function summariseCoverage(rows, { asOf = new Date().toISOString().slice(0, 10) } = {}) {
+  const list = (rows ?? []).filter(r => r.necessity === 'mandatory')
+
+  // Only rows with both a denominator and an answer can contribute to a percentage.
+  const countable = list.filter(r => r.pct != null)
+  const needed  = countable.reduce((s, r) => s + (r.people_needed ?? 0), 0)
+  const trained = countable.reduce((s, r) => s + (r.trained ?? 0), 0)
+
+  const blocked = list.filter(r => r.module_status && r.module_status !== 'ready')
+  const stale   = countable.filter(r => isStale(r.last_checked, asOf))
+
+  return {
+    // NULL, not 0, when nothing is countable. A programme that has asked nobody is not
+    // a programme at 0% trained, and the two must not render the same.
+    pct: needed > 0 ? Math.round((100 * trained) / needed) : null,
+    trained, needed,
+    countable: countable.length,
+    total: list.length,
+    // Grouped by reason so the report can say what is missing, not just how much.
+    gaps: list.filter(r => r.gap_reason).reduce((acc, r) => {
+      (acc[r.gap_reason] ??= []).push(`${r.audience_name} · ${r.module_name}`)
+      return acc
+    }, {}),
+    // Reported separately from coverage: a leader cannot train people on material that
+    // does not exist, so these are the programme's problem, not the leader's.
+    blocked: blocked.map(r => ({ audience: r.audience_name, module: r.module_name, status: r.module_status })),
+    stale: stale.map(r => ({ audience: r.audience_name, module: r.module_name, lastChecked: r.last_checked, days: daysBetween(r.last_checked, asOf) })),
+    unreported: list.filter(r => r.gap_reason === 'never_reported').length,
+  }
+}
+
+// Movement between the two most recent answers for one need. "Stalled at 70%" and
+// "reached 70% this week" are opposite situations that a single percentage hides.
+export function coverageTrend(checks) {
+  const answered = (checks ?? []).filter(c => c.trained != null)
+    .sort((a, b) => (a.as_at < b.as_at ? -1 : 1))
+  if (answered.length < 2) return null
+  const prev = answered[answered.length - 2], last = answered[answered.length - 1]
+  const delta = last.trained - prev.trained
+  return { delta, from: prev.as_at, to: last.as_at, direction: delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat' }
+}
+
+// Whether mandatory training clears a go-live gate. Deliberately three-valued: an
+// answer of "not enough evidence" is honest, and is not the same as a pass or a fail.
+export function coverageVerdict(summary, { threshold = 95 } = {}) {
+  if (summary.countable === 0) return { verdict: 'unknown', why: 'No mandatory need has a reportable percentage yet.' }
+  if (summary.unreported > 0 || Object.keys(summary.gaps).length > 0) {
+    const missing = summary.total - summary.countable
+    return { verdict: 'incomplete', why: `${missing} of ${summary.total} mandatory needs have no reportable coverage.` }
+  }
+  if (summary.pct != null && summary.pct >= threshold) return { verdict: 'pass', why: `${summary.pct}% of mandatory places delivered.` }
+  return { verdict: 'short', why: `${summary.pct}% against a ${threshold}% threshold.` }
+}
