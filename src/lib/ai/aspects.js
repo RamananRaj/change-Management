@@ -49,6 +49,64 @@ const result = (state, o = {}) => ({
   state, section: null, note: null, clientNote: null, gaps: [], ...o,
 })
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Programme scope — which phases are actually being run
+// ─────────────────────────────────────────────────────────────────────────────
+// Registered FIRST, and it is the aspect every other number depends on. A client
+// running two of the five phases has a percentage that means something different from
+// one running all five, and a reader who is not told assumes five. This is the same
+// rule as gap_reason on a blank percentage, applied to the programme as a whole.
+const scopeAspect = {
+  key: 'scope',
+  label: 'Programme scope',
+  scope: 'project',
+  async build({ projects }) {
+    if (projects.length !== 1) return result(ASPECT_STATE.ABSENT, {
+      note: 'Scope is set per project — name one to see which phases it is running.',
+      clientNote: null,
+    })
+
+    const { data: rows } = await supabase.from('project_phase_scope')
+      .select('phase_number, lane_id, lane_name, lane_tint, lane_order, in_scope, planned_start, planned_end')
+      .eq('project_id', projects[0].id).order('phase_number')
+
+    if (!rows?.length) return result(ASPECT_STATE.ABSENT, {
+      note: 'No phases set up for this project yet, so there is nothing to measure progress against.',
+      clientNote: 'Programme phases — not yet set up.',
+    })
+
+    const inScope = rows.filter(r => r.in_scope)
+    const deferred = rows.filter(r => !r.in_scope)
+    const lanes = [...new Map(inScope.filter(r => r.lane_id).map(r => [r.lane_id, r.lane_name])).values()]
+
+    const section = {
+      heading: 'Programme scope', type: 'list',
+      headline: `Running **${inScope.length} of ${rows.length}** phases${lanes.length ? ` in ${lanes.length === 1 ? 'one lane' : `${lanes.length} lanes`}: ${lanes.join(', ')}` : ''}.`,
+      rows: rows.map(r => ({
+        rag: r.in_scope ? 'g' : 'n',
+        name: PHASE_NAME[r.phase_number] ?? `Phase ${r.phase_number}`,
+        meta: r.in_scope ? (r.lane_name ?? 'in scope') : 'not part of this programme',
+        due: r.in_scope && r.planned_end ? r.planned_end : '',
+      })),
+      empty: 'No phases.',
+    }
+
+    if (!deferred.length) return result(ASPECT_STATE.PRESENT, { section })
+
+    // Not a gap in the data — a deliberate choice. But it MUST be stated, because a
+    // percentage over two phases and one over five are different measurements and
+    // nothing else on the page says which one the reader is looking at.
+    const names = deferred.map(r => PHASE_NAME[r.phase_number] ?? `Phase ${r.phase_number}`)
+    return result(ASPECT_STATE.PARTIAL, { section, gaps: names,
+      note: `This programme runs ${inScope.length} of the ${rows.length} phases. ${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} not part of it, and ${names.length === 1 ? 'is' : 'are'} excluded from every percentage here — so completion means completion of what was scoped, not of the full methodology.`,
+      clientNote: `Phases in scope: ${inScope.map(r => PHASE_NAME[r.phase_number]).join(', ')}. ${names.join(', ')} ${names.length === 1 ? 'is' : 'are'} planned as separate work and ${names.length === 1 ? 'is' : 'are'} not reflected in the percentages above.`,
+    })
+  },
+}
+
+const PHASE_NAME = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Impact heat map — from audiences, falling back to a stored artifact
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,7 +343,7 @@ const benefitsAspect = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-export const ASPECTS = [heatmapAspect, trainingAspect, gateAspect, commsAspect, benefitsAspect]
+export const ASPECTS = [scopeAspect, heatmapAspect, trainingAspect, gateAspect, commsAspect, benefitsAspect]
 
 // Sweeps every registered aspect. One failing aspect must not take down the answer —
 // a broken heat map should cost the heat map section, not the whole report.

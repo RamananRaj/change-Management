@@ -919,7 +919,7 @@ export function coverageVerdict(summary, { threshold = 95 } = {}) {
 // registry, absent and non-existent looked identical — both invisible — so an answer
 // could read as complete while saying nothing about half the programme.
 
-export const ASPECT_ORDER = ['heatmap', 'training', 'gate', 'comms', 'benefits']
+export const ASPECT_ORDER = ['scope', 'heatmap', 'training', 'gate', 'comms', 'benefits']
 
 export function sortAspects(swept) {
   return [...(swept ?? [])].sort((a, b) => {
@@ -1008,4 +1008,93 @@ export function analyseHeatmap(data) {
     `**Recommendation:** sequence engagement starting with ${rowTotals[0].label}; prioritise ${colTotals[0].label} interventions, and revisit as the assessment is re-versioned.`,
   ]
   return out
+}
+
+// ── Phase and project progress ───────────────────────────────────────────────
+//
+// TWO LEVELS OF EQUAL WEIGHT
+//   Within a phase: every exercise carries the same share. Three exercises → 33.3%
+//   each; five → 20% each. The weight is derived from the count, never configured,
+//   so it cannot drift from what is actually there.
+//
+//   Across phases: every SELECTED phase carries the same share. Two selected → 50%
+//   each. Deselected phases are not in the denominator at all.
+//
+// WHY NOT WEIGHT BY STEP COUNT (the old behaviour)
+//   The project percentage was sum(done)/sum(total) across all five phases, so a
+//   phase with 50 exercises drowned one with 5, and the headline number moved when
+//   someone merely filled in more content. A phase is a stage of the methodology;
+//   finishing one is finishing one.
+//
+// WHY AN EXERCISE IS A FRACTION, NOT A TICK
+//   Completion is recorded per member. Treating the exercise as binary would make it
+//   either done when the first person finishes, or stuck until the last — both lie.
+//   The fraction of assigned members who have completed it is the honest reading, and
+//   with a single member it behaves exactly like a tick.
+//
+// NULL, NOT ZERO
+//   A phase with no exercises defined has NO percentage. It is not 0% — nothing has
+//   been asked of anyone. It drops out of the project average entirely, so a
+//   programme that has not finished authoring Embed does not report lower than one
+//   that has.
+
+export function phaseProgress(phase, { members = 1 } = {}) {
+  const exercises = phase?.exercises ?? []
+  if (!exercises.length) {
+    return { pct: null, reason: 'no_exercises', exercises: 0, weightEach: null }
+  }
+  const seats = Math.max(members, 1)
+  const weightEach = 100 / exercises.length
+  // Each exercise contributes its equal share, scaled by how many of the assigned
+  // members have completed it.
+  const pct = exercises.reduce((sum, ex) => {
+    const doneBy = Math.min(ex.completedBy ?? 0, seats)
+    return sum + (doneBy / seats) * weightEach
+  }, 0)
+  return { pct: Math.round(pct), reason: null, exercises: exercises.length, weightEach }
+}
+
+// The project number: the mean of the SELECTED phases that have a percentage.
+// Phases with no exercises are reported separately rather than counted as zero.
+// Scope is lane membership: a phase in a lane is being run, a phase in no lane is not.
+// One place to look, so a flag and a lane can never disagree about what is in scope.
+export function inScope(phase) {
+  return phase?.laneId != null || phase?.lane_id != null
+}
+
+export function projectProgress(phases, { members = 1 } = {}) {
+  const all = phases ?? []
+  const selected = all.filter(inScope)
+  const scored = selected.map(p => ({ ...p, ...phaseProgress(p, { members }) }))
+  const countable = scored.filter(p => p.pct != null)
+
+  return {
+    // NULL when nothing is countable. A programme where no phase has exercises yet is
+    // not a programme at 0% — those are different situations and must not render alike.
+    pct: countable.length ? Math.round(countable.reduce((s, p) => s + p.pct, 0) / countable.length) : null,
+    phases: scored,
+    selectedCount: selected.length,
+    countableCount: countable.length,
+    // Each selected, countable phase's share of the whole — what the UI shows as
+    // "worth 50% of this programme".
+    weightEach: countable.length ? Math.round((100 / countable.length) * 10) / 10 : null,
+    undefinedPhases: scored.filter(p => p.reason === 'no_exercises').map(p => p.name),
+    deferred: all.filter(p => !inScope(p)).map(p => p.name),
+  }
+}
+
+// Progress per swimlane, for the band shown at the head of each lane on the timeline.
+// A lane with no countable phase has no percentage — same rule as everywhere else.
+export function laneProgress(phases, { members = 1 } = {}) {
+  const byLane = new Map()
+  for (const p of (phases ?? []).filter(inScope)) {
+    const key = p.laneId ?? p.lane_id
+    if (!byLane.has(key)) byLane.set(key, { laneId: key, name: p.laneName ?? p.lane_name ?? 'Lane', tint: p.laneTint ?? p.lane_tint ?? null, phases: [] })
+    byLane.get(key).phases.push(p)
+  }
+  return [...byLane.values()].map(l => {
+    const roll = projectProgress(l.phases, { members })
+    return { ...l, pct: roll.pct, phaseCount: l.phases.length, weightEach: roll.weightEach,
+             undefinedPhases: roll.undefinedPhases }
+  })
 }

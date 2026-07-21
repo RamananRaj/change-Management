@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope } from './analysis'
 
 const heat = {
   version: 1,
@@ -958,5 +958,154 @@ describe('analyseHeatmap', () => {
 
   it('returns nothing rather than guessing from an empty grid', () => {
     expect(analyseHeatmap({ cols: [], rows: [] })).toEqual([])
+  })
+})
+
+describe('phaseProgress', () => {
+  const ex = (n, done = 0) => Array.from({ length: n }, () => ({ completedBy: done }))
+
+  it('splits a phase equally across its exercises', () => {
+    // 3 exercises, 1 complete, single member → 33%
+    expect(phaseProgress({ exercises: [{ completedBy: 1 }, { completedBy: 0 }, { completedBy: 0 }] }).pct).toBe(33)
+  })
+
+  it('gives each of five exercises a 20% share', () => {
+    expect(phaseProgress({ exercises: ex(5) }).weightEach).toBe(20)
+  })
+
+  it('counts an exercise as the fraction of members who finished it', () => {
+    // 2 exercises, 4 members; first done by 2 of 4, second by none → 25%
+    expect(phaseProgress({ exercises: [{ completedBy: 2 }, { completedBy: 0 }] }, { members: 4 }).pct).toBe(25)
+  })
+
+  it('reaches 100 only when every member has done every exercise', () => {
+    expect(phaseProgress({ exercises: [{ completedBy: 4 }, { completedBy: 4 }] }, { members: 4 }).pct).toBe(100)
+    expect(phaseProgress({ exercises: [{ completedBy: 4 }, { completedBy: 3 }] }, { members: 4 }).pct).toBe(88)
+  })
+
+  it('has no percentage at all when no exercises are defined', () => {
+    const r = phaseProgress({ exercises: [] })
+    expect(r.pct).toBeNull()
+    expect(r.reason).toBe('no_exercises')
+  })
+})
+
+describe('projectProgress', () => {
+  const full = n => Array.from({ length: n }, () => ({ completedBy: 1 }))
+  const empty = n => Array.from({ length: n }, () => ({ completedBy: 0 }))
+
+  it('weights each selected phase equally regardless of exercise count', () => {
+    // Diagnose complete with 3 exercises, Design untouched with 50 → 50%, not 6%
+    const r = projectProgress([
+      { name: 'Diagnose', laneId: 'L1',  exercises: full(3) },
+      { name: 'Design', laneId: 'L1',    exercises: empty(50) },
+    ])
+    expect(r.pct).toBe(50)
+    expect(r.weightEach).toBe(50)
+  })
+
+  it('excludes deselected phases from the denominator', () => {
+    const r = projectProgress([
+      { name: 'Diagnose', laneId: 'L1',  exercises: full(5) },
+      { name: 'Design', laneId: 'L1',    exercises: empty(5) },
+      { name: 'Engage',   exercises: empty(5) },
+      { name: 'Embed',    exercises: empty(5) },
+    ])
+    expect(r.pct).toBe(50)              // 100 and 0 over two phases, not four
+    expect(r.deferred).toEqual(['Engage', 'Embed'])
+  })
+
+  it('reports 100 when every selected phase is complete', () => {
+    expect(projectProgress([
+      { name: 'Diagnose', laneId: 'L1',  exercises: full(3) },
+      { name: 'Design', laneId: 'L1',    exercises: full(5), },
+      { name: 'Engage',   exercises: empty(5) },
+    ]).pct).toBe(100)
+  })
+
+  it('leaves an undefined phase out of the average rather than scoring it zero', () => {
+    const r = projectProgress([
+      { name: 'Diagnose', laneId: 'L1',  exercises: full(4) },
+      { name: 'Design',   laneId: 'L1', exercises: [] },
+    ])
+    expect(r.pct).toBe(100)             // not 50 — Design has asked nothing of anyone
+    expect(r.undefinedPhases).toEqual(['Design'])
+  })
+
+  it('returns null, never zero, when no phase has exercises', () => {
+    expect(projectProgress([{ name: 'Diagnose', exercises: [] }]).pct).toBeNull()
+  })
+})
+
+describe('projectProgress — the worked example', () => {
+  // Two phases selected, five exercises allocated to each. Each phase is worth 50%,
+  // so each exercise is worth 10% of the programme. This is the case the model was
+  // specified against, written out so a future change that breaks it fails loudly.
+  const ex = done => Array.from({ length: 5 }, (_, i) => ({ completedBy: i < done ? 1 : 0 }))
+
+  it('makes each exercise worth 10% when 2 phases × 5 exercises are selected', () => {
+    expect(projectProgress([{ name: 'Diagnose', laneId: 'L1',  exercises: ex(0) }, { name: 'Design', laneId: 'L1',  exercises: ex(0) }]).pct).toBe(0)
+    expect(projectProgress([{ name: 'Diagnose', laneId: 'L1',  exercises: ex(1) }, { name: 'Design', laneId: 'L1',  exercises: ex(0) }]).pct).toBe(10)
+    expect(projectProgress([{ name: 'Diagnose', laneId: 'L1',  exercises: ex(2) }, { name: 'Design', laneId: 'L1',  exercises: ex(0) }]).pct).toBe(20)
+    expect(projectProgress([{ name: 'Diagnose', laneId: 'L1',  exercises: ex(5) }, { name: 'Design', laneId: 'L1',  exercises: ex(0) }]).pct).toBe(50)
+    expect(projectProgress([{ name: 'Diagnose', laneId: 'L1',  exercises: ex(5) }, { name: 'Design', laneId: 'L1',  exercises: ex(5) }]).pct).toBe(100)
+  })
+
+  it('rebalances to 33% a phase when a third is selected, with no config change', () => {
+    const three = projectProgress([
+      { name: 'Diagnose', laneId: 'L1',  exercises: ex(5) }, { name: 'Design', laneId: 'L1',  exercises: ex(0) }, { name: 'Engage', laneId: 'L1', exercises: ex(0) },
+    ])
+    expect(three.weightEach).toBe(33.3)
+    expect(three.pct).toBe(33)
+  })
+})
+
+describe('scope is lane membership', () => {
+  const full = n => Array.from({ length: n }, () => ({ completedBy: 1 }))
+  const empty = n => Array.from({ length: n }, () => ({ completedBy: 0 }))
+
+  it('counts only the phases sitting in a lane', () => {
+    // The customer picked two of five. The other three are defined but not being run,
+    // so they are not in the denominator — the whole point of the change.
+    const r = projectProgress([
+      { name: 'Diagnose', laneId: 'W1', exercises: full(5) },
+      { name: 'Design',   laneId: 'W1', exercises: empty(5) },
+      { name: 'Engage',   exercises: empty(5) },
+      { name: 'Embed',    exercises: empty(5) },
+      { name: 'Evaluate', exercises: empty(5) },
+    ])
+    expect(r.pct).toBe(50)                    // not 20% across all five
+    expect(r.selectedCount).toBe(2)
+    expect(r.deferred).toEqual(['Engage', 'Embed', 'Evaluate'])
+  })
+
+  it('treats all five in one lane as the ordinary case', () => {
+    const r = projectProgress(['Diagnose','Design','Engage','Embed','Evaluate']
+      .map(name => ({ name, laneId: 'W1', exercises: full(2) })))
+    expect(r.pct).toBe(100)
+    expect(r.deferred).toEqual([])
+  })
+
+  it('accepts the snake_case column name straight from the view', () => {
+    expect(inScope({ lane_id: 'W1' })).toBe(true)
+    expect(inScope({ lane_id: null })).toBe(false)
+  })
+})
+
+describe('laneProgress', () => {
+  const full = n => Array.from({ length: n }, () => ({ completedBy: 1 }))
+  const empty = n => Array.from({ length: n }, () => ({ completedBy: 0 }))
+
+  it('rolls each lane up separately for its band on the timeline', () => {
+    const lanes = laneProgress([
+      { name: 'Diagnose', laneId: 'W1', laneName: 'Wave 1', exercises: full(4) },
+      { name: 'Design',   laneId: 'W1', laneName: 'Wave 1', exercises: empty(4) },
+      { name: 'Engage',   laneId: 'W2', laneName: 'Wave 2', exercises: full(2) },
+    ])
+    expect(lanes.map(l => [l.name, l.pct])).toEqual([['Wave 1', 50], ['Wave 2', 100]])
+  })
+
+  it('leaves out phases in no lane', () => {
+    expect(laneProgress([{ name: 'Embed', exercises: full(3) }])).toEqual([])
   })
 })
