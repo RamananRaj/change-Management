@@ -52,6 +52,26 @@ function StatusDot({ status }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+
+// Tab groups. `clientTab` still holds the LEAF key, so every `clientTab === 'content'`
+// block below is untouched — this is navigation only, not a rewrite of the panels.
+//
+// Content and Templates sit together because they are the same shape: keyed by phase,
+// global (client_id IS NULL) or client-specific, promotable between the two. Two names
+// for one mental model was the reason for two tabs.
+//
+// Artifacts stays on its own deliberately. It is client programme data, not reusable
+// material, and it is shrinking — the heat map already moved out to audiences, and
+// gates and comms follow. Grouping it tidily now means regrouping when it is empty.
+const TAB_GROUPS = [
+  { key: 'projects', label: '📁 Projects',  leaves: [['projects',  'Projects']] },
+  { key: 'pathway',  label: '🗺️ Pathway',   leaves: [['pathway',   'Pathway']],   clientOnly: true },
+  { key: 'library',  label: '📚 Library',   leaves: [['content',   'Content'], ['templates', 'Templates']], clientOnly: true },
+  { key: 'people',   label: '👥 People',    leaves: [['audiences', 'Audiences'], ['training', 'Training']] },
+  { key: 'delivery', label: '📅 Delivery',  leaves: [['timeline',  'Timeline'],  ['progress',  'Progress']] },
+  { key: 'artifacts',label: '✦ Artifacts',  leaves: [['artifacts', 'Artifacts']] },
+]
+
 export default function AdminClients({ allRoles = [], lockedClientId = null, initialClientId = null }) {
   const { user } = useAuth()
   const [clients,        setClients]        = useState([])
@@ -90,6 +110,27 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
   const [timelineProject, setTimelineProject] = useState('') // which project's timeline we're viewing
   const [audienceProject, setAudienceProject] = useState('') // which project's audiences we're editing
   const [trainingProject, setTrainingProject] = useState('') // and whose training matrix
+
+  function initTab(key) {
+    setClientTab(key)
+    if (key === 'pathway' && !pathwayProject) {
+      const pid = projects[0]?.id ?? ''
+      setPathwayProject(pid)
+      loadPathway(1, pid)
+    }
+    if (key === 'content')   loadContent(contentPhase, selectedClient.id)
+    if (key === 'templates') loadClientTemplates(selectedClient.id)
+    if (key === 'artifacts') loadArtifacts(selectedClient.id)
+    if (key === 'timeline'  && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
+    if (key === 'audiences' && !audienceProject) setAudienceProject(projects[0]?.id ?? '')
+    if (key === 'training'  && !trainingProject) setTrainingProject(projects[0]?.id ?? '')
+    if (key === 'progress') {
+      const pid = progressProject || projects[0]?.id || ''
+      setProgressProject(pid)
+      loadProgress(pid)
+    }
+  }
+
   const [progressProject, setProgressProject] = useState('') // which project's progress we're viewing
   const [phaseContent,   setPhaseContent]   = useState([])
   const [clientPathway,  setClientPathway]  = useState([])
@@ -849,36 +890,42 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
           )}
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway'], ['content', '📚 Content'], ['templates', '🧩 Templates']]), ['artifacts', '✦ Artifacts'], ['audiences', '👥 Audiences'], ['training', '🎓 Training'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
-            <button key={key}
-              onClick={() => {
-                setClientTab(key)
-                if (key === 'pathway' && !pathwayProject) {
-                  const pid = projects[0]?.id ?? ''
-                  setPathwayProject(pid)
-                  loadPathway(1, pid)
-                }
-                if (key === 'content') loadContent(contentPhase, selectedClient.id)
-                if (key === 'templates') loadClientTemplates(selectedClient.id)
-                if (key === 'artifacts') loadArtifacts(selectedClient.id)
-                if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
-                if (key === 'audiences' && !audienceProject) setAudienceProject(projects[0]?.id ?? '')
-                if (key === 'training' && !trainingProject) setTrainingProject(projects[0]?.id ?? '')
-                if (key === 'progress') {
-                  const pid = progressProject || projects[0]?.id || ''
-                  setProgressProject(pid)
-                  loadProgress(pid)
-                }
-              }}
-              className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px ${
-                clientTab === key ? 'border-[#1F4E79] text-[#1F4E79]' : 'border-transparent text-slate-500 hover:text-slate-700'
-              }`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Tabs — group row, then sub-tabs for whichever group is open */}
+        {(() => {
+          const groups = TAB_GROUPS.filter(g => !(g.clientOnly && lockedClientId))
+          const openGroup = groups.find(g => g.leaves.some(([k]) => k === clientTab)) ?? groups[0]
+          return (
+            <>
+              <div className="flex gap-1 mb-0 border-b border-slate-100 flex-wrap">
+                {groups.map(g => (
+                  <button key={g.key}
+                    // Opening a group lands on its first leaf. Returning to a group you
+                    // were already in keeps you where you were.
+                    onClick={() => initTab(g.leaves.some(([k]) => k === clientTab) ? clientTab : g.leaves[0][0])}
+                    className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors -mb-px ${
+                      openGroup?.key === g.key ? 'border-[#1F4E79] text-[#1F4E79]' : 'border-transparent text-slate-500 hover:text-slate-700'
+                    }`}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+              {/* A single-leaf group has nothing to choose, so no second row is drawn. */}
+              {openGroup && openGroup.leaves.length > 1 && (
+                <div className="flex gap-1 mt-3">
+                  {openGroup.leaves.map(([key, label]) => (
+                    <button key={key} onClick={() => initTab(key)}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                        clientTab === key ? 'bg-[#1F4E79] text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-700'
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )
+        })()}
+        <div className="mb-6" />
 
         {/* ── PROJECTS TAB ── */}
         {clientTab === 'projects' && (
