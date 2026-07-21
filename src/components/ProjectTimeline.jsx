@@ -533,6 +533,31 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   // Lane bands span the full width with no side borders or horizontal padding, so
   // every row in the chart shares one track origin. Depth is expressed by indenting
   // the label column and by the header, never by insetting the band itself.
+  // ── Change phases, grouped by lane ──────────────────────────────────────────
+  // Lane membership IS scope: a phase in a lane is being run, a phase in none is a
+  // later programme. So this both groups the chart and decides what belongs on it.
+  // Deferred phases are listed at the bottom without bars — they have no dates and no
+  // percentage, and drawing them as empty tracks would read as "late", not "not ours".
+  const phaseGroups = (() => {
+    const laneById = new Map(lanes.map(l => [l.id, l]))
+    // A project whose phases have never been saved has not chosen a scope yet. Treat
+    // all five as in scope, matching the project card — the same state has to give the
+    // same answer in both places, or the picker and the chart contradict each other.
+    const unsaved  = !phases.some(p => p.id)
+    const inScope  = unsaved ? phases : phases.filter(p => p.lane_id)
+    const deferred = unsaved ? []     : phases.filter(p => !p.lane_id)
+    const byLane = new Map()
+    for (const p of inScope) {
+      const key = p.lane_id ?? '__unscoped__'
+      if (!byLane.has(key)) byLane.set(key, [])
+      byLane.get(key).push(p)
+    }
+    const ordered = [...byLane.entries()]
+      .map(([id, ps]) => ({ lane: laneById.get(id) ?? { id, name: 'Change programme', tint: '#eff6ff', sort_order: 0 }, phases: ps }))
+      .sort((a, b) => (a.lane.sort_order ?? 0) - (b.lane.sort_order ?? 0))
+    return { groups: ordered, deferred }
+  })()
+
   const LaneBand = ({ lane, depth = 0 }) => {
     const st = laneStyle(lane.tint)
     const rows = rowsIn(lane.id)
@@ -654,9 +679,23 @@ export default function ProjectTimeline({ project, readOnly = false }) {
               <div className="px-3 py-4 text-[11px] text-slate-400">No swimlanes yet. Add one to group your bars.</div>
             )}
             {laneTree.map(l => <LaneBand key={l.id} lane={l} />)}
-            {/* CHANGEFLOW group */}
-            <div className="pt-3 pb-1 text-[10px] font-bold tracking-widest text-[#E8913A]" style={{ paddingLeft: 12 }}>CHANGEFLOW PHASES</div>
-            {phases.map(p => {
+            {/* CHANGEFLOW phases, inside their lanes */}
+            {phaseGroups.groups.map(g => {
+              const gst  = laneStyle(g.lane.tint)
+              const scored = phaseGroups.groups.reduce((n, x) => n + x.phases.length, 0)
+              return (
+              <div key={g.lane.id} style={{ background: gst.tint, borderTop: `1px solid ${gst.border}` }}>
+                <div className="flex items-center justify-between pr-3 pt-2 pb-1" style={{ paddingLeft: 12 }}>
+                  <span className="text-[11px] font-semibold" style={{ color: gst.text }}>{g.lane.name}</span>
+                  {/* The weight is stated here because this is where it is decided. A
+                      phase is worth 100/(phases in scope) of the programme, so the same
+                      phase is worth more on a narrowed programme than on a full one. */}
+                  <span className="text-[10px]" style={{ color: gst.text, opacity: 0.75 }}>
+                    {g.phases.length} phase{g.phases.length !== 1 ? 's' : ''}
+                    {scored > 0 && ` · ${Math.round((100 / scored) * 10) / 10}% each`}
+                  </span>
+                </div>
+            {g.phases.map(p => {
               const pr = progress[p.phase_number] ?? { done: 0, total: 0 }
               const pct = pr.total > 0 ? Math.round((pr.done / pr.total) * 100) : 0
               const s = p.planned_start, e = p.planned_end
@@ -717,6 +756,28 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                 </div>
               )
             })}
+              </div>
+              )
+            })}
+
+            {/* Not in this programme. Named, not hidden: a reader has to be able to see
+                that the other phases exist and were deliberately left out, otherwise the
+                chart looks like a methodology with pieces missing. */}
+            {phaseGroups.deferred.length > 0 && (
+              <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-2">
+                <p className="text-[10px] font-bold tracking-widest text-slate-400 mb-1">NOT IN THIS PROGRAMME</p>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {phaseGroups.deferred.map(p => (
+                    <span key={p.phase_number} className="text-[11px] text-slate-400">
+                      {`0${p.phase_number} ${PHASE_NAMES[p.phase_number]}`}
+                    </span>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Excluded from every percentage. Add {phaseGroups.deferred.length === 1 ? 'it' : 'them'} to a lane on the project card to bring {phaseGroups.deferred.length === 1 ? 'it' : 'them'} into scope.
+                </p>
+              </div>
+            )}
             <div className="h-2" />
           </div>
         </div>
