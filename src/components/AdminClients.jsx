@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import ProjectTimeline from './ProjectTimeline'
 import ProjectAudiences from './ProjectAudiences'
 import ProjectTraining from './ProjectTraining'
+import ProjectCoverage from './ProjectCoverage'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -67,7 +68,7 @@ const TAB_GROUPS = [
   { key: 'projects', label: '📁 Projects',  leaves: [['projects',  'Projects']] },
   { key: 'pathway',  label: '🗺️ Pathway',   leaves: [['pathway',   'Pathway']],   clientOnly: true },
   { key: 'library',  label: '📚 Library',   leaves: [['content',   'Content'], ['templates', 'Templates']], clientOnly: true },
-  { key: 'people',   label: '👥 People',    leaves: [['audiences', 'Audiences'], ['training', 'Training']] },
+  { key: 'people',   label: '👥 People',    leaves: [['audiences', 'Audiences'], ['training', 'Training'], ['coverage', 'Coverage']] },
   { key: 'delivery', label: '📅 Delivery',  leaves: [['timeline',  'Timeline'],  ['progress',  'Progress']] },
   { key: 'artifacts',label: '✦ Artifacts',  leaves: [['artifacts', 'Artifacts']] },
 ]
@@ -110,6 +111,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
   const [timelineProject, setTimelineProject] = useState('') // which project's timeline we're viewing
   const [audienceProject, setAudienceProject] = useState('') // which project's audiences we're editing
   const [trainingProject, setTrainingProject] = useState('') // and whose training matrix
+  const [coverageProject, setCoverageProject] = useState('') // and whose coverage checks
 
   function initTab(key) {
     setClientTab(key)
@@ -124,6 +126,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     if (key === 'timeline'  && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
     if (key === 'audiences' && !audienceProject) setAudienceProject(projects[0]?.id ?? '')
     if (key === 'training'  && !trainingProject) setTrainingProject(projects[0]?.id ?? '')
+    if (key === 'coverage'  && !coverageProject) setCoverageProject(projects[0]?.id ?? '')
     if (key === 'progress') {
       const pid = progressProject || projects[0]?.id || ''
       setProgressProject(pid)
@@ -1542,6 +1545,28 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
             </div>
             {trainingProject && (
               <ProjectTraining project={projects.find(p => p.id === trainingProject) ?? projects[0]} />
+            )}
+          </div>
+          )
+        )}
+
+        {clientTab === 'coverage' && (
+          projects.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-slate-400 text-sm">No projects yet.</p>
+              <p className="text-slate-300 text-xs mt-1">Create a project first — coverage is reported per project.</p>
+            </div>
+          ) : (
+          <div>
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project</label>
+              <select value={coverageProject} onChange={e => setCoverageProject(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[220px]">
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            {coverageProject && (
+              <ProjectCoverage project={projects.find(p => p.id === coverageProject) ?? projects[0]} />
             )}
           </div>
           )
