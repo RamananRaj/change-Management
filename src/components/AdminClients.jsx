@@ -16,7 +16,6 @@ const PROJECT_STATUS_COLORS = {
   completed:  'bg-green-100 text-green-700',
   on_hold:    'bg-amber-100 text-amber-700',
 }
-const PHASE_STATUS_CYCLE = { locked: 'active', active: 'completed', completed: 'locked' }
 const PHASE_STATUS_DISPLAY = {
   locked:    { label: 'Locked',    color: 'bg-slate-100 text-slate-400', icon: '🔒' },
   active:    { label: 'Active',    color: 'bg-blue-100 text-blue-700',   icon: '⟳' },
@@ -349,19 +348,46 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     setProjectMembers(prev => ({ ...prev, [projectId]: profs ?? [] }))
   }
 
-  // ── Phase access toggle ──────────────────────────────────────────────────────
-  async function togglePhase(projectId, phaseNum, currentStatus) {
-    const nextStatus = PHASE_STATUS_CYCLE[currentStatus ?? 'locked']
-    const existing = (projectPhases[projectId] ?? []).find(p => p.phase_number === phaseNum)
+  // The locked → active → done cycler used to live here. It is gone, and its two jobs
+  // were split to the places that can do them honestly:
+  //
+  //   locked → active  is now release mode, so the nightly job respects an admin's
+  //                    intent instead of overwriting it every night.
+  //   active → done    is now auto_complete_phases(), earned by finishing the exercises.
+  //                    Clicking a phase to "done" marked it finished with all its work
+  //                    outstanding, and the status then said whatever the last person
+  //                    to click said — in either direction.
 
-    if (existing) {
-      await supabase.from('project_phases').update({ status: nextStatus }).eq('id', existing.id)
-    } else {
-      await supabase.from('project_phases').insert({ project_id: projectId, phase_number: phaseNum, status: nextStatus })
-    }
-    await loadProjectPhases(projectId)
+
+
+  // ── Confirming scope ────────────────────────────────────────────────────────
+  // Turns "these are the phases because nobody changed the default" into "these are the
+  // phases because someone decided". The report can then state the scope as a decision
+  // with a date behind it rather than implying one.
+  async function confirmScope(projectId) {
+    const { error } = await supabase.from('projects')
+      .update({ scope_confirmed_at: new Date().toISOString(), scope_confirmed_by: user.id })
+      .eq('id', projectId)
+    if (error) { alert(`Could not confirm scope: ${error.message}`); return }
+    await loadProjects(selectedClient.id)
   }
 
+  // ── Release mode ────────────────────────────────────────────────────────────
+  // WHEN a phase opens, which is a different question from WHETHER it is in the
+  // programme. Three modes: on the plan, opened early, or held closed.
+  async function setReleaseMode(projectId, phaseNum, mode) {
+    const patch = { release_mode: mode }
+    // Opening early should take effect now, not at 01:00 tomorrow when the job runs.
+    // Holding closes a phase that the schedule had opened; completed phases are left
+    // alone, because that records work people actually did.
+    const current = (projectPhases[projectId] ?? []).find(p => p.phase_number === phaseNum)
+    if (mode === 'open' && current?.status === 'locked') patch.status = 'active'
+    if (mode === 'hold' && current?.status === 'active') patch.status = 'locked'
+    const { error } = await supabase.from('project_phases').update(patch)
+      .eq('project_id', projectId).eq('phase_number', phaseNum)
+    if (error) { alert(`Could not change how this phase opens: ${error.message}`); return }
+    await loadProjectPhases(projectId)
+  }
 
   // ── Programme scope ─────────────────────────────────────────────────────────
   // Which of the five phases this project is actually running. Lane membership IS
@@ -458,10 +484,26 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
         .insert({ ...projectForm, client_id: selectedClient.id, user_id: user.id })
         .select().single()
       error = insErr
-      // Initialise all phases as locked
+      // Initialise all five phases, locked, and IN A LANE.
+      //
+      // The lane is what makes them in scope. Creating the rows without one — which is
+      // what this did before — left every new project running nothing: no percentages,
+      // an empty client dashboard, and all five phases filed under "not in this
+      // programme". The default has to be a working project, and the default is that a
+      // client runs the whole methodology.
+      //
+      // scope_confirmed_at stays NULL. Running all five and nobody-has-decided produce
+      // identical phase data, so the difference has to be recorded separately or an
+      // untouched default reads as a plan.
       if (newProj) {
+        const { data: lane } = await supabase.from('project_lanes')
+          .insert({ project_id: newProj.id, name: 'Change programme', tint: '#eff6ff', sort_order: 0 })
+          .select('id').single()
         await supabase.from('project_phases').insert(
-          PHASES.map(ph => ({ project_id: newProj.id, phase_number: ph, status: 'locked' }))
+          PHASES.map(ph => ({
+            project_id: newProj.id, phase_number: ph, status: 'locked',
+            lane_id: lane?.id ?? null,
+          }))
         )
       }
     }
@@ -1119,6 +1161,27 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                               )
                             })}
                           </div>
+                          {/* Confirmed, or merely untouched? Both look identical in the
+                              data, so the difference is stated rather than left to be
+                              assumed from a default nobody has reviewed. */}
+                          {!project.scope_confirmed_at ? (
+                            <div className="mt-2 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                              <span className="text-[11px] text-amber-800 flex-1">
+                                Scope not confirmed — this project is on the default.
+                                Adjust the phases above if needed, then confirm so the report can
+                                state the scope as a decision rather than imply one.
+                              </span>
+                              <button onClick={() => confirmScope(project.id)}
+                                className="text-[11px] font-semibold bg-[#1F4E79] text-white px-3 py-1.5 rounded-lg hover:bg-[#163a5c] shrink-0">
+                                Confirm scope
+                              </button>
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-slate-400 mt-2">
+                              Scope confirmed {new Date(project.scope_confirmed_at).toLocaleDateString()}.
+                              {' '}<button onClick={() => confirmScope(project.id)} className="underline hover:text-slate-600">Re-confirm</button>
+                            </p>
+                          )}
                           {(() => {
                             const inCount = PHASES.filter(ph => isPhaseInScope(project.id, ph)).length
                             if (inCount === PHASES.length) return null
@@ -1139,18 +1202,49 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                             is not happening, and the two controls contradicted each other
                             when both showed all five. */}
                         <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Phase Access — click to cycle: Locked → Active → Done</p>
-                          <div className="flex gap-2 flex-wrap">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                            When each phase opens
+                          </p>
+                          <p className="text-[11px] text-slate-400 mb-2">
+                            On plan means it opens on its start date from the timeline. Open now
+                            releases it early without changing the dates. Hold keeps it closed even
+                            though its date has passed.
+                          </p>
+                          <div className="space-y-1.5">
                             {PHASES.filter(ph => isPhaseInScope(project.id, ph)).map(ph => {
+                              const row    = (projectPhases[project.id] ?? []).find(p => p.phase_number === ph)
+                              const mode   = row?.release_mode ?? 'plan'
                               const status = getPhaseStatus(project.id, ph)
                               const cfg    = PHASE_STATUS_DISPLAY[status] ?? PHASE_STATUS_DISPLAY.locked
                               return (
-                                <button key={ph}
-                                  onClick={() => togglePhase(project.id, ph, status)}
-                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${cfg.color} border-transparent hover:border-current`}>
-                                  <span>{cfg.icon}</span>
-                                  <span>{String(ph).padStart(2,'0')} {PHASE_NAMES[ph]}</span>
-                                </button>
+                                <div key={ph} className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-semibold text-slate-600 w-32 shrink-0">
+                                    {String(ph).padStart(2,'0')} {PHASE_NAMES[ph]}
+                                  </span>
+                                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${cfg.color}`}>
+                                    {cfg.icon} {status}
+                                  </span>
+                                  <div className="flex gap-1">
+                                    {[['plan','On plan'], ['open','Open now'], ['hold','Hold']].map(([m, label]) => (
+                                      <button key={m}
+                                        onClick={() => setReleaseMode(project.id, ph, m)}
+                                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
+                                          mode === m
+                                            ? 'bg-[#1F4E79] text-white border-[#1F4E79]'
+                                            : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'}`}>
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {/* A phase on the plan with no start date will never open by
+                                      itself. Saying so here beats leaving someone to wonder why
+                                      nothing happened. */}
+                                  {mode === 'plan' && !row?.planned_start && (
+                                    <span className="text-[10px] text-amber-600">
+                                      no start date on the timeline — won't open on its own
+                                    </span>
+                                  )}
+                                </div>
                               )
                             })}
                             {PHASES.every(ph => !isPhaseInScope(project.id, ph)) && (

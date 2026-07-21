@@ -6,6 +6,12 @@
 // today defaults to now; pass a Date for deterministic tests.
 export function shouldUnlock(phase, today = new Date()) {
   if (!phase || phase.status !== 'locked') return false
+  // Release mode is the admin's decision about WHEN this phase opens, and it outranks
+  // the schedule in both directions. Held phases stay shut however old their dates;
+  // phases opened early skip the date test entirely.
+  const mode = phase.release_mode ?? 'plan'
+  if (mode === 'hold') return false
+  if (mode === 'open') return phase.lane_id != null
   if (!phase.planned_start) return false
   // Scope gates the schedule. A deferred phase can carry dates — they describe when that
   // work is expected in a later programme, not permission to open it now. Without this,

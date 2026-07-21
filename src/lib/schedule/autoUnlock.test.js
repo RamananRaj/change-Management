@@ -70,3 +70,33 @@ describe('auto-unlock respects programme scope', () => {
     expect(ids).toEqual(['a'])
   })
 })
+
+describe('release mode outranks the schedule', () => {
+  const today = new Date('2026-07-21T00:00:00')
+
+  it("'open' releases a phase whose date has not arrived", () => {
+    expect(shouldUnlock(
+      { status: 'locked', planned_start: '2026-12-01', lane_id: 'L', release_mode: 'open' }, today,
+    )).toBe(true)
+  })
+
+  it("'open' still respects scope", () => {
+    expect(shouldUnlock(
+      { status: 'locked', planned_start: '2026-12-01', lane_id: null, release_mode: 'open' }, today,
+    )).toBe(false)
+  })
+
+  it("'hold' keeps a phase shut although its date has passed", () => {
+    // Previously the only way to achieve this was deleting the phase's start date,
+    // which destroyed plan data to express an intent.
+    expect(shouldUnlock(
+      { status: 'locked', planned_start: '2026-01-01', lane_id: 'L', release_mode: 'hold' }, today,
+    )).toBe(false)
+  })
+
+  it("defaults to 'plan' when the column is absent", () => {
+    expect(shouldUnlock(
+      { status: 'locked', planned_start: '2026-01-01', lane_id: 'L' }, today,
+    )).toBe(true)
+  })
+})
