@@ -205,15 +205,33 @@ export function MemberDashboard({ preview = null }) {
     setPhases(phaseRows ?? [])
   }
 
-  // Progress calculations
-  const totalAvailable = Object.values(phaseStats).reduce((s, p) => s + p.available, 0)
-  const totalCompleted = Object.values(phaseStats).reduce((s, p) => s + p.completed, 0)
+  // ── Which phases is this client actually running? ───────────────────────────
+  // Lane membership IS scope. A phase in no lane is a later programme, not work that
+  // is behind. Showing it here as "locked" tells the client they have something left
+  // to do that nobody has asked of them.
+  //
+  // A project whose phases have never been saved has not chosen a scope yet, so all
+  // five apply — same rule as the admin card and the timeline.
+  const scopeChosen  = phases.some(p => p.id)
+  const scopedNums   = scopeChosen
+    ? new Set(phases.filter(p => p.lane_id).map(p => p.phase_number))
+    : new Set(phaseConfig.map(c => c.num))
+  const scopedConfig = phaseConfig.filter(c => scopedNums.has(c.num))
+
+  // Progress calculations — over the phases in scope only, so the denominator matches
+  // what the client was actually asked to do.
+  const totalAvailable = Object.entries(phaseStats)
+    .filter(([n]) => scopedNums.has(Number(n)))
+    .reduce((s, [, p]) => s + p.available, 0)
+  const totalCompleted = Object.entries(phaseStats)
+    .filter(([n]) => scopedNums.has(Number(n)))
+    .reduce((s, [, p]) => s + p.completed, 0)
   const progressPct    = totalAvailable > 0 ? Math.round((totalCompleted / totalAvailable) * 100) : 0
 
-  const activePhase     = phases.find(p => p.status === 'active')
-  const completedPhases = phases.filter(p => p.status === 'completed').length
+  const activePhase     = phases.find(p => p.status === 'active' && (!scopeChosen || p.lane_id))
+  const completedPhases = phases.filter(p => p.status === 'completed' && (!scopeChosen || p.lane_id)).length
 
-  const mergedPhases = phaseConfig.map(cfg => {
+  const mergedPhases = scopedConfig.map(cfg => {
     const row = phases.find(p => p.phase_number === cfg.num)
     return { ...cfg, status: row?.status ?? 'locked', ...phaseStats[cfg.num] }
   })
@@ -226,7 +244,7 @@ export function MemberDashboard({ preview = null }) {
 
   // Timeline + insights
   const today = new Date()
-  const timelinePhases = phaseConfig.map(cfg => {
+  const timelinePhases = scopedConfig.map(cfg => {
     const row = phases.find(p => p.phase_number === cfg.num)
     const st  = phaseStats[cfg.num] ?? { available: 0, completed: 0 }
     const pct = st.available > 0 ? Math.round((st.completed / st.available) * 100) : 0
@@ -251,7 +269,7 @@ export function MemberDashboard({ preview = null }) {
   if (!preview) {
     const ragLabel = overallReadiness == null ? '—' : overallReadiness >= 3.5 ? 'On track' : overallReadiness >= 2.5 ? 'At risk' : 'Critical'
     const ragColor = overallReadiness == null ? '#94A3B8' : overallReadiness >= 3.5 ? '#16A34A' : overallReadiness >= 2.5 ? '#D97706' : '#DC2626'
-    const currentName = activePhase ? (phaseConfig.find(p => p.num === activePhase.phase_number)?.name ?? '—') : (completedPhases === 5 ? 'Complete' : '—')
+    const currentName = activePhase ? (phaseConfig.find(p => p.num === activePhase.phase_number)?.name ?? '—') : (scopedConfig.length > 0 && completedPhases === scopedConfig.length ? 'Complete' : '—')
     const continuePath = activePhase ? (phaseConfig.find(p => p.num === activePhase.phase_number)?.path ?? '#') : null
     return (
       <div className="min-h-full bg-slate-50">

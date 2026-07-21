@@ -224,7 +224,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
 
   async function deleteLane(lane) {
     const kids = lanes.filter(l => l.parent_id === lane.id).length
-    const rows = rowsForLane(lane.id, milestones, activities).length
+    const rows = rowsForLane(lane.id, milestones, scopedActivities).length
     const warn = kids || rows
       ? `Delete “${lane.name}”? Its ${kids ? `${kids} sub-lane(s) and ` : ''}${rows} item(s) stay in the project but lose their lane.`
       : `Delete “${lane.name}”?`
@@ -313,7 +313,7 @@ export default function ProjectTimeline({ project, readOnly = false }) {
       // Vertical drag reorders the row within its lane. Phases keep their fixed 1–5 sequence.
       const steps = Math.round(d.dy / ROW_H)
       if (!crossLane && steps && d.laneId && d.mode === 'move') {
-        const lane = rowsForLane(d.laneId, milestones, activities)
+        const lane = rowsForLane(d.laneId, milestones, scopedActivities)
         const from = lane.findIndex(x => x.id === d.id)
         const to = Math.max(0, Math.min(lane.length - 1, from + steps))
         if (from !== -1 && from !== to) {
@@ -406,7 +406,19 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const estTextW = t => (t?.length ?? 0) * 6.3 + 12  // rough px width for a 10px label
 
   const laneTree = buildLaneTree(lanes)
-  const rowsIn = laneId => rowsForLane(laneId, milestones, activities)
+  // Phases the client is not running. Their pathway content still exists in the
+  // database — deferring a phase does not delete the work planned for it — so it has to
+  // be kept off the chart deliberately. Otherwise the chart says a phase is not in this
+  // programme while still drawing its exercises as bars with dates and percentages.
+  const deferredNums = new Set(
+    phases.some(p => p.id) ? phases.filter(p => !p.lane_id).map(p => p.phase_number) : [],
+  )
+  const scopedActivities = activities.filter(a => !deferredNums.has(a.phase_number))
+  // Counted, not just dropped. Hiding content silently is how a chart starts lying by
+  // omission; the deferred strip below says how much is sitting out of scope.
+  const outOfScopeCount = activities.length - scopedActivities.length
+
+  const rowsIn = laneId => rowsForLane(laneId, milestones, scopedActivities)
   // Lane currently under the cursor mid-drag, when it isn't the row's own lane.
   const dropLane = (dragTick, dragRef.current?.overLane && dragRef.current.overLane !== dragRef.current.laneId)
     ? dragRef.current.overLane : null
@@ -802,7 +814,9 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                   ))}
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  Excluded from every percentage. Add {phaseGroups.deferred.length === 1 ? 'it' : 'them'} to a lane on the project card to bring {phaseGroups.deferred.length === 1 ? 'it' : 'them'} into scope.
+                  Excluded from every percentage.
+                  {outOfScopeCount > 0 && ` ${outOfScopeCount} planned ${outOfScopeCount === 1 ? 'activity is' : 'activities are'} hidden with ${phaseGroups.deferred.length === 1 ? 'it' : 'them'} — kept, not deleted.`}
+                  {' '}Add {phaseGroups.deferred.length === 1 ? 'it' : 'them'} to a lane on the project card to bring {phaseGroups.deferred.length === 1 ? 'it' : 'them'} into scope.
                 </p>
               </div>
             )}

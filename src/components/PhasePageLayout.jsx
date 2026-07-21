@@ -249,10 +249,21 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
 
   const thisPhase    = allPhases.find(p => p.phase_number === phaseNum)
   const phaseStatus  = thisPhase?.status ?? null
-  const activePhase  = allPhases.find(p => p.status === 'active')
-  const completedCount = allPhases.filter(p => p.status === 'completed').length
-  const progressPct  = allPhases.length > 0 ? Math.round((completedCount / allPhases.length) * 100) : 0
-  const isLocked     = phaseStatus === 'locked' && !profile?.is_admin
+  const activePhase  = allPhases.find(p => p.status === 'active' && (!allPhases.some(x => x.id) || p.lane_id))
+  // ── Scope, which is a different question from access ────────────────────────
+  // Locked means "not yet — finish the phase before it". Deferred means "this is not
+  // part of your programme at all". Telling a client to complete Design in order to
+  // unlock Engage, when Engage was never in their scope, sends them chasing work that
+  // does not exist for them.
+  const scopeChosen  = allPhases.some(p => p.id)
+  const scopedPhases = scopeChosen ? allPhases.filter(p => p.lane_id) : allPhases
+  const isDeferred   = scopeChosen && !!thisPhase && !thisPhase.lane_id && !profile?.is_admin
+
+  // Progress is over the phases in scope, so a client running two phases reads 50%
+  // after one, not 20%.
+  const completedCount = scopedPhases.filter(p => p.status === 'completed').length
+  const progressPct  = scopedPhases.length > 0 ? Math.round((completedCount / scopedPhases.length) * 100) : 0
+  const isLocked     = phaseStatus === 'locked' && !profile?.is_admin && !isDeferred
 
   // Pathway progress (for the hero strip)
   const pathwayDone = pathwayItems.filter(i => activities.find(a => a.content_id === i.id)?.status === 'completed').length
@@ -337,7 +348,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
           )}
 
           {/* Pathway progress strip */}
-          {!loading && !isLocked && pathwayItems.length > 0 && (
+          {!loading && !isLocked && !isDeferred && pathwayItems.length > 0 && (
             <div className="mt-5 bg-white/10 rounded-2xl px-5 py-4 max-w-xl">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-white text-sm font-semibold">Your Path · {pathwayItems.length} step{pathwayItems.length === 1 ? '' : 's'}</p>
@@ -351,7 +362,7 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
         </div>
 
         {/* Nav row — dropdown + scope filter — only when no pathway (or all resources expanded) */}
-        {!loading && !isLocked && (pathwayItems.length === 0 || showAllResources) && (
+        {!loading && !isLocked && !isDeferred && (pathwayItems.length === 0 || showAllResources) && (
           <div className="mt-5 flex items-center gap-3 flex-wrap">
 
             {/* ── Content type dropdown ── */}
@@ -476,6 +487,26 @@ export default function PhasePageLayout({ phaseNum, title, subtitle }) {
             {[1, 2, 3].map(n => (
               <div key={n} className="h-20 bg-white rounded-2xl border border-slate-100 animate-pulse" />
             ))}
+          </div>
+        ) : isDeferred ? (
+          /* ── DEFERRED: not part of this programme ── */
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-start gap-4">
+            <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-xl shrink-0">🗓️</div>
+            <div className="flex-1">
+              <p className="font-semibold text-slate-800 text-sm mb-0.5">
+                {title} isn't part of your current programme
+              </p>
+              <p className="text-slate-500 text-xs mb-3">
+                Your organisation is running {scopedPhases.length} of the five phases now
+                {scopedPhases.length > 0 && ` — ${scopedPhases.map(p => phaseNames[p.phase_number]).join(' and ')}`}.
+                {' '}This phase is planned as separate work later, so there's nothing outstanding
+                for you here and it isn't counted in your progress.
+              </p>
+              <Link to="/dashboard"
+                className="text-xs font-semibold text-slate-500 border border-slate-200 px-4 py-1.5 rounded-lg hover:border-slate-300 transition-colors inline-block">
+                Back to my dashboard
+              </Link>
+            </div>
           </div>
         ) : isLocked ? (
           /* ── LOCKED: progress nudge + blurred preview ── */

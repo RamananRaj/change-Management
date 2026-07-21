@@ -38,7 +38,7 @@ export default function ClientAdminDashboard() {
     const [{ data: members }, { data: pathways }, { data: phaseRows }] = await Promise.all([
       supabase.from('project_members').select('project_id, user_id').in('project_id', projIds),
       supabase.from('project_pathways').select('project_id, phase_number, content_id').in('project_id', projIds),
-      supabase.from('project_phases').select('project_id, phase_number, planned_end').in('project_id', projIds),
+      supabase.from('project_phases').select('project_id, phase_number, planned_end, lane_id').in('project_id', projIds),
     ])
     const memberIds = [...new Set((members ?? []).map(m => m.user_id))]
     let acts = [], surveys = []
@@ -53,13 +53,19 @@ export default function ClientAdminDashboard() {
     let gDone = 0, gTotal = 0, atRisk = 0
     ;(projects ?? []).forEach(p => {
       const pMembers = [...new Set((members ?? []).filter(m => m.project_id === p.id).map(m => m.user_id))]
-      PHASES.forEach(n => {
+      // Only the phases this project is running. A deferred phase contributes no
+      // completions and no denominator — counting it would drag the client's rollup
+      // down for work that was deliberately left out of the programme.
+      const rows       = (phaseRows ?? []).filter(r => r.project_id === p.id)
+      const anySaved   = rows.length > 0
+      const scopedNums = anySaved ? rows.filter(r => r.lane_id).map(r => r.phase_number) : PHASES
+      scopedNums.forEach(n => {
         const cIds = new Set((pathways ?? []).filter(pw => pw.project_id === p.id && pw.phase_number === n).map(pw => pw.content_id))
         const steps = cIds.size
         const total = steps * Math.max(pMembers.length, 1)
         const done  = acts.filter(a => pMembers.includes(a.user_id) && cIds.has(a.content_id)).length
         gDone += done; gTotal += total
-        const row = (phaseRows ?? []).find(r => r.project_id === p.id && r.phase_number === n)
+        const row = rows.find(r => r.phase_number === n)
         const pct = total > 0 ? Math.round((done / total) * 100) : 0
         if (row?.planned_end && new Date(row.planned_end) < today && pct < 100 && steps > 0) atRisk++
       })
