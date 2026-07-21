@@ -789,7 +789,7 @@ export function buildNeedsMatrix(demand, { audiences = [], modules = [] } = {}) 
     // from "required but we don't know how many" — which is what size_unknown is for.
     if (!d) return null
     const needed = d.people_needed ?? null
-    return { necessity: d.necessity, needed, unknown: needed == null, partial: d.applies_to != null, notes: d.notes ?? null }
+    return { necessity: d.necessity, needed, unknown: needed == null, partial: d.applies_to != null, notes: d.need_notes ?? d.notes ?? null }
   }))
 
   return { rows, cols, cells }

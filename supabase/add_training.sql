@@ -117,7 +117,12 @@ CREATE TRIGGER trg_training_need_project BEFORE INSERT OR UPDATE ON public.train
 -- it. NULL must survive all the way to the renderer: an unsized group is a gap to
 -- close, not a group of nobody, and COALESCE(...,0) here would make a module with no
 -- known audience read as fully covered.
-CREATE OR REPLACE VIEW public.training_demand AS
+-- CREATE OR REPLACE can only APPEND columns to a view, and this one gained applies_to
+-- in the middle of the list. training_coverage is built on top of this view, so it has
+-- to go first — re-run add_training_coverage.sql after this file to rebuild it.
+DROP VIEW IF EXISTS public.training_coverage;
+DROP VIEW IF EXISTS public.training_demand;
+CREATE VIEW public.training_demand AS
 SELECT
   n.id            AS need_id,
   m.project_id,
@@ -131,6 +136,12 @@ SELECT
   a.name          AS audience_name,
   a.owner_name    AS audience_owner,
   n.necessity,
+  -- The raw override is exposed, not just the computed total. An editor that cannot
+  -- read this back cannot round-trip it: it prefills blank, and saving writes the
+  -- blank over a real number. Exposing only the derived value cost the "30 of 180
+  -- refunds team" fact once already.
+  n.applies_to,
+  n.notes         AS need_notes,
   COALESCE(n.applies_to, a.headcount) AS people_needed,
   (COALESCE(n.applies_to, a.headcount) IS NULL) AS size_unknown
 FROM public.training_needs n

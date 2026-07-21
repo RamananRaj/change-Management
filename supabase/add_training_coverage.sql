@@ -59,7 +59,7 @@ SELECT
   d.need_id, d.project_id, d.module_id, d.module_name, d.delivery, d.module_status,
   d.window_start, d.window_end,
   d.audience_id, d.audience_name, d.audience_owner, d.necessity,
-  d.people_needed, d.size_unknown,
+  d.applies_to, d.people_needed, d.size_unknown,
   c.as_at            AS last_checked,
   c.trained,
   c.reported_by_name,
@@ -73,11 +73,15 @@ SELECT
   END AS pct,
   -- Why there is no percentage, in the view rather than in each renderer, so the canvas
   -- and the Word report cannot give different reasons for the same blank.
+  -- Order matters. The denominator is tested FIRST because it is the blocking gap:
+  -- a group with no headcount yields no percentage however well its leader reports,
+  -- so calling it 'never_reported' would send someone to chase an answer that cannot
+  -- help. Name the thing that has to be fixed first.
   CASE
-    WHEN c.as_at IS NULL           THEN 'never_reported'
-    WHEN c.trained IS NULL         THEN 'not_answered'
     WHEN d.people_needed IS NULL   THEN 'size_unknown'
     WHEN d.people_needed = 0       THEN 'nobody_to_train'
+    WHEN c.as_at IS NULL           THEN 'never_reported'
+    WHEN c.trained IS NULL         THEN 'not_answered'
     ELSE NULL
   END AS gap_reason
 FROM public.training_demand d

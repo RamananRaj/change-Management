@@ -108,6 +108,8 @@ export default function ProjectTraining({ project, readOnly = false }) {
       audience_id: r.id, module_id: c.id, need_id: d?.need_id ?? null,
       audience: r.name, module: c.name, headcount: r.headcount,
       necessity: d?.necessity ?? 'mandatory',
+      // Reads back the stored override. This was blank until the view exposed the
+      // column, so opening a partial cell and saving overwrote the real number.
       applies_to: d?.applies_to ?? '',
       exists: !!existing,
     })
