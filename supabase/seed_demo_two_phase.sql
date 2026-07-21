@@ -61,7 +61,7 @@ BEGIN
   -- ── Phases ────────────────────────────────────────────────────────────────
   -- All five exist. The methodology is not being altered — only two are being run.
   INSERT INTO public.project_phases (project_id, phase_number, status, planned_start, planned_end) VALUES
-    (v_project, 1, 'complete', DATE '2026-08-03', DATE '2026-09-30'),
+    (v_project, 1, 'completed', DATE '2026-08-03', DATE '2026-09-30'),
     (v_project, 2, 'active',   DATE '2026-11-03', DATE '2026-12-18'),   -- 5-week gap before this
     (v_project, 3, 'locked',   NULL, NULL),
     (v_project, 4, 'locked',   NULL, NULL),
