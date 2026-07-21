@@ -1,6 +1,6 @@
 import { Fragment, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { LANE_TINTS, laneStyle, buildLaneTree, rowsForLane, groupLaneRows } from '../lib/ai/analysis'
+import { LANE_TINTS, laneStyle, buildLaneTree, rowsForLane, groupLaneRows, laneProgress } from '../lib/ai/analysis'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -50,6 +50,11 @@ export default function ProjectTimeline({ project, readOnly = false }) {
   const [phases,      setPhases]      = useState([])   // 5 rows (some may be unsaved)
   const [milestones,  setMilestones]  = useState([])
   const [progress,    setProgress]    = useState({})   // { phase: {done,total} }
+  // The shape laneProgress() expects: one entry per exercise, carrying how many assigned
+  // members have completed it. Kept beside `progress` rather than replacing it — the bars
+  // want a single percentage, the lane roll-up wants the exercises it was made from.
+  const [phaseEx,     setPhaseEx]     = useState({})   // { phase: [{ id, completedBy }] }
+  const [teamSize,    setTeamSize]    = useState(1)
   const [loading,     setLoading]     = useState(true)
   const [msForm,      setMsForm]      = useState(null)  // milestone being added/edited
   const [msSaving,    setMsSaving]    = useState(false)
@@ -131,6 +136,15 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     const prog = {}
     PHASES.forEach(n => { prog[n] = { done: dCount[n] || 0, total: (cCount[n] || 0) * Math.max(memberIds.length, 1) } })
     setProgress(prog)
+
+    // Same underlying facts, expressed per exercise, so the lane roll-up can apply the
+    // equal-weight rule from analysis.js instead of this file inventing its own.
+    const ex = {}
+    ;(pathway ?? []).forEach(r => {
+      ;(ex[r.phase_number] ||= []).push({ id: r.content_id, completedBy: perContent[r.content_id] || 0 })
+    })
+    setPhaseEx(ex)
+    setTeamSize(team)
     setLoading(false)
   }
 
@@ -555,7 +569,18 @@ export default function ProjectTimeline({ project, readOnly = false }) {
     const ordered = [...byLane.entries()]
       .map(([id, ps]) => ({ lane: laneById.get(id) ?? { id, name: 'Change programme', tint: '#eff6ff', sort_order: 0 }, phases: ps }))
       .sort((a, b) => (a.lane.sort_order ?? 0) - (b.lane.sort_order ?? 0))
-    return { groups: ordered, deferred }
+    // Percentages come from the tested helper, not from a formula written here. The
+    // timeline, the report and CORA then cannot disagree about how far through a lane a
+    // client is — which is the whole reason the maths lives in analysis.js.
+    const rolled = laneProgress(
+      ordered.flatMap(g => g.phases.map(p => ({
+        laneId: g.lane.id, laneName: g.lane.name, laneTint: g.lane.tint,
+        name: PHASE_NAMES[p.phase_number], exercises: phaseEx[p.phase_number] ?? [],
+      }))),
+      { members: teamSize },
+    )
+    const pctByLane = new Map(rolled.map(l => [l.laneId, l]))
+    return { groups: ordered.map(g => ({ ...g, roll: pctByLane.get(g.lane.id) ?? null })), deferred }
   })()
 
   const LaneBand = ({ lane, depth = 0 }) => {
@@ -691,6 +716,9 @@ export default function ProjectTimeline({ project, readOnly = false }) {
                       phase is worth 100/(phases in scope) of the programme, so the same
                       phase is worth more on a narrowed programme than on a full one. */}
                   <span className="text-[10px]" style={{ color: gst.text, opacity: 0.75 }}>
+                    {/* A lane with no exercises authored yet has no percentage — not 0%.
+                        Nothing has been asked of anyone, so nothing is outstanding. */}
+                    {g.roll?.pct != null ? `${g.roll.pct}% of this lane · ` : 'not yet measurable · '}
                     {g.phases.length} phase{g.phases.length !== 1 ? 's' : ''}
                     {scored > 0 && ` · ${Math.round((100 / scored) * 10) / 10}% each`}
                   </span>
