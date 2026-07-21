@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope, inPlannedGap } from './analysis'
 
 const heat = {
   version: 1,
@@ -1107,5 +1107,63 @@ describe('laneProgress', () => {
 
   it('leaves out phases in no lane', () => {
     expect(laneProgress([{ name: 'Embed', exercises: full(3) }])).toEqual([])
+  })
+})
+
+describe('inPlannedGap', () => {
+  const phases = [
+    { name: 'Diagnose', inScope: true, planned_start: '2026-08-03', planned_end: '2026-09-30' },
+    { name: 'Design',   inScope: true, planned_start: '2026-11-03', planned_end: '2026-12-18' },
+    { name: 'Engage',   inScope: false, planned_start: '2027-01-05', planned_end: '2027-03-01' },
+  ]
+
+  it('recognises the window between two phases', () => {
+    expect(inPlannedGap('2026-10-15', phases)).toMatchObject({ after: 'Diagnose', before: 'Design' })
+  })
+
+  it('is not a gap while a phase is running', () => {
+    expect(inPlannedGap('2026-09-01', phases)).toBeNull()
+    expect(inPlannedGap('2026-12-01', phases)).toBeNull()
+  })
+
+  it('ignores out-of-scope phases when finding the next start', () => {
+    // After Design ends there is no further IN-SCOPE phase, so this is not a gap —
+    // it is the end of the programme. Counting Engage would invent a resumption.
+    expect(inPlannedGap('2026-12-28', phases)).toBeNull()
+  })
+
+  it('needs two dated phases before it can call anything a gap', () => {
+    expect(inPlannedGap('2026-10-15', [phases[0]])).toBeNull()
+  })
+})
+
+describe('computeTrend — planned gap', () => {
+  const phases = [
+    { name: 'Diagnose', inScope: true, planned_start: '2026-08-03', planned_end: '2026-09-30' },
+    { name: 'Design',   inScope: true, planned_start: '2026-11-03', planned_end: '2026-12-18' },
+  ]
+  const flat = [
+    { captured_on: '2026-10-01', pct: 50 },
+    { captured_on: '2026-10-08', pct: 50 },
+    { captured_on: '2026-10-15', pct: 50 },
+  ]
+
+  it('calls flat progress inside a gap a planned gap, not a stall', () => {
+    const t = computeTrend(flat, { today: new Date('2026-10-15'), phases })
+    expect(t.verdict).toBe('in_planned_gap')
+    expect(t.plannedGap.before).toBe('Design')
+  })
+
+  it('still calls it stalled when flat inside a phase', () => {
+    const t = computeTrend(
+      [{ captured_on: '2026-11-20', pct: 50 }, { captured_on: '2026-11-27', pct: 50 }, { captured_on: '2026-12-04', pct: 50 }],
+      { today: new Date('2026-12-04'), phases })
+    expect(t.verdict).toBe('stalled')
+  })
+
+  it('says which phase resumes rather than just that it is flat', () => {
+    const t = computeTrend(flat, { today: new Date('2026-10-15'), phases })
+    expect(trendSentence(t)).toContain('Design')
+    expect(trendSentence(t)).not.toContain('stalled')
   })
 })

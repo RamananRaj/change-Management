@@ -11,7 +11,7 @@
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
 import { sweepAspects } from './aspects'
-import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, heatmapFromAudiences, analyseHeatmap, aspectSections, buildGapsSection, completenessLine, narrateGaps } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, heatmapFromAudiences, analyseHeatmap, phaseProgress, projectProgress, aspectSections, buildGapsSection, completenessLine, narrateGaps } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -33,7 +33,7 @@ async function loadData() {
     const [{ data: m }, { data: pw }, { data: ph }, { data: ms }] = await Promise.all([
       supabase.from('project_members').select('project_id, user_id').in('project_id', projIds),
       supabase.from('project_pathways').select('project_id, phase_number, content_id').in('project_id', projIds),
-      supabase.from('project_phases').select('project_id, phase_number, planned_start, planned_end, status').in('project_id', projIds),
+      supabase.from('project_phases').select('project_id, phase_number, planned_start, planned_end, status, lane_id').in('project_id', projIds),
       supabase.from('project_milestones').select('project_id, name, milestone_date, color').in('project_id', projIds),
     ])
     members = m ?? []; pathways = pw ?? []; phaseRows = ph ?? []; milestones = ms ?? []
@@ -65,20 +65,45 @@ async function loadData() {
         done: acts.filter(a => a.user_id === uid && cIds.has(a.content_id)).length,
         steps,
       }))
+      // Per-exercise completion, which is what the new weighting needs: an exercise
+      // is a fraction of the members who finished it, not a tick.
+      const exercises = [...cIds].map(cid => ({
+        contentId: cid,
+        completedBy: acts.filter(a => pMembers.includes(a.user_id) && a.content_id === cid).length,
+      }))
+      const laneId = row?.lane_id ?? null
+      const ph = phaseProgress({ exercises }, { members: pMembers.length })
       return {
         phase_number: n, name: PHASE_NAMES[n],
         planned_start: row?.planned_start ?? null, planned_end: row?.planned_end ?? null,
-        status: row?.status ?? 'locked', steps, done, total,
-        pct: total > 0 ? Math.round((done / total) * 100) : 0, perMember,
+        status: row?.status ?? 'locked', steps, done, total, perMember,
+        laneId, inScope: laneId != null,
+        exercises,
+        // NULL when the phase has no exercises defined — nothing has been asked of
+        // anyone, which is not the same as nobody having done it. The old code put a
+        // 0 here and it read as "not started" on every screen.
+        pct: ph.pct,
       }
     })
-    const done = phasesOut.reduce((s, x) => s + x.done, 0)
-    const total = phasesOut.reduce((s, x) => s + x.total, 0)
+
+    // Scope is lane membership, and it reaches the denominator. Previously this was
+    // sum(done)/sum(total) across ALL five phases, so a client running two read as
+    // ~40% complete forever and a phase with fifty exercises drowned one with five.
+    const roll = projectProgress(phasesOut, { members: pMembers.length })
+    const done = phasesOut.filter(x => x.inScope).reduce((s, x) => s + x.done, 0)
+    const total = phasesOut.filter(x => x.inScope).reduce((s, x) => s + x.total, 0)
     return {
       id: p.id, name: p.name, client_id: p.client_id, clientName: clientName(p.client_id),
       members: pMembers.length, memberIds: pMembers,
-      pct: total > 0 ? Math.round((done / total) * 100) : 0,
-      phases: phasesOut, milestones: milestones.filter(m => m.project_id === p.id), done, total,
+      // Can be NULL: a project where no in-scope phase has exercises has no percentage.
+      pct: roll.pct,
+      phases: phasesOut,
+      // Everything downstream that asks "which phases are we running" reads this,
+      // rather than each caller re-deriving it and drifting.
+      phasesInScope: phasesOut.filter(x => x.inScope),
+      deferredPhases: roll.deferred,
+      weightEachPhase: roll.weightEach,
+      milestones: milestones.filter(m => m.project_id === p.id), done, total,
     }
   })
 
@@ -103,7 +128,7 @@ async function runAtRisk(_params, text, ctx) {
   const cp = scopedProjects(data, scope), today = data.today
   const rows = []
   cp.forEach(p => p.phases.forEach(ph => {
-    if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0)
+    if (ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0)
       rows.push({ rag: ph.pct < 40 ? 'r' : 'a', name: `${ph.name} · ${ph.project ?? p.name}`,
         meta: `${p.clientName} · ${ph.pct}% complete`, due: 'overdue' })
   }))
@@ -297,14 +322,14 @@ async function runReport(_params, text, ctx) {
   const ragWord = avg == null ? 'not yet measured' : avg >= 3.5 ? 'Green — on track' : avg >= 2.5 ? 'Amber — at risk' : 'Red — critical'
 
   const atRisk = []
-  cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < data.today && ph.pct < 100 && ph.steps > 0) atRisk.push({ rag: ph.pct < 40 ? 'r' : 'a', name: `${ph.name} · ${p.name}`, meta: `${ph.pct}% complete`, due: 'overdue' }) }))
+  cp.forEach(p => p.phases.forEach(ph => { if (ph.inScope && ph.planned_end && new Date(ph.planned_end) < data.today && ph.pct < 100 && ph.steps > 0) atRisk.push({ rag: ph.pct < 40 ? 'r' : 'a', name: `${ph.name} · ${p.name}`, meta: `${ph.pct}% complete`, due: 'overdue' }) }))
 
   const soon = new Date(data.today); soon.setDate(soon.getDate() + 30)
   const projName = id => cp.find(p => p.id === id)?.name ?? 'Project'
   const upcoming = [
     ...data.milestones.filter(m => cp.some(p => p.id === m.project_id) && m.milestone_date && new Date(m.milestone_date) >= data.today && new Date(m.milestone_date) <= soon)
       .map(m => ({ rag: 'g', name: m.name, meta: projName(m.project_id), due: fmtDate(m.milestone_date), _d: m.milestone_date })),
-    ...cp.flatMap(p => p.phases.filter(ph => ph.planned_start && new Date(ph.planned_start) > data.today && new Date(ph.planned_start) <= soon)
+    ...cp.flatMap(p => p.phases.filter(ph => ph.inScope && ph.planned_start && new Date(ph.planned_start) > data.today && new Date(ph.planned_start) <= soon)
       .map(ph => ({ rag: 'g', name: `${ph.name} starts`, meta: p.name, due: fmtDate(ph.planned_start), _d: ph.planned_start }))),
   ].sort((a, b) => new Date(a._d) - new Date(b._d)).slice(0, 8)
 
@@ -328,7 +353,7 @@ async function runReport(_params, text, ctx) {
     (atRisk.length ? ` **${atRisk.length}** phase${atRisk.length === 1 ? ' is' : 's are'} overdue and need attention.` : ' No phases are currently overdue.') })
   if (integrated) sections.push(integrated)
   sections.push({ heading: 'Programme snapshot', type: 'progress', empty: 'No projects yet.',
-    rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => a.value - b.value) })
+    rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => (a.value ?? 101) - (b.value ?? 101)) })
   if (cp.length) sections.push({ heading: 'Delivery & change timeline', type: 'projectTimeline', projects: cp.map(p => ({ id: p.id, name: p.name })), gantt: buildReportGantt(cp) })
   sections.push({ heading: 'Needs attention', type: 'list', rows: atRisk, empty: 'Everything is on track.' })
   sections.push({ heading: 'Upcoming (next 30 days)', type: 'list', rows: upcoming, empty: 'Nothing scheduled ahead.' })
@@ -348,9 +373,11 @@ async function runReport(_params, text, ctx) {
       const perProject = cp.map(p => {
         const points = (snaps ?? []).filter(s => s.project_id === p.id)
           .map(s => ({ captured_on: s.captured_on, pct: Number(s.pct) }))
-        const pEnds = p.phases.map(ph => ph.planned_end).filter(Boolean).sort()
+        const pEnds = p.phasesInScope.map(ph => ph.planned_end).filter(Boolean).sort()
         const plannedEnd = pEnds.length ? pEnds[pEnds.length - 1] : null
-        const trend = computeTrend(points, { plannedEnd, today: data.today })
+        // Phases go in so a flat stretch between two of them reads as a planned gap
+        // rather than a stall.
+        const trend = computeTrend(points, { plannedEnd, today: data.today, phases: p.phasesInScope })
         return { name: p.name, points, plannedEnd, trend, forecast: trend.forecast ?? null }
       })
 
@@ -424,7 +451,7 @@ async function runUpcoming(_params, text, ctx) {
   const items = [
     ...(data.milestones ?? []).filter(m => (!scope.label || ids.has(m.project_id)) && m.milestone_date && new Date(m.milestone_date) >= today)
       .map(m => ({ date: m.milestone_date, label: m.name, project: projName(m.project_id) })),
-    ...cp.flatMap(p => p.phases.filter(ph => ph.planned_start && new Date(ph.planned_start) > today)
+    ...cp.flatMap(p => p.phases.filter(ph => ph.inScope && ph.planned_start && new Date(ph.planned_start) > today)
       .map(ph => ({ date: ph.planned_start, label: `${ph.name} starts`, project: p.name }))),
   ].sort((a, b) => new Date(a.date) - new Date(b.date)).slice(0, 8)
   const rows = items.map(it => ({ rag: 'g', name: it.label, meta: it.project, due: fmtDate(it.date) }))
@@ -502,7 +529,7 @@ async function runProgress(_params, text, ctx) {
   const scope = resolveScope(text, ctx, data)
   const cp = scopedProjects(data, scope)
   // Scoped to one project → break down by phase; otherwise list projects.
-  const rows = (scope.proj ? cp[0].phases.map(ph => ({ label: ph.name, value: ph.pct, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet' }))
+  const rows = (scope.proj ? cp[0].phasesInScope.map(ph => ({ label: ph.name, value: ph.pct, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet' }))
     : cp.map(p => ({ label: p.name, value: p.pct, sub: p.clientName, drill: `Show me the ${p.name} timeline` })))
   if (!scope.proj) rows.sort((a, b) => a.value - b.value)
   const avg = rows.length ? Math.round(rows.reduce((s, r) => s + r.value, 0) / rows.length) : 0
@@ -535,7 +562,7 @@ async function runReadiness(_params, text, ctx) {
   const ragLabel = avgScore == null ? 'Not yet measured' : avgScore >= 3.5 ? 'Green — on track' : avgScore >= 2.5 ? 'Amber — at risk' : 'Red — critical'
   const overdue = []
   projRollup.forEach(p => p.phases.forEach(ph => {
-    if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue.push(ph)
+    if (ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue.push(ph)
   }))
   return {
     type: 'narrative', title: `Readiness summary${scope.suffix}`,
@@ -593,11 +620,11 @@ async function runClientDetail(client, data) {
     return { label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}${cur ? ` · ${cur} underway` : noDates ? ' · no dates yet' : ''}`, value: p.pct, drill: `Show me the ${p.name} timeline` }
   })
   let overdue = 0
-  cp.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue++ }))
+  cp.forEach(p => p.phases.forEach(ph => { if (ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue++ }))
   const nextMs = cp.flatMap(p => p.milestones).filter(m => m.milestone_date && new Date(m.milestone_date) >= today)
     .sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
   // Human narrative first: how many programmes, which are active, people, readiness, then the table.
-  const active = cp.filter(p => p.phases.some(x => x.planned_start && new Date(x.planned_start) <= today) || p.pct > 0)
+  const active = cp.filter(p => p.phasesInScope.some(x => x.planned_start && new Date(x.planned_start) <= today) || (p.pct ?? 0) > 0)
   const idle = cp.filter(p => !active.includes(p))
   const activeBit = cp.length === 0 ? '' :
     active.length === 0 ? ` None have started yet — they're set up but no phase dates or progress are in place.` :
@@ -628,10 +655,10 @@ async function runProjectDetail(p, data) {
   const fnByPhase = {}
   ;(pw ?? []).forEach(r => { const t = titleOf(r.content_id); if (t) (fnByPhase[r.phase_number] ??= []).push(t) })
 
-  const rows = p.phases.map(ph => ({ label: ph.name, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet', value: ph.pct }))
+  const rows = p.phasesInScope.map(ph => ({ label: ph.name, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no exercises defined', value: ph.pct }))
   const current = p.phases.find(ph => ph.planned_start && ph.planned_end && new Date(ph.planned_start) <= today && today <= new Date(ph.planned_end))
     || p.phases.find(ph => ph.planned_start && new Date(ph.planned_start) <= today)
-  const overdue = p.phases.filter(ph => ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0).length
+  const overdue = p.phases.filter(ph => ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0).length
   const nextMs = (p.milestones ?? []).filter(m => m.milestone_date && new Date(m.milestone_date) >= today).sort((a, b) => new Date(a.milestone_date) - new Date(b.milestone_date))[0]
 
   const withFns = p.phases.filter(ph => (fnByPhase[ph.phase_number] || []).length)
@@ -1066,7 +1093,7 @@ async function runStory(_params, text, ctx) {
   if (!cp.length) return { type: 'narrative', title: 'No project in scope', body: 'Name a client or project and I will pull the update together.' }
 
   // One project tells a story; a portfolio needs picking one.
-  const p = scope.proj ? cp[0] : cp.slice().sort((a, b) => b.pct - a.pct)[0]
+  const p = scope.proj ? cp[0] : cp.slice().sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1))[0]
   const clientId = p.clientId ?? data.projRollup.find(x => x.id === p.id)?.client_id
 
   const [{ data: arts }, { data: snaps }] = await Promise.all([
@@ -1076,11 +1103,11 @@ async function runStory(_params, text, ctx) {
   const art = t => (arts ?? []).find(a => a.type === t)?.data ?? null
 
   const today = data.today
-  const pEnds = p.phases.map(ph => ph.planned_end).filter(Boolean).sort()
+  const pEnds = p.phasesInScope.map(ph => ph.planned_end).filter(Boolean).sort()
   const trend = computeTrend((snaps ?? []).map(x => ({ captured_on: x.captured_on, pct: Number(x.pct) })),
-    { plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null, today })
+    { plannedEnd: pEnds.length ? pEnds[pEnds.length - 1] : null, today, phases: p.phasesInScope })
 
-  const atRisk = p.phases.filter(ph => ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0)
+  const atRisk = p.phases.filter(ph => ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0)
     .map(ph => ({ name: ph.name, pct: ph.pct }))
   const soon = new Date(today); soon.setDate(soon.getDate() + 60)
   const milestones = (data.milestones ?? [])
@@ -1110,7 +1137,7 @@ async function runStory(_params, text, ctx) {
 
   const blocks = [
     { heading: 'Where we are', prose: byHeading('Where we are'),
-      widget: { type: 'progress', rows: p.phases.map(ph => ({ label: ph.name, value: ph.pct, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no steps yet' })) } },
+      widget: { type: 'progress', rows: p.phasesInScope.map(ph => ({ label: ph.name, value: ph.pct, sub: ph.steps ? `${ph.done}/${ph.total} steps` : 'no exercises defined' })) } },
 
     { heading: 'Which way it is moving', prose: byHeading('Which way it is moving'),
       widget: (snaps ?? []).length >= 2
@@ -1284,7 +1311,7 @@ export async function assembleClientContext(entityHint) {
     p.phases.forEach(ph => {
       const started = ph.planned_start && new Date(ph.planned_start) <= today
       const state = ph.pct >= 100 ? 'done' : started ? 'in progress' : 'upcoming'
-      const overdue = ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 ? ' — OVERDUE' : ''
+      const overdue = ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 ? ' — OVERDUE' : ''
       const dates = ph.planned_start ? ` [${fmtDate(ph.planned_start)}→${ph.planned_end ? fmtDate(ph.planned_end) : '?'}]` : ''
       lines.push(`  • Phase ${ph.phase_number} ${ph.name}: ${ph.pct}% (${state}${overdue})${dates}`)
     })
@@ -1297,7 +1324,7 @@ export async function assembleClientContext(entityHint) {
   lines.push(`Readiness: ${avg == null ? 'not yet measured (no survey responses)' : `${avg.toFixed(1)}/5 — ${avg >= 3.5 ? 'Green/on track' : avg >= 2.5 ? 'Amber/at risk' : 'Red/critical'} from ${scores.length} response${scores.length === 1 ? '' : 's'}`}.`)
 
   const overdue = []
-  cps.forEach(p => p.phases.forEach(ph => { if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue.push(`${ph.name} · ${p.name} (${ph.pct}%)`) }))
+  cps.forEach(p => p.phases.forEach(ph => { if (ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) overdue.push(`${ph.name} · ${p.name} (${ph.pct}%)`) }))
   lines.push(overdue.length ? `Overdue/at-risk phases: ${overdue.join('; ')}.` : 'No phases are currently overdue.')
 
   if (cid) {
@@ -1315,7 +1342,7 @@ export async function loadSummary() {
   const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0
   let atRisk = 0
   projRollup.forEach(p => p.phases.forEach(ph => {
-    if (ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) atRisk++
+    if (ph.inScope && ph.planned_end && new Date(ph.planned_end) < today && ph.pct < 100 && ph.steps > 0) atRisk++
   }))
   const soon = new Date(today); soon.setDate(soon.getDate() + 7)
   const dueSoon = projRollup.reduce((s, p) => s + p.milestones.filter(m => m.milestone_date && new Date(m.milestone_date) >= today && new Date(m.milestone_date) <= soon).length, 0)

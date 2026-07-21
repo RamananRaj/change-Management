@@ -168,7 +168,31 @@ export function buildPhaseDrill({ projectName, phaseName, orderedContentIds, con
 // will we make the date? Pure — the caller supplies snapshots (ascending by date) and the planned
 // end date. Deliberately conservative: with too little history or no movement it says so rather
 // than extrapolating from noise.
-export function computeTrend(snapshots = [], { plannedEnd = null, today = new Date() } = {}) {
+
+// Is `on` sitting between one in-scope phase ending and the next one starting?
+// Progress is legitimately flat in that window — nobody has been given anything to do —
+// and calling it "stalled" blames a team for following the plan. Pure so the boundary
+// cases can be tested without a database.
+export function inPlannedGap(on, phases) {
+  if (!on) return null
+  const d = new Date(on).getTime()
+  const windows = (phases ?? [])
+    .filter(p => (p.inScope ?? true) && p.planned_start && p.planned_end)
+    .map(p => ({ name: p.name, start: new Date(p.planned_start).getTime(), end: new Date(p.planned_end).getTime() }))
+    .sort((a, b) => a.start - b.start)
+  if (windows.length < 2) return null
+  // Inside a phase window: not a gap, whatever the dates around it say.
+  if (windows.some(w => d >= w.start && d <= w.end)) return null
+  for (let i = 0; i < windows.length - 1; i++) {
+    if (d > windows[i].end && d < windows[i + 1].start) {
+      return { after: windows[i].name, before: windows[i + 1].name,
+               resumesOn: new Date(windows[i + 1].start).toISOString().slice(0, 10) }
+    }
+  }
+  return null
+}
+
+export function computeTrend(snapshots = [], { plannedEnd = null, today = new Date(), phases = [] } = {}) {
   const pts = (snapshots || [])
     .filter(s => s && s.captured_on != null && s.pct != null)
     .map(s => ({ on: new Date(s.captured_on), pct: Number(s.pct) }))
@@ -203,8 +227,13 @@ export function computeTrend(snapshots = [], { plannedEnd = null, today = new Da
     forecast = new Date(now.getTime() + weeksLeft * 7 * 864e5)
   }
 
+  // Flat progress means one of two very different things. Between phases it means the
+  // plan is being followed; inside a phase it means nothing is moving. Reporting the
+  // first as "stalled" is the failure this check exists to prevent.
+  const gap = perWeek <= 0.1 && latest.pct < 100 ? inPlannedGap(latest.on, phases) : null
+
   let verdict = 'unknown'
-  if (perWeek <= 0.1) verdict = latest.pct >= 100 ? 'complete' : 'stalled'
+  if (perWeek <= 0.1) verdict = latest.pct >= 100 ? 'complete' : gap ? 'in_planned_gap' : 'stalled'
   else if (plannedEnd) {
     const due = new Date(plannedEnd)
     const slipDays = Math.round(daysBetween(due, forecast))
@@ -222,7 +251,7 @@ export function computeTrend(snapshots = [], { plannedEnd = null, today = new Da
       delta28: mo ? latest.pct - mo.pct : null,
       perWeek: Math.round(perWeek * 10) / 10,
       forecast, weeksLeft: Math.round(weeksLeft * 10) / 10, verdict, slipDays,
-      forecastBeforePlan, plannedEnd,
+      forecastBeforePlan, plannedEnd, plannedGap: gap,
     }
   } else verdict = 'moving'
 
@@ -232,7 +261,7 @@ export function computeTrend(snapshots = [], { plannedEnd = null, today = new Da
     delta28: mo ? latest.pct - mo.pct : null,
     perWeek: Math.round(perWeek * 10) / 10,
     forecast, weeksLeft: weeksLeft == null ? null : Math.round(weeksLeft * 10) / 10,
-    verdict, slipDays: null,
+    verdict, slipDays: null, plannedGap: gap,
   }
 }
 
@@ -315,6 +344,13 @@ export function trendSentence(t, fmtDate = d => new Date(d).toLocaleDateString('
   const mo = t.delta28 != null ? `${t.delta28 >= 0 ? '+' : ''}${t.delta28}% over 28 days` : null
   const head = `Currently **${t.current}%**${move ? `, ${move}` : ''}${mo ? ` (${mo})` : ''}.`
   if (t.verdict === 'complete') return `${head} Delivery is complete.`
+  // Said before the stall line, because a planned gap looks identical in the numbers
+  // and only the phase windows can tell them apart. Naming the next phase turns a
+  // worrying flat line into a scheduled pause.
+  if (t.verdict === 'in_planned_gap') {
+    const g = t.plannedGap
+    return `${head} Flat, but this is the planned gap after **${g.after}** — **${g.before}** starts ${fmtDate(g.resumesOn)}. Nothing is outstanding.`
+  }
   if (t.verdict === 'stalled') return `${head} **Progress has stalled** — no measurable movement, so no completion can be forecast. This is the finding to act on.`
   const rate = `Averaging **${t.perWeek}% per week**`
   // Suppress the date when the projection lands before the plan still runs — say the
