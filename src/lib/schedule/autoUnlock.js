@@ -7,6 +7,10 @@
 export function shouldUnlock(phase, today = new Date()) {
   if (!phase || phase.status !== 'locked') return false
   if (!phase.planned_start) return false
+  // Scope gates the schedule. A deferred phase can carry dates — they describe when that
+  // work is expected in a later programme, not permission to open it now. Without this,
+  // deferring a phase that already has dates gets silently undone by the nightly job.
+  if (phase.lane_id === null || phase.lane_id === undefined) return false
   return new Date(phase.planned_start + 'T00:00:00') <= today
 }
 
