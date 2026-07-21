@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand } from './analysis'
 
 const heat = {
   version: 1,
@@ -712,5 +712,65 @@ describe('overallImpact', () => {
   it('returns null when nothing is rated, so the row shows unrated not none', () => {
     expect(overallImpact({})).toBeNull()
     expect(overallImpact(null)).toBeNull()
+  })
+})
+
+describe('buildNeedsMatrix', () => {
+  const demand = [
+    { audience_id: 'a1', audience_name: 'Billing', module_id: 'm1', module_name: 'Console', necessity: 'mandatory', people_needed: 180, applies_to: null, module_status: 'ready' },
+    { audience_id: 'a1', audience_name: 'Billing', module_id: 'm2', module_name: 'Refunds', necessity: 'mandatory', people_needed: 30, applies_to: 30, module_status: 'in_build' },
+    { audience_id: 'a2', audience_name: 'Field',   module_id: 'm1', module_name: 'Console', necessity: 'recommended', people_needed: null, applies_to: null, module_status: 'ready' },
+  ]
+
+  it('builds a grid with an empty cell where there is no need', () => {
+    const m = buildNeedsMatrix(demand)
+    expect(m.rows.map(r => r.name)).toEqual(['Billing', 'Field'])
+    expect(m.cols.map(c => c.name)).toEqual(['Console', 'Refunds'])
+    expect(m.cells[1][1]).toBeNull()          // Field needs no Refunds module
+    expect(m.cells[0][0].needed).toBe(180)
+  })
+
+  it('marks a partial audience so 30 of 180 does not read as the whole group', () => {
+    expect(buildNeedsMatrix(demand).cells[0][1].partial).toBe(true)
+  })
+
+  it('flags an unknown size rather than rendering it as zero', () => {
+    const cell = buildNeedsMatrix(demand).cells[1][0]
+    expect(cell.unknown).toBe(true)
+    expect(cell.needed).toBeNull()
+  })
+})
+
+describe('summariseDemand', () => {
+  const demand = [
+    { audience_id: 'a1', audience_name: 'Billing', module_id: 'm1', module_name: 'Console', necessity: 'mandatory', people_needed: 180, module_status: 'ready' },
+    { audience_id: 'a1', audience_name: 'Billing', module_id: 'm2', module_name: 'Refunds', necessity: 'mandatory', people_needed: 30, module_status: 'in_build' },
+    { audience_id: 'a2', audience_name: 'Field',   module_id: 'm1', module_name: 'Console', necessity: 'mandatory', people_needed: null, module_status: 'ready' },
+    { audience_id: 'a3', audience_name: 'Finance', module_id: 'm1', module_name: 'Console', necessity: 'recommended', people_needed: 45, module_status: 'ready' },
+  ]
+
+  it('counts places not people, since one person on three modules needs three seats', () => {
+    expect(summariseDemand(demand).places).toBe(210)
+  })
+
+  it('excludes recommended needs from the mandatory place count', () => {
+    expect(summariseDemand(demand).places).not.toBe(255)
+  })
+
+  it('reports unsized groups instead of silently dropping them from the total', () => {
+    const s = summariseDemand(demand)
+    expect(s.unsizedNeeds).toBe(1)
+    expect(s.unsizedGroups).toEqual(['Field'])
+  })
+
+  it('names modules that are not ready, so 0% is not read as a leader failing to act', () => {
+    expect(summariseDemand(demand).notReadyModules).toEqual([{ name: 'Refunds', status: 'in_build' }])
+  })
+
+  it('handles an empty matrix without inventing zeros', () => {
+    const s = summariseDemand([])
+    expect(s.places).toBe(0)
+    expect(s.modules).toBe(0)
+    expect(s.unsizedGroups).toEqual([])
   })
 })

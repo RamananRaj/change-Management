@@ -761,3 +761,64 @@ export function overallImpact(audience) {
   if (!rated.length) return null
   return rated.reduce((peak, lv) => ((LV_W[lv] ?? 0) > (LV_W[peak] ?? 0) ? lv : peak), 'none')
 }
+
+// ── Training needs matrix ────────────────────────────────────────────────────
+export const DELIVERY_LABEL = {
+  classroom: 'Classroom', virtual: 'Virtual', self_paced: 'Self-paced',
+  on_the_job: 'On the job', briefing: 'Briefing',
+}
+export const MODULE_STATUS_LABEL = {
+  planned: 'Planned', in_build: 'In build', ready: 'Ready', retired: 'Retired',
+}
+
+// Turns flat training_demand rows into the grid a change manager actually asks for:
+// audiences down the side, modules across the top. Pure so it can be tested without
+// Supabase, and so the report and the screen cannot build the grid differently.
+export function buildNeedsMatrix(demand, { audiences = [], modules = [] } = {}) {
+  const rows = audiences.length ? audiences.map(a => ({ id: a.id, name: a.name, headcount: a.headcount ?? null, owner: a.owner_name ?? null }))
+    : dedupeBy(demand, d => d.audience_id).map(d => ({ id: d.audience_id, name: d.audience_name, headcount: null, owner: d.audience_owner ?? null }))
+  const cols = modules.length ? modules.map(m => ({ id: m.id, name: m.name, delivery: m.delivery ?? null, status: m.status ?? null }))
+    : dedupeBy(demand, d => d.module_id).map(d => ({ id: d.module_id, name: d.module_name, delivery: d.delivery ?? null, status: d.module_status ?? null }))
+
+  const byCell = new Map()
+  for (const d of demand ?? []) byCell.set(`${d.audience_id}|${d.module_id}`, d)
+
+  const cells = rows.map(r => cols.map(c => {
+    const d = byCell.get(`${r.id}|${c.id}`)
+    // No row in training_needs means not required. That is a real answer, distinct
+    // from "required but we don't know how many" — which is what size_unknown is for.
+    if (!d) return null
+    const needed = d.people_needed ?? null
+    return { necessity: d.necessity, needed, unknown: needed == null, partial: d.applies_to != null, notes: d.notes ?? null }
+  }))
+
+  return { rows, cols, cells }
+}
+
+function dedupeBy(list, key) {
+  const seen = new Map()
+  for (const item of list ?? []) if (!seen.has(key(item))) seen.set(key(item), item)
+  return [...seen.values()]
+}
+
+// Headline numbers for the matrix. Deliberately reports what is NOT known alongside
+// what is: a "1,240 training places" figure that quietly omits two unsized groups is
+// worse than no figure, because nobody thinks to question it.
+export function summariseDemand(demand) {
+  const list = demand ?? []
+  const mandatory = list.filter(d => d.necessity === 'mandatory')
+  const sized = mandatory.filter(d => d.people_needed != null)
+  const unsized = mandatory.filter(d => d.people_needed == null)
+  const notReady = dedupeBy(list.filter(d => d.module_status && d.module_status !== 'ready'), d => d.module_id)
+  return {
+    // Places, not people: someone needing three modules occupies three seats, which is
+    // the number that determines how many sessions have to be run.
+    places: sized.reduce((s, d) => s + d.people_needed, 0),
+    sizedNeeds: sized.length,
+    unsizedNeeds: unsized.length,
+    unsizedGroups: [...new Set(unsized.map(d => d.audience_name))],
+    modules: dedupeBy(list, d => d.module_id).length,
+    audiences: dedupeBy(list, d => d.audience_id).length,
+    notReadyModules: notReady.map(d => ({ name: d.module_name, status: d.module_status })),
+  }
+}
