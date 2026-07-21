@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import ProjectTimeline from './ProjectTimeline'
 import ProjectAudiences from './ProjectAudiences'
+import ProjectTraining from './ProjectTraining'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -88,6 +89,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
   const [pathwayProject, setPathwayProject] = useState('')  // which project's pathway we're editing
   const [timelineProject, setTimelineProject] = useState('') // which project's timeline we're viewing
   const [audienceProject, setAudienceProject] = useState('') // which project's audiences we're editing
+  const [trainingProject, setTrainingProject] = useState('') // and whose training matrix
   const [progressProject, setProgressProject] = useState('') // which project's progress we're viewing
   const [phaseContent,   setPhaseContent]   = useState([])
   const [clientPathway,  setClientPathway]  = useState([])
@@ -849,7 +851,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 border-b border-slate-100">
-          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway'], ['content', '📚 Content'], ['templates', '🧩 Templates']]), ['artifacts', '✦ Artifacts'], ['audiences', '👥 Audiences'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
+          {[['projects', '📁 Projects'], ...(lockedClientId ? [] : [['pathway', '🗺️ Pathway'], ['content', '📚 Content'], ['templates', '🧩 Templates']]), ['artifacts', '✦ Artifacts'], ['audiences', '👥 Audiences'], ['training', '🎓 Training'], ['timeline', '📅 Timeline'], ['progress', '📊 Progress']].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setClientTab(key)
@@ -863,6 +865,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
                 if (key === 'artifacts') loadArtifacts(selectedClient.id)
                 if (key === 'timeline' && !timelineProject) setTimelineProject(projects[0]?.id ?? '')
                 if (key === 'audiences' && !audienceProject) setAudienceProject(projects[0]?.id ?? '')
+                if (key === 'training' && !trainingProject) setTrainingProject(projects[0]?.id ?? '')
                 if (key === 'progress') {
                   const pid = progressProject || projects[0]?.id || ''
                   setProgressProject(pid)
@@ -1470,6 +1473,28 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
             </div>
             {audienceProject && (
               <ProjectAudiences project={projects.find(p => p.id === audienceProject) ?? projects[0]} />
+            )}
+          </div>
+          )
+        )}
+
+        {clientTab === 'training' && (
+          projects.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-slate-400 text-sm">No projects yet.</p>
+              <p className="text-slate-300 text-xs mt-1">Create a project first — training needs are per project.</p>
+            </div>
+          ) : (
+          <div>
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project</label>
+              <select value={trainingProject} onChange={e => setTrainingProject(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[220px]">
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            {trainingProject && (
+              <ProjectTraining project={projects.find(p => p.id === trainingProject) ?? projects[0]} />
             )}
           </div>
           )
