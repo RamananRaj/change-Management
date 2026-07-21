@@ -911,3 +911,101 @@ export function coverageVerdict(summary, { threshold = 95 } = {}) {
   if (summary.pct != null && summary.pct >= threshold) return { verdict: 'pass', why: `${summary.pct}% of mandatory places delivered.` }
   return { verdict: 'short', why: `${summary.pct}% against a ${threshold}% threshold.` }
 }
+
+// ── Narrating an aspect sweep ────────────────────────────────────────────────
+// Pure, so the wording every CORA answer depends on can be tested without Supabase.
+//
+// The rule these enforce: an aspect with no data is NEVER silently dropped. Before the
+// registry, absent and non-existent looked identical — both invisible — so an answer
+// could read as complete while saying nothing about half the programme.
+
+export const ASPECT_ORDER = ['heatmap', 'training', 'gate', 'comms', 'benefits']
+
+export function sortAspects(swept) {
+  return [...(swept ?? [])].sort((a, b) => {
+    const ai = ASPECT_ORDER.indexOf(a.key), bi = ASPECT_ORDER.indexOf(b.key)
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
+  })
+}
+
+// Sections from every aspect that produced one, in a stable order. Partial aspects
+// contribute their section too — partial data is still data, it just carries caveats.
+export function aspectSections(swept) {
+  return sortAspects(swept).filter(a => a.section).map(a => a.section)
+}
+
+// What CORA says to an internal reader. Named gaps first, because those are the ones
+// somebody can act on this week; not-captured last, because those are decisions.
+export function narrateGaps(swept, { audience = 'internal' } = {}) {
+  const list = sortAspects(swept)
+  const key = audience === 'client' ? 'clientNote' : 'note'
+  const partial = list.filter(a => a.state === 'partial' && a[key])
+  const absent  = list.filter(a => a.state === 'absent'  && a[key])
+  return { partial: partial.map(a => ({ label: a.label, text: a[key] })),
+           absent:  absent.map(a => ({ label: a.label, text: a[key] })) }
+}
+
+// One sentence summarising how complete the picture is. This heads off the reader's
+// natural assumption that what they were shown is everything there is.
+export function completenessLine(swept, { audience = 'internal' } = {}) {
+  const list = sortAspects(swept)
+  if (!list.length) return null
+  const present = list.filter(a => a.state === 'present').length
+  const partial = list.filter(a => a.state === 'partial')
+  const absent  = list.filter(a => a.state === 'absent')
+  if (!partial.length && !absent.length) return `All ${list.length} areas are captured and current.`
+
+  const bits = []
+  if (present) bits.push(`${present} of ${list.length} areas are complete`)
+  if (partial.length) bits.push(`${partial.length} ${partial.length === 1 ? 'is' : 'are'} partial (${partial.map(a => a.label).join(', ')})`)
+  if (absent.length) bits.push(`${absent.length} ${absent.length === 1 ? 'has' : 'have'} nothing captured (${absent.map(a => a.label).join(', ')})`)
+  const lead = audience === 'client'
+    ? 'Scope of this report: '
+    : 'Read this against what is missing: '
+  return lead + bits.join('; ') + '.'
+}
+
+// The "what is missing" section appended to reports and briefs. Returns null only when
+// genuinely nothing is missing — never when it merely has nothing convenient to say.
+export function buildGapsSection(swept, { audience = 'internal' } = {}) {
+  const { partial, absent } = narrateGaps(swept, { audience })
+  if (!partial.length && !absent.length) return null
+  return {
+    heading: audience === 'client' ? 'Scope and completeness' : 'What this does not tell you',
+    type: 'narrative',
+    body: [
+      ...partial.map(g => `**${g.label}** — ${g.text}`),
+      ...absent.map(g => `**${g.label}** — ${g.text}`),
+    ].join('\n\n'),
+  }
+}
+
+
+// ── Heat-map insights ────────────────────────────────────────────────────────
+// Lived in rules.js, which meant it could not be reached from the aspect registry
+// without a circular import, and could not be tested without Supabase. It is pure —
+// a grid in, sentences out — so this is where it belongs.
+// Compute grounded insights from a heat-map grid (not a one-liner): hottest groups + domain,
+// the actual High+ hotspots, the spread, lightest touch, and a sequencing recommendation.
+export function analyseHeatmap(data) {
+  const SCORE = { vh: 5, h: 4, m: 3, l: 2, vl: 1, none: 0 }
+  const LBL = { vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Very Low', none: 'None' }
+  const cols = data.cols ?? [], rows = data.rows ?? []
+  if (!rows.length || !cols.length) return []
+  const rowTotals = rows.map(r => ({ label: r.label, total: r.cells.reduce((s, c) => s + (SCORE[c] ?? 0), 0) })).sort((a, b) => b.total - a.total)
+  const colTotals = cols.map((c, ci) => ({ label: c, total: rows.reduce((s, r) => s + (SCORE[r.cells[ci]] ?? 0), 0) })).sort((a, b) => b.total - a.total)
+  const hotspots = []
+  const counts = {}
+  rows.forEach(r => r.cells.forEach((c, ci) => { counts[c] = (counts[c] || 0) + 1; if (c === 'vh' || c === 'h') hotspots.push(`${r.label} · ${cols[ci]} (${LBL[c]})`) }))
+  const totalCells = rows.length * cols.length
+  const highPlus = (counts.vh || 0) + (counts.h || 0)
+  const out = [
+    `**Highest-impact groups:** ${rowTotals.slice(0, 2).map(r => r.label).join(' and ')} — focus change effort, comms and champions here first.`,
+    `**Most-affected domain:** ${colTotals[0].label}${colTotals[1] ? `, then ${colTotals[1].label}` : ''} across the register — align training and readiness to it.`,
+    hotspots.length ? `**${hotspots.length} hotspot${hotspots.length > 1 ? 's' : ''} at High or above:** ${hotspots.slice(0, 6).join('; ')}${hotspots.length > 6 ? ` +${hotspots.length - 6} more` : ''}.` : 'No cells rated High or above.',
+    `**Spread:** ${highPlus} of ${totalCells} cells are High+, ${counts.m || 0} Medium, ${(counts.l || 0) + (counts.vl || 0)} Low.`,
+    `**Lightest touch:** ${rowTotals[rowTotals.length - 1].label} — keep informed, but don't over-invest engagement there.`,
+    `**Recommendation:** sequence engagement starting with ${rowTotals[0].label}; prioritise ${colTotals[0].label} interventions, and revisit as the assessment is re-versioned.`,
+  ]
+  return out
+}

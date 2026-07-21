@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap } from './analysis'
 
 const heat = {
   version: 1,
@@ -888,5 +888,75 @@ describe('summariseCoverage — blocked material', () => {
   it('does not flag material with no window at all rather than guessing', () => {
     const s = summariseCoverage([row({ module_status: 'planned', window_start: null })], { asOf: '2026-12-15' })
     expect(s.blocked).toEqual([])
+  })
+})
+
+describe('aspect sweep narration', () => {
+  const swept = [
+    { key: 'comms',    label: 'Comms plan',    state: 'partial', section: { heading: 'Comms plan' }, note: '2 items blocked.', clientNote: 'Comms in place, 2 items pending.' },
+    { key: 'heatmap',  label: 'Heat map',      state: 'present', section: { heading: 'Heat map' },   note: null, clientNote: null },
+    { key: 'benefits', label: 'Benefits',      state: 'absent',  section: null, note: 'Not tracked yet — no baseline.', clientNote: 'Benefits — not yet tracked.' },
+  ]
+
+  it('orders sections by the registry, not by whatever came back first', () => {
+    expect(aspectSections(swept).map(s => s.heading)).toEqual(['Heat map', 'Comms plan'])
+  })
+
+  it('includes a partial aspect section — partial data is still data', () => {
+    expect(aspectSections(swept)).toHaveLength(2)
+  })
+
+  it('never silently drops an absent aspect', () => {
+    const { absent } = narrateGaps(swept)
+    expect(absent.map(a => a.label)).toEqual(['Benefits'])
+  })
+
+  it('uses the client register when asked, not the internal one', () => {
+    const { absent } = narrateGaps(swept, { audience: 'client' })
+    expect(absent[0].text).toBe('Benefits — not yet tracked.')
+  })
+
+  it('omits an aspect that has no note for the chosen audience', () => {
+    const quiet = [{ key: 'gate', label: 'Gate', state: 'absent', section: null, note: 'internal only', clientNote: null }]
+    expect(narrateGaps(quiet, { audience: 'client' }).absent).toEqual([])
+  })
+
+  it('summarises completeness so the reader knows what they were not shown', () => {
+    const line = completenessLine(swept)
+    expect(line).toContain('1 of 3 areas are complete')
+    expect(line).toContain('Benefits')
+  })
+
+  it('says so plainly when everything is captured', () => {
+    const all = [{ key: 'heatmap', label: 'Heat map', state: 'present', section: {}, note: null, clientNote: null }]
+    expect(completenessLine(all)).toBe('All 1 areas are captured and current.')
+  })
+
+  it('builds a gaps section listing partial before absent', () => {
+    const s = buildGapsSection(swept)
+    expect(s.body.indexOf('Comms plan')).toBeLessThan(s.body.indexOf('Benefits'))
+  })
+
+  it('returns null only when nothing is missing', () => {
+    expect(buildGapsSection([{ key: 'a', label: 'A', state: 'present', section: {}, note: null, clientNote: null }])).toBeNull()
+  })
+})
+
+describe('analyseHeatmap', () => {
+  const grid = { cols: ['People', 'Process'], rows: [
+    { label: 'Billing', cells: ['vh', 'vh'] },
+    { label: 'Finance', cells: ['l', 'm'] },
+  ] }
+
+  it('names the highest-impact group first', () => {
+    expect(analyseHeatmap(grid)[0]).toContain('Billing')
+  })
+
+  it('counts only High and above as hotspots', () => {
+    expect(analyseHeatmap(grid).find(l => l.includes('hotspot'))).toContain('2 hotspots')
+  })
+
+  it('returns nothing rather than guessing from an empty grid', () => {
+    expect(analyseHeatmap({ cols: [], rows: [] })).toEqual([])
   })
 })

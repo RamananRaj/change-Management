@@ -10,7 +10,8 @@
 
 import { supabase } from '../supabase'
 import { matchIntent } from './intents'
-import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, heatmapFromAudiences } from './analysis'
+import { sweepAspects } from './aspects'
+import { buildReportGantt, buildIntegratedInsight, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, LV_W, LV_LABEL, renderTemplate, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildProgrammeStory, heatmapFromAudiences, analyseHeatmap, aspectSections, buildGapsSection, completenessLine, narrateGaps } from './analysis'
 import { slmAvailable, slmGenerate } from './slm'
 
 export { matchIntent }
@@ -173,35 +174,12 @@ async function runPeople() {
   }
 }
 
-// Compute grounded insights from a heat-map grid (not a one-liner): hottest groups + domain,
-// the actual High+ hotspots, the spread, lightest touch, and a sequencing recommendation.
-function analyseHeatmap(data) {
-  const SCORE = { vh: 5, h: 4, m: 3, l: 2, vl: 1, none: 0 }
-  const LBL = { vh: 'Very High', h: 'High', m: 'Medium', l: 'Low', vl: 'Very Low', none: 'None' }
-  const cols = data.cols ?? [], rows = data.rows ?? []
-  if (!rows.length || !cols.length) return []
-  const rowTotals = rows.map(r => ({ label: r.label, total: r.cells.reduce((s, c) => s + (SCORE[c] ?? 0), 0) })).sort((a, b) => b.total - a.total)
-  const colTotals = cols.map((c, ci) => ({ label: c, total: rows.reduce((s, r) => s + (SCORE[r.cells[ci]] ?? 0), 0) })).sort((a, b) => b.total - a.total)
-  const hotspots = []
-  const counts = {}
-  rows.forEach(r => r.cells.forEach((c, ci) => { counts[c] = (counts[c] || 0) + 1; if (c === 'vh' || c === 'h') hotspots.push(`${r.label} · ${cols[ci]} (${LBL[c]})`) }))
-  const totalCells = rows.length * cols.length
-  const highPlus = (counts.vh || 0) + (counts.h || 0)
-  const out = [
-    `**Highest-impact groups:** ${rowTotals.slice(0, 2).map(r => r.label).join(' and ')} — focus change effort, comms and champions here first.`,
-    `**Most-affected domain:** ${colTotals[0].label}${colTotals[1] ? `, then ${colTotals[1].label}` : ''} across the register — align training and readiness to it.`,
-    hotspots.length ? `**${hotspots.length} hotspot${hotspots.length > 1 ? 's' : ''} at High or above:** ${hotspots.slice(0, 6).join('; ')}${hotspots.length > 6 ? ` +${hotspots.length - 6} more` : ''}.` : 'No cells rated High or above.',
-    `**Spread:** ${highPlus} of ${totalCells} cells are High+, ${counts.m || 0} Medium, ${(counts.l || 0) + (counts.vl || 0)} Low.`,
-    `**Lightest touch:** ${rowTotals[rowTotals.length - 1].label} — keep informed, but don't over-invest engagement there.`,
-    `**Recommendation:** sequence engagement starting with ${rowTotals[0].label}; prioritise ${colTotals[0].label} interventions, and revisit as the assessment is re-versioned.`,
-  ]
-  return out
-}
-
 // Retrieve a stored heat-map artifact. Works whether or not a client is named:
 //  • names a client  → that client's current heat map
 //  • no client, one available (RLS-scoped) → show it
 //  • no client, several → ask which
+
+
 async function runHeatmap(_params, text, ctx) {
   // Audiences first. A heat map built from the audiences a client actually maintains
   // beats a hand-authored artifact that goes stale the day it is captured — and it
@@ -330,38 +308,17 @@ async function runReport(_params, text, ctx) {
       .map(ph => ({ rag: 'g', name: `${ph.name} starts`, meta: p.name, due: fmtDate(ph.planned_start), _d: ph.planned_start }))),
   ].sort((a, b) => new Date(a._d) - new Date(b._d)).slice(0, 8)
 
-  let heatSection = null, heatInsights = []
-  // Audiences first, same as the canvas. The report used to read only the stored
-  // artifact, so editing a rating changed CORA's answer and left the Word pack
-  // showing the old grid — two answers to the same question, which is exactly how
-  // the bogus trend forecast survived in the last report.
-  if (cp.length === 1) {
-    const { data: auds } = await supabase.from('audiences')
-      .select('name, sort_order, headcount, impact_people, impact_process, impact_information, impact_technology, impact_note, impact_rated_on')
-      .eq('project_id', cp[0].id).order('sort_order')
-    const built = heatmapFromAudiences(auds ?? [])
-    if (built) {
-      const shaped = { cols: built.cols, rows: built.rows, commentary: built.commentary }
-      heatInsights = analyseHeatmap(shaped)
-      // Gaps are carried into the report too — a heat map missing a group must not
-      // read as complete just because it is rendered in Word.
-      const gaps = []
-      if (built.missing.length) gaps.push(`${built.missing.join(', ')} ${built.missing.length === 1 ? 'has' : 'have'} not been rated`)
-      if (built.unratedCells) gaps.push(`${built.unratedCells} domain rating${built.unratedCells === 1 ? '' : 's'} still blank`)
-      if (gaps.length) heatInsights = [...heatInsights, `**Gaps:** ${gaps.join('; ')}.`]
-      heatSection = {
-        heading: 'Change impact heat map', type: 'heatmap',
-        cols: built.cols, rows: built.rows,
-        source: built.ratedOn ? `audiences · rated ${fmtDate(built.ratedOn)}` : 'audiences',
-        headline: built.commentary, insights: heatInsights,
-      }
-    }
-  }
-  if (!heatSection && cid) {
-    const { data: arts } = await supabase.from('change_artifacts').select('title, version, source, data').eq('client_id', cid).eq('type', 'stakeholder_heatmap').eq('is_current', true).order('version', { ascending: false }).limit(1)
-    const a = arts?.[0]
-    if (a) { heatInsights = analyseHeatmap(a.data); heatSection = { heading: 'Change impact heat map', type: 'heatmap', cols: a.data.cols, rows: a.data.rows, version: a.version, source: a.source, headline: a.data.commentary, insights: heatInsights } }
-  }
+  // ── Sweep every registered aspect ──────────────────────────────────────────
+  // Not a list of sections chosen here — the registry decides, so a capability added
+  // to ChangeFlow is in this report by construction. Aspects that have nothing return
+  // an 'absent' result with a sentence about what capturing it would tell you, which
+  // is how the report stops describing less than the app knows.
+  const swept = await sweepAspects({
+    projects: cp, clientId: cid, today: data.today.toISOString().slice(0, 10), fmtDate,
+  })
+  const heatAspect = swept.find(a => a.key === 'heatmap')
+  const heatSection = heatAspect?.section ?? null
+  const heatInsights = heatSection?.insights ?? []
 
   const integrated = heatSection ? buildIntegratedInsight(heatSection, { pct, atRisk, avg, ragWord, upcoming }) : null
 
@@ -372,7 +329,6 @@ async function runReport(_params, text, ctx) {
   if (integrated) sections.push(integrated)
   sections.push({ heading: 'Programme snapshot', type: 'progress', empty: 'No projects yet.',
     rows: cp.map(p => ({ label: p.name, sub: `${p.members} ${p.members === 1 ? 'person' : 'people'}`, value: p.pct })).sort((a, b) => a.value - b.value) })
-  if (heatSection) sections.push(heatSection)
   if (cp.length) sections.push({ heading: 'Delivery & change timeline', type: 'projectTimeline', projects: cp.map(p => ({ id: p.id, name: p.name })), gantt: buildReportGantt(cp) })
   sections.push({ heading: 'Needs attention', type: 'list', rows: atRisk, empty: 'Everything is on track.' })
   sections.push({ heading: 'Upcoming (next 30 days)', type: 'list', rows: upcoming, empty: 'Nothing scheduled ahead.' })
@@ -411,47 +367,11 @@ async function runReport(_params, text, ctx) {
     }
   } catch { /* snapshots are optional — the report still stands without them */ }
 
-  // Gate and comms were built after this report and never wired in, so the Word output
-  // was missing the two sections the canvas leads with. Read from the same artifacts.
-  try {
-    const clientIds = [...new Set(cp.map(p => data.projRollup.find(x => x.id === p.id)?.client_id).filter(Boolean))]
-    if (clientIds.length === 1) {
-      const { data: arts } = await supabase.from('change_artifacts')
-        .select('type, data').eq('client_id', clientIds[0]).eq('is_current', true)
-      const of = t => (arts ?? []).find(a => a.type === t)?.data ?? null
-
-      const gate = of('readiness_gate')
-      if (gate?.units?.length) {
-        const RAG = { ready: 'g', watch: 'a', at_risk: 'r', not_assessed: 'n' }
-        const ready = gate.units.filter(u => u.status === 'ready').length
-        const unassessed = gate.units.filter(u => u.status === 'not_assessed')
-        sections.push({
-          heading: 'Business readiness', type: 'list',
-          rows: gate.units.map(u => ({ rag: RAG[u.status] ?? 'a', name: u.unit,
-            meta: `${u.met}/${u.total} criteria${u.owner ? ` · ${u.owner}` : ' · unassigned'}`, due: u.open ?? '' })),
-          commentary: `**${ready} of ${gate.units.length}** units ready${gate.decision_due ? `, decided ${fmtDate(gate.decision_due)}` : ''}.` +
-            (unassessed.length ? ` ${unassessed.map(u => u.unit).join(' and ')} not assessed — not counted as ready.` : ''),
-          empty: 'No gate captured.',
-        })
-      }
-
-      const comms = of('comms_plan')
-      if (comms?.items?.length) {
-        const RAG = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', deferred: 'a' }
-        const sent = comms.items.filter(i => i.status === 'sent').length
-        const blocked = comms.items.filter(i => i.status === 'blocked')
-        sections.push({
-          heading: 'Comms plan', type: 'list',
-          rows: comms.items.map(i => ({ rag: RAG[i.status] ?? 'a', name: i.message,
-            meta: `${i.audience}${i.size ? ` · ${i.size}` : ''} · ${i.channel}${i.owner ? ` · ${i.owner}` : ' · no owner'}`,
-            due: `${i.date ? fmtDate(i.date) : '—'} · ${i.status}` })),
-          commentary: `**${sent}/${comms.items.length}** sent, anchored to ${comms.anchor ?? 'the timeline'}.` +
-            (blocked.length ? ` ${blocked.length} blocked upstream — the source output needs finishing, not the comm.` : ''),
-          empty: 'No comms planned.',
-        })
-      }
-    }
-  } catch { /* artifacts are optional — the report stands without them */ }
+  // Every aspect that produced something, in registry order. Partial aspects contribute
+  // their section too — partial data is still data, it just travels with its caveats.
+  for (const sec of aspectSections(swept)) {
+    if (sec !== heatSection) sections.push(sec)
+  }
 
   const recs = []
   // The stored insight is a sentence fragment continuing "Recommendation:", so it starts
@@ -464,6 +384,12 @@ async function runReport(_params, text, ctx) {
   if (avg != null && avg < 3.5) recs.push('Lift survey readiness with targeted comms before the next gate.')
   if (!recs.length) recs.push('On track — maintain cadence and re-run this report as data updates.')
   sections.push({ heading: 'Recommendations', type: 'narrative', body: recs.join(' ') })
+
+  // What this pack does NOT cover, in the client register: states scope without reading
+  // as a list of failures. Omitting it entirely is what let the report quietly describe
+  // less than the app knew — the reader assumes they were shown everything.
+  const gapsSection = buildGapsSection(swept, { audience: 'client' })
+  if (gapsSection) sections.push(gapsSection)
 
   // Learning precedence for narrative sections: this client's saved edit > platform standard
   // default (learned across clients) > freshly generated. Data sections always stay live.
@@ -1059,7 +985,8 @@ async function runGates(_params, text, ctx) {
     g.decision_due ? `Decision due ${new Date(g.decision_due + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}${g.owner ? `, owned by ${g.owner}` : ''}.` : null,
     unassessed.length ? `${unassessed.map(u => u.unit).join(', ')} ${unassessed.length === 1 ? 'has' : 'have'} not been assessed and ${unassessed.length === 1 ? 'is' : 'are'} not counted as ready.` : null,
   ].filter(Boolean).join(' ')
-  return { type: 'list', title: `${g.gate_name ?? art.title}${scope.suffix}`, rows, commentary, empty: 'No units on this gate.' }
+  return withAspectFooter({ type: 'list', title: `${g.gate_name ?? art.title}${scope.suffix}`, rows, commentary, empty: 'No units on this gate.' },
+    { projects: scopedProjects(data, scope), clientId, today: data.today.toISOString().slice(0, 10) })
 }
 
 // ── Comms plan ────────────────────────────────────────────────────────────────
@@ -1098,7 +1025,8 @@ async function runComms(_params, text, ctx) {
     blocked.length ? `**${blocked.length} blocked**: ${blocked.map(b => `${b.message} — ${b.source}`).join('; ')}. Blocked is not the same as late; the upstream output is what needs finishing.` : null,
     deferred.length ? `${deferred.length} deferred by decision, not by slippage.` : null,
   ].filter(Boolean).join(' ')
-  return { type: 'list', title: `${art.title}${scope.suffix}`, rows, commentary, empty: 'No comms planned.' }
+  return withAspectFooter({ type: 'list', title: `${art.title}${scope.suffix}`, rows, commentary, empty: 'No comms planned.' },
+    { projects: scopedProjects(data, scope), clientId, today: data.today.toISOString().slice(0, 10) })
 }
 
 
@@ -1107,6 +1035,30 @@ async function runComms(_params, text, ctx) {
 // moving, what is in the way, who it lands on, are we ready, what needs deciding.
 // Everything is read from data already captured; nothing is invented, and missing
 // inputs are named at the end rather than skipped over.
+
+// ── Programme story ───────────────────────────────────────────────────────────
+// The update a change lead would give out loud: where we are, which way it is
+// moving, what is in the way, who it lands on, are we ready, what needs deciding.
+// Everything is read from data already captured; nothing is invented, and missing
+// inputs are named at the end rather than skipped over.
+
+// Every answer sweeps the registry, including single-section ones. A narrow question
+// gets a narrow answer, but never a false impression of completeness: the footer names
+// what else was looked at and what state it is in. Silence about the rest is what let a
+// heat-map answer read as a full assessment.
+async function withAspectFooter(answer, { projects = [], clientId = null, today }) {
+  try {
+    const swept = await sweepAspects({ projects, clientId, today: today ?? new Date().toISOString().slice(0, 10), fmtDate })
+    const line = completenessLine(swept, { audience: 'internal' })
+    const { partial, absent } = narrateGaps(swept, { audience: 'internal' })
+    if (!line) return answer
+    return { ...answer, aspectFooter: line,
+      aspectGaps: [...partial, ...absent].map(g => `**${g.label}** — ${g.text}`) }
+  } catch {
+    return answer   // the footer is context, never a reason to lose the answer
+  }
+}
+
 async function runStory(_params, text, ctx) {
   const data = await loadData()
   const scope = resolveScope(text, ctx, data)
@@ -1184,7 +1136,31 @@ async function runStory(_params, text, ctx) {
     { heading: 'What needs a decision', prose: byHeading('What needs a decision'), widget: null },
   ].filter(b => b.prose || b.widget)
 
-  return { type: 'story', title: story.title, subtitle: story.subtitle, blocks, gaps: story.gaps }
+  // ── Sweep, so the story covers the same ground as every other answer ────────
+  // The story used to read three artifacts it knew about by name. Anything added since
+  // — training, and whatever comes next — was simply absent from the narrative, and an
+  // absent aspect is indistinguishable from one with nothing to say.
+  const swept = await sweepAspects({
+    projects: [p], clientId: p.client_id ?? null,
+    today: typeof today === 'string' ? today : today.toISOString().slice(0, 10), fmtDate,
+  })
+
+  // Anything the registry produced that the hand-written blocks above did not already
+  // cover. Matched on heading so a section never appears twice.
+  const shown = new Set(blocks.map(b => b.heading))
+  for (const a of swept) {
+    if (!a.section || shown.has(a.section.heading)) continue
+    blocks.push({ heading: a.section.heading, prose: a.section.headline ?? null, widget: a.section })
+  }
+
+  // The closing block: what this story does NOT tell you. Internal register — direct,
+  // names the gap, says why it matters. Without it a reader takes the narrative as the
+  // whole picture, which is the failure this registry exists to prevent.
+  const gapsBlock = buildGapsSection(swept, { audience: 'internal' })
+  if (gapsBlock) blocks.push({ heading: gapsBlock.heading, prose: gapsBlock.body, widget: null })
+
+  return { type: 'story', title: story.title, subtitle: story.subtitle, blocks,
+    gaps: story.gaps, completeness: completenessLine(swept) }
 }
 
 const RUNNERS = {
