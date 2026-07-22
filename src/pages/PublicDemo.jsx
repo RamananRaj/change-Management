@@ -88,6 +88,7 @@ function answerGoLive(d) {
   const c = summariseComms(d.comms.map(x => ({ ...x, derived_status: x.derived_status })))
   const gl = d.milestones.find(m => /go.?live/i.test(m.name || ''))
   const head = (d.audiences ?? []).reduce((n, a) => n + (a.headcount ?? 0), 0)
+  const noCount = (d.audiences ?? []).filter(a => a.headcount == null)
   return {
     lead: `Not a straight yes — and part of the reason is that I cannot see all of it.${gl ? ` Go-Live is set for **${fmtDate(gl.milestone_date ?? gl.ends_on ?? gl.starts_on)}**.` : ''}`,
     stats: [
@@ -97,7 +98,9 @@ function answerGoLive(d) {
     ],
     gap: unrated.length
       ? `**${unrated.map(a => a.name).join(', ')}** ${unrated.length === 1 ? 'has' : 'have'} no impact assessment. ${unrated.length === 1 ? 'It is' : 'They are'} not counted as low — ${unrated.length === 1 ? 'it is' : 'they are'} simply not assessed, and any readiness figure that ignored that would be flattering.`
-      : 'Every audience has been assessed, so nothing is hidden behind an average.',
+      : noCount.length
+        ? `Every audience is assessed, but **${noCount.map(a => a.name).join(', ')}** ${noCount.length === 1 ? 'has' : 'have'} no headcount. So "${noCount.length === 1 ? 'high impact' : 'high impact'}" there is a rating with no number of people behind it — that ${head.toLocaleString()} is the people I can count, not everyone affected.`
+        : 'Every audience is assessed and counted, so nothing is hidden behind an average.',
     next: ['audiences', 'comms'],
     source: `${d.audiences.length} audiences · ${d.comms.length} comms items`,
   }
@@ -107,7 +110,7 @@ function answerAudiences(d) {
   const ranked = (d.audiences ?? [])
     .map(a => {
       const vals = [a.impact_people, a.impact_process, a.impact_information, a.impact_technology]
-      const score = vals.reduce((n, v) => n + (v === 'h' ? 3 : v === 'm' ? 2 : v === 'l' ? 1 : 0), 0)
+      const score = vals.reduce((n, v) => n + (v === 'vh' ? 4 : v === 'h' ? 3 : v === 'm' ? 2 : v === 'l' ? 1 : 0), 0)
       const rated = vals.filter(Boolean).length
       return { ...a, score, rated }
     })
@@ -195,7 +198,12 @@ function answerTimeline(d) {
 
 const BUILDERS = { tracking: answerTracking, golive: answerGoLive, audiences: answerAudiences, comms: answerComms, timeline: answerTimeline }
 
-const HEAT = { h: ['High', '#FEE2E2', '#B32B2E'], m: ['Med', '#FEF0DC', '#9C5A11'], l: ['Low', '#DCFCE7', '#0E7C5A'] }
+// 'vh' is a real rating in the data — omitting it made the worst-affected
+// audience render as 'not assessed', which is the exact failure this product exists to prevent.
+const HEAT = {
+  vh: ['V.High', '#FECACA', '#991B1B'], h: ['High', '#FEE2E2', '#B32B2E'],
+  m:  ['Med',    '#FEF0DC', '#9C5A11'], l: ['Low',  '#DCFCE7', '#0E7C5A'],
+}
 
 // ─── page ───────────────────────────────────────────────────────────────────
 export default function PublicDemo() {
