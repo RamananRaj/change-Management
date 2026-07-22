@@ -198,6 +198,33 @@ h1 .grad{background:linear-gradient(105deg,var(--gold) 8%,#F5C87E 52%,var(--ice)
 .ans-gap i{color:var(--gold);font-style:normal;flex:none;font-size:13px}
 .ans-gap p{font-size:13.2px;line-height:1.58;color:rgba(216,231,239,.88)}
 .ans-gap b{color:var(--gold);font-weight:700}
+/* Swimlane gantt. The question asks for the timeline across the programme, so the
+   answer has to BE lanes — a chronological list proves nothing about swimlanes,
+   which is exactly the mistake the deck's timeline slide made. */
+.gantt{position:relative;margin-top:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;padding:13px 15px 28px}
+.g-scale{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.g-scale .g-track{background:none;height:13px}
+.g-scale i{position:absolute;top:0;font-size:9.4px;font-style:normal;color:rgba(216,231,239,.42);
+  transform:translateX(-50%);white-space:nowrap}
+.g-lane{display:flex;align-items:center;gap:7px;font-size:11.4px;font-weight:700;color:#fff;
+  margin:11px 0 6px;letter-spacing:.02em}
+.g-lane:first-child{margin-top:0}
+.g-swatch{width:8px;height:8px;border-radius:2px;display:block;flex:none}
+.g-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.g-lbl{width:136px;flex:none;font-size:11.2px;color:rgba(216,231,239,.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-track{position:relative;flex:1;height:15px;background:rgba(255,255,255,.05);border-radius:4px}
+.g-bar{position:absolute;top:3px;height:9px;border-radius:3px;display:block;min-width:3px}
+.g-bar.pt{width:9px!important;height:9px;border-radius:50%;margin-left:-4px}
+/* The marker sits in an overlay spanning only the track area (label column + gap
+   excluded), so its percentage matches the bars' percentage. Positioning it
+   against the padded box put Go-Live in the label gutter — eight months early. */
+.g-overlay{position:absolute;left:calc(15px + 146px);right:15px;top:12px;bottom:26px;pointer-events:none}
+.g-gl{position:absolute;top:0;bottom:0;width:0;border-left:1.5px dashed var(--gold);display:block}
+.g-gl-lbl{position:absolute;bottom:-19px;transform:translateX(-50%);font-size:9.6px;font-weight:700;
+  color:var(--gold);white-space:nowrap;font-style:normal}
+@media (max-width:620px){ .g-lbl{width:88px;font-size:10.2px} .g-overlay{left:calc(15px + 98px)} }
+
 .ans-src{margin-top:13px;padding-top:11px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:rgba(216,231,239,.42)}
 .next-lbl{font-size:11px;color:rgba(216,231,239,.45);margin:16px 0 8px}
 .live-fallback{font-size:13px;color:rgba(216,231,239,.5);text-align:center;padding:14px 0}
@@ -1230,17 +1257,37 @@ const A = {
     }
   },
   timeline(d){
-    const dated = d.milestones.map(m=>({...m,on:m.milestone_date??m.ends_on??m.starts_on})).filter(m=>m.on)
-      .sort((a,b)=>String(a.on).localeCompare(String(b.on)))
+    const all = d.milestones.map(m=>({
+      name:m.name, lane:(m.lane||'other').toLowerCase(),
+      s:m.starts_on ?? m.milestone_date, e:m.ends_on ?? m.milestone_date,
+      point:!!m.milestone_date && !m.starts_on,
+    })).filter(m=>m.s)
     const un = d.milestones.filter(m=>!(m.milestone_date??m.ends_on??m.starts_on))
-    const gl = dated.find(m=>/go.?live/i.test(m.name||''))
-    const lanes = [...new Set(dated.map(m=>m.lane).filter(Boolean))]
+    if (!all.length) return { lead:'Nothing on the timeline carries a date yet.', next:['comms','tracking'], src:'0 dated milestones' }
+
+    const min = all.reduce((a,m)=>m.s<a?m.s:a, all[0].s)
+    const max = all.reduce((a,m)=>(m.e||m.s)>a?(m.e||m.s):a, all[0].e||all[0].s)
+    const t   = x => (Date.parse(x+'T00:00:00') - Date.parse(min+'T00:00:00'))
+                   / (Date.parse(max+'T00:00:00') - Date.parse(min+'T00:00:00'))
+    const gl  = all.find(m=>/go.?live/i.test(m.name))
+    // Group into lanes — this IS the answer to the question, so it has to be
+    // shown as lanes, not flattened into a chronological list.
+    const order = ['change','delivery','comms','training','other']
+    const lanes = order.map(k=>({ key:k, name:k[0].toUpperCase()+k.slice(1),
+                                  rows: all.filter(m=>m.lane===k).sort((a,b)=>a.s.localeCompare(b.s)) }))
+                       .filter(l=>l.rows.length)
     return {
-      lead: dated.length ? `The whole programme on one timeline — **${lanes.length} swimlanes**, change and delivery together, running ${fmtD(dated[0].on)} to ${fmtD(dated[dated.length-1].on)}.${gl?` Go-Live is **${fmtD(gl.on)}**.`:''}` : 'Nothing on the timeline carries a date yet.',
-      stats:[{v:String(dated.length),k:'Milestones scheduled'},{v:String(lanes.length),k:'Swimlanes'},{v:gl?fmtD(gl.on).replace(/ \d{4}$/,''):'—',k:'Go-Live'}],
-      rows: dated.slice(0,6).map(m=>({n:m.name, m:`${m.lane?m.lane+' · ':''}${fmtD(m.on)}`, tone:/go.?live/i.test(m.name)?'gl':null})),
-      gap: un.length ? `${un.length} milestone${un.length===1?'':'s'} ${un.length===1?'has':'have'} no date — not assumed on time, simply unscheduled, and nothing can anchor to ${un.length===1?'it':'them'} until ${un.length===1?'it does':'they do'}.` : 'Every milestone carries a date, so everything anchored to one moves when it moves.',
-      next:['comms','tracking'], src:`${d.milestones.length} milestones · ${d.lanes.length} lanes`,
+      lead:`The whole programme on one timeline — **${lanes.length} swimlanes**, change and delivery side by side, ${fmtD(min)} to ${fmtD(max)}.${gl?` Go-Live **${fmtD(gl.s)}**.`:''}`,
+      gantt:{ lanes, t, gl: gl?t(gl.s)*100:null, min, max, ticks:(()=>{
+        const out=[], a=new Date(min+'T00:00:00'), b=new Date(max+'T00:00:00')
+        const c=new Date(a.getFullYear(), Math.floor(a.getMonth()/3)*3, 1)
+        while(c<=b){ const iso=c.toISOString().slice(0,10)
+          if(iso>=min) out.push({x:t(iso)*100, l:c.toLocaleDateString('en-AU',{month:'short',year:'2-digit'})})
+          c.setMonth(c.getMonth()+3) }
+        return out })() },
+      gap: un.length ? `${un.length} milestone${un.length===1?'':'s'} ${un.length===1?'has':'have'} no date — not assumed on time, simply unscheduled, and nothing can anchor to ${un.length===1?'it':'them'} yet.`
+                     : 'Every milestone carries a date, so everything anchored to one moves when it moves.',
+      next:['comms','tracking'], src:`${all.length} dated milestones · ${lanes.length} lanes`,
     }
   },
 }
@@ -1299,9 +1346,19 @@ const A = {
       }).join('')}</div>` : ''
       return `<div class="ans-row ${r.tone??''}"><span class="pip"></span><div class="t"><div class="n">${esc(r.n)}</div>${r.m?`<div class="m">${esc(r.m)}</div>`:''}</div>${cells}</div>`
     }).join('')}</div>` : ''
+    const LANEC = { change:'#1C7293', delivery:'#E8913A', comms:'#4A9BB8', training:'#5AA9C4', other:'#64748B' }
+    const gantt = a.gantt ? `<div class="gantt"><div class="g-scale"><span class="g-lbl"></span><span class="g-track">${a.gantt.ticks.map(k=>`<i style="left:${k.x}%">${k.l}</i>`).join('')}</span></div>${a.gantt.lanes.map(l=>`
+      <div class="g-lane"><span class="g-swatch" style="background:${LANEC[l.key]}"></span>${esc(l.name)}</div>
+      ${l.rows.map(r=>{
+        const x = a.gantt.t(r.s)*100, w = Math.max(a.gantt.t(r.e||r.s)*100 - x, 1.2)
+        return `<div class="g-row"><span class="g-lbl">${esc(r.name)}</span><span class="g-track">
+          <i class="g-bar${r.point?' pt':''}" style="left:${x}%;width:${r.point?'0':w+'%'};background:${LANEC[l.key]}"></i></span></div>`
+      }).join('')}`).join('')}
+      ${a.gantt.gl!=null?`<span class="g-overlay"><i class="g-gl" style="left:${a.gantt.gl}%"></i><b class="g-gl-lbl" style="left:${a.gantt.gl}%">Go-Live</b></span>`:''}
+    </div>` : ''
     const gap = a.gap ? `<div class="ans-gap"><i>⚠</i><p>${bold(a.gap)}</p></div>` : ''
     ansEl.innerHTML = `<span class="av">CO</span><div class="col">
-      <p class="lead">${bold(a.lead)}</p>${stats}${rows}${gap}
+      <p class="lead">${bold(a.lead)}</p>${stats}${gantt}${rows}${gap}
       <p class="ans-src">Sources · ${esc(a.src)} · read from the live programme, no model called</p></div>`
     ansEl.hidden = false
   }
