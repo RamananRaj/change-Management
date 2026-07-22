@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChangeFlow — change management that tells you the truth</title>
+<meta name="description" content="ChangeFlow runs enterprise change programmes end to end — impact, readiness, training and comms — with an AI that names the gaps instead of averaging them away.">
+<!-- ⚠ REVIEW MOCKUP — NOT THE PUBLIC SITE.
+     Anything under public/ is served by Vercel, so this URL is reachable by anyone who
+     has it. The page still carries placeholder pricing and an internal screenshot, so it
+     must not be indexed. Remove this tag only when the content is real and signed off. -->
+<meta name="robots" content="noindex, nofollow, noarchive">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   ChangeFlow marketing site — mockup
+   Palette carried over from the sales deck (Ocean Gradient) so the site, the
+   deck and the product read as one thing.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --ink:#080D1C;        /* near-black navy — hero and footer beds        */
+  --ink-2:#0E1530;      /* one step up, for banding                      */
+  --navy:#21295C;       /* deck NAVY                                     */
+  --deep:#065A82;       /* deck DEEP                                     */
+  --teal:#1C7293;       /* deck TEAL                                     */
+  --ice:#D8E7EF;        /* deck ICE                                      */
+  --gold:#E8913A;       /* deck GOLD — the single accent, used sparingly */
+  --brand:#1F4E79;      /* the in-app brand blue                         */
+  --paper:#FFFFFF;
+  --paper-2:#F6F9FC;
+  --line:#E3EAF2;
+  --slate:#5A6B84;
+  --slate-d:#8FA3BF;
+  --ok:#10B981;
+  --warn:#F59E0B;
+  --stop:#EF4444;
+  --r:16px;
+  --maxw:1180px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  color:#12203A;background:var(--paper);-webkit-font-smoothing:antialiased;
+  font-size:17px;line-height:1.65;
+}
+h1,h2,h3,h4{margin:0;line-height:1.12;letter-spacing:-.025em;font-weight:700}
+p{margin:0}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+.serif{font-family:'Instrument Serif',Georgia,serif;font-style:italic;font-weight:400;letter-spacing:-.01em}
+
+/* ── reveal on scroll ────────────────────────────────────────────────── */
+.rv{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.rv.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){.rv{opacity:1;transform:none;transition:none}}
+
+/* ══ NAV ══════════════════════════════════════════════════════════════ */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;transition:background .35s,box-shadow .35s,backdrop-filter .35s;padding:16px 0}
+nav.solid{background:rgba(255,255,255,.86);backdrop-filter:blur(18px) saturate(180%);box-shadow:0 1px 0 rgba(18,32,58,.09)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;gap:24px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.16em;font-size:15px;color:#fff;transition:color .35s}
+nav.solid .logo{color:var(--brand)}
+.logo .mark{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--teal),var(--gold));display:grid;place-items:center;flex:none;
+  box-shadow:0 2px 10px rgba(28,114,147,.4)}
+.logo .mark::after{content:"";width:9px;height:9px;border:2.5px solid #fff;border-radius:50%;border-right-color:transparent;transform:rotate(-45deg)}
+.nav-links{display:flex;gap:30px;font-size:14.5px;font-weight:500;color:rgba(255,255,255,.82);transition:color .35s}
+nav.solid .nav-links{color:var(--slate)}
+.nav-links a:hover{color:var(--gold)}
+.nav-cta{display:flex;align-items:center;gap:14px}
+.btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;font-family:inherit;font-weight:600;
+  border-radius:11px;padding:12px 22px;font-size:15px;transition:transform .18s,box-shadow .25s,background .25s,color .25s;white-space:nowrap}
+.btn:active{transform:translateY(1px)}
+.btn-gold{background:var(--gold);color:#fff;box-shadow:0 4px 18px rgba(232,145,58,.34)}
+.btn-gold:hover{background:#d5822c;box-shadow:0 8px 26px rgba(232,145,58,.46)}
+.btn-ghost{background:transparent;color:rgba(255,255,255,.9);border:1px solid rgba(255,255,255,.28)}
+.btn-ghost:hover{background:rgba(255,255,255,.1);color:#fff}
+nav.solid .btn-ghost{color:var(--brand);border-color:rgba(31,78,121,.28)}
+nav.solid .btn-ghost:hover{background:rgba(31,78,121,.06)}
+.btn-lg{padding:15px 30px;font-size:16.5px;border-radius:13px}
+.menu-btn{display:none;background:none;border:0;cursor:pointer;padding:8px;color:#fff}
+nav.solid .menu-btn{color:var(--brand)}
+
+/* ══ HERO ═════════════════════════════════════════════════════════════ */
+header.hero{position:relative;background:var(--ink);color:#fff;overflow:hidden;padding:150px 0 96px}
+.mesh{position:absolute;inset:0;pointer-events:none}
+.mesh i{position:absolute;border-radius:50%;filter:blur(90px);opacity:.5;display:block}
+.mesh i:nth-child(1){width:620px;height:620px;background:var(--deep);top:-190px;left:-140px;animation:drift 22s ease-in-out infinite}
+.mesh i:nth-child(2){width:520px;height:520px;background:var(--teal);top:70px;right:-130px;animation:drift 27s ease-in-out infinite reverse}
+.mesh i:nth-child(3){width:400px;height:400px;background:var(--gold);bottom:-210px;left:44%;opacity:.24;animation:drift 32s ease-in-out infinite}
+@keyframes drift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(34px,-30px) scale(1.09)}}
+@media (prefers-reduced-motion:reduce){.mesh i{animation:none}}
+.grid-ov{position:absolute;inset:0;pointer-events:none;opacity:.5;
+  background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);
+  background-size:62px 62px;
+  mask-image:radial-gradient(ellipse 100% 62% at 50% 34%,#000 35%,transparent 78%);
+  -webkit-mask-image:radial-gradient(ellipse 100% 62% at 50% 34%,#000 35%,transparent 78%)}
+.hero-in{position:relative;z-index:2;text-align:center;max-width:920px;margin:0 auto}
+.pill{display:inline-flex;align-items:center;gap:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
+  color:var(--ice);font-size:12.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;padding:8px 17px;border-radius:100px;margin-bottom:30px;
+  backdrop-filter:blur(10px)}
+.pip{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 0 rgba(232,145,58,.65);animation:pulse 2.4s infinite}
+@keyframes pulse{70%{box-shadow:0 0 0 9px rgba(232,145,58,0)}100%{box-shadow:0 0 0 0 rgba(232,145,58,0)}}
+h1{font-size:clamp(2.3rem,4.6vw,3.5rem);font-weight:800;margin-bottom:24px;max-width:22ch;margin-left:auto;margin-right:auto;text-wrap:balance}
+h1 .grad{background:linear-gradient(105deg,var(--gold) 8%,#F5C87E 52%,var(--ice) 96%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.hero-sub{font-size:clamp(1.06rem,2.05vw,1.28rem);color:rgba(216,231,239,.86);max-width:760px;margin:0 auto 38px;line-height:1.62}
+.hero-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:22px}
+.hero-note{font-size:13.5px;color:rgba(216,231,239,.5)}
+
+/* hero product shot */
+.shot-hero{position:relative;z-index:2;max-width:1080px;margin:66px auto 0;padding:0 28px}
+.frame{border-radius:14px;overflow:hidden;background:#fff;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 40px 90px -20px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.05)}
+.frame .bar{display:flex;align-items:center;gap:7px;padding:11px 15px;background:#1A2340;border-bottom:1px solid rgba(255,255,255,.07)}
+.frame .bar b{width:11px;height:11px;border-radius:50%;background:#3C4870;display:block}
+.frame .bar .url{margin-left:12px;font-size:11.5px;color:rgba(216,231,239,.52);font-weight:500;letter-spacing:.02em;
+  background:rgba(255,255,255,.05);padding:4px 13px;border-radius:6px}
+.frame img{width:100%;display:block}
+.frame.light{border-color:var(--line);box-shadow:0 24px 60px -18px rgba(18,32,58,.28),0 0 0 1px rgba(18,32,58,.05)}
+.frame.light .bar{background:#F2F6FA;border-bottom-color:var(--line)}
+.frame.light .bar b{background:#D2DCE8}
+.frame.light .bar .url{color:var(--slate-d);background:#fff}
+/* teaser: the one real screenshot is cropped and faded into the hero bed, so it
+   reads as a glimpse of the product rather than a full screen nobody can parse */
+.teaser{position:relative;max-height:500px;overflow:hidden}
+.teaser::after{content:"";position:absolute;inset:auto 0 0 0;height:132px;pointer-events:none;
+  background:linear-gradient(to bottom,rgba(8,13,28,0),rgba(8,13,28,.62) 62%,var(--ink))}
+.teaser-cta{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:4;
+  display:inline-flex;align-items:center;gap:8px;font-size:13.4px;font-weight:600;color:var(--ice);
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);backdrop-filter:blur(12px);
+  padding:9px 18px;border-radius:100px;transition:background .25s,transform .25s}
+.teaser-cta:hover{background:rgba(255,255,255,.15);transform:translateX(-50%) translateY(-2px)}
+
+/* ══ LOGO / STAT STRIP ════════════════════════════════════════════════ */
+.strip{background:var(--ink-2);border-top:1px solid rgba(255,255,255,.07);padding:34px 0;color:var(--ice)}
+.strip-in{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;text-align:center}
+.strip .n{font-size:29px;font-weight:800;color:#fff;letter-spacing:-.03em}
+.strip .n span{color:var(--gold)}
+.strip .l{font-size:12.5px;color:rgba(216,231,239,.56);margin-top:3px;letter-spacing:.03em}
+
+/* ══ ONE-LINE CLAIM BAND ══════════════════════════════════════════════ */
+.claim{background:var(--ink-2);padding:54px 0;text-align:center}
+.claim p{font-size:clamp(1.15rem,2.5vw,1.6rem);font-weight:600;color:rgba(216,231,239,.5);
+  letter-spacing:-.02em;line-height:1.45;max-width:900px;margin:0 auto}
+.claim p span{color:#fff;display:block}
+
+/* ══ SECTION PRIMITIVES ═══════════════════════════════════════════════ */
+section{padding:88px 0}
+.sec-head{max-width:660px;margin:0 auto 52px;text-align:center}
+.eyebrow{display:inline-block;font-size:12.5px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);margin-bottom:16px}
+h2{font-size:clamp(1.95rem,4vw,2.85rem);margin-bottom:18px}
+.lede{font-size:1.1rem;color:var(--slate);line-height:1.68}
+.tint{background:var(--paper-2)}
+.dark{background:var(--ink);color:#fff}
+.dark h2{color:#fff}.dark .lede{color:rgba(216,231,239,.76)}.dark .eyebrow{color:var(--gold)}
+
+/* ══ PROBLEM CARDS ════════════════════════════════════════════════════ */
+.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:32px 28px;transition:transform .3s,box-shadow .3s,border-color .3s}
+.card:hover{transform:translateY(-4px);box-shadow:0 18px 44px -14px rgba(18,32,58,.16);border-color:#CFDCEA}
+.card .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;margin-bottom:18px;font-size:20px}
+.card h3{font-size:1.16rem;margin-bottom:10px}
+.card p{color:var(--slate);font-size:15.3px;line-height:1.64}
+.card .quote{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);font-size:14.2px;color:#2E4468;font-style:italic}
+
+/* ══ FEATURE ROWS (alternating screenshot + copy) ═════════════════════ */
+.row{display:grid;grid-template-columns:1fr 1.22fr;gap:60px;align-items:center;margin-bottom:88px}
+.row:last-child{margin-bottom:0}
+.row.flip .copy{order:2}
+.row.flip .art{order:1}
+/* Grid items default to min-width:auto, so a wide child (the heat map table)
+   silently stretches the track and pushes the whole page sideways on mobile.
+   min-width:0 lets them shrink; the table gets its own scroller below. */
+.row>*{min-width:0}
+.punch{font-size:clamp(1.7rem,3.4vw,2.35rem);font-weight:800;letter-spacing:-.03em;margin-bottom:16px;line-height:1.1}
+.punch em{font-family:'Instrument Serif',Georgia,serif;font-style:italic;font-weight:400;color:var(--gold)}
+.row p.body{color:var(--slate);font-size:16.4px;margin-bottom:22px;line-height:1.68}
+.dark .row p.body{color:rgba(216,231,239,.74)}
+.ticks{list-style:none;padding:0;margin:0 0 24px;display:grid;gap:11px}
+.ticks li{display:flex;gap:11px;align-items:flex-start;font-size:15.4px;color:#22374F}
+.dark .ticks li{color:rgba(216,231,239,.86)}
+.ticks svg{flex:none;margin-top:4px}
+.tag{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--teal);background:rgba(28,114,147,.09);padding:6px 13px;border-radius:100px;margin-bottom:18px}
+.dark .tag{color:var(--gold);background:rgba(232,145,58,.13)}
+.tag.only{color:#0E7C5A;background:rgba(16,185,129,.11)}
+
+/* status legend used in the comms row */
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
+.legend span{display:inline-flex;align-items:center;gap:7px;font-size:13.4px;font-weight:600;color:#22374F}
+.dark .legend span{color:rgba(216,231,239,.84)}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+
+/* ══════════════════════════════════════════════════════════════════════
+   UI ILLUSTRATIONS
+   Purpose-built rather than screenshotted. A real screen carries a hundred
+   details and makes one point; these carry one detail and make it loudly.
+   The single real screenshot lives in the hero, as a teaser.
+   ══════════════════════════════════════════════════════════════════════ */
+.ui{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;
+  box-shadow:0 22px 54px -20px rgba(18,32,58,.24)}
+.ui-top{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 18px;background:#F8FBFD;border-bottom:1px solid var(--line)}
+.ui-top .t{font-size:13px;font-weight:700;color:#22374F;letter-spacing:.01em}
+.ui-top .s{font-size:11.6px;color:var(--slate-d);font-weight:500}
+.ui-body{padding:20px 18px}
+.dark .ui{background:#111A34;border-color:rgba(255,255,255,.11);box-shadow:0 30px 70px -22px rgba(0,0,0,.6)}
+.dark .ui-top{background:rgba(255,255,255,.035);border-bottom-color:rgba(255,255,255,.08)}
+.dark .ui-top .t{color:#fff}
+.dark .ui-top .s{color:rgba(216,231,239,.45)}
+
+/* — CORA answer card — */
+.q-chip{display:inline-flex;align-items:center;gap:9px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);
+  border-radius:12px 12px 12px 4px;padding:11px 16px;font-size:14.4px;color:#fff;margin-bottom:20px;max-width:88%}
+.cora-a{display:flex;gap:13px}
+.cora-av{width:31px;height:31px;border-radius:9px;flex:none;background:linear-gradient(135deg,var(--teal),var(--gold));
+  display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;letter-spacing:.04em}
+.cora-t{flex:1;font-size:14.6px;color:rgba(216,231,239,.9);line-height:1.62}
+.cora-t b{color:#fff;font-weight:600}
+.mini-stats{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:16px 0}
+.ms{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:12px 14px}
+.ms .v{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.03em;line-height:1.1}
+.ms .k{font-size:11.6px;color:rgba(216,231,239,.5);margin-top:3px}
+.gap-note{display:flex;gap:11px;background:rgba(232,145,58,.11);border:1px solid rgba(232,145,58,.28);
+  border-left:3px solid var(--gold);border-radius:9px;padding:13px 15px;margin-top:4px}
+.gap-note .gi{color:var(--gold);font-size:14px;flex:none;line-height:1.5}
+.gap-note p{font-size:13.8px;color:rgba(216,231,239,.88);line-height:1.55}
+.gap-note b{color:var(--gold);font-weight:700}
+.src{margin-top:15px;padding-top:13px;border-top:1px solid rgba(255,255,255,.08);
+  font-size:11.8px;color:rgba(216,231,239,.42)}
+
+/* — phase scope chips — */
+.chips{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:20px}
+.chip{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:10px 15px;font-size:13.8px;font-weight:600;
+  border:1.5px solid var(--line);color:var(--slate-d);background:#fff;transition:all .25s}
+.chip.on{border-color:var(--teal);background:rgba(28,114,147,.07);color:var(--brand)}
+.chip.off{background:#F6F9FC;border-style:dashed;color:#A9B8CC}
+.chip .cb{width:16px;height:16px;border-radius:5px;flex:none;display:grid;place-items:center;
+  border:1.5px solid #CFDCEA;background:#fff}
+.chip.on .cb{background:var(--teal);border-color:var(--teal)}
+.scope-out{font-size:11.4px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#A9B8CC;margin-bottom:9px}
+.bar-row{display:flex;align-items:center;gap:13px;margin-top:6px}
+.bar{flex:1;height:9px;border-radius:100px;background:#EDF2F7;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:100px;background:linear-gradient(90deg,var(--teal),var(--deep));
+  width:60%;animation:grow 1.5s cubic-bezier(.16,1,.3,1)}
+@keyframes grow{from{width:0}}
+.bar-row b{font-size:17px;font-weight:800;color:var(--brand);letter-spacing:-.02em}
+.calc{font-size:12.6px;color:var(--slate);margin-top:11px}
+.calc b{color:var(--brand)}
+
+/* — mini timeline — */
+.tl-head{display:grid;grid-template-columns:118px 1fr;gap:12px;font-size:10.6px;font-weight:700;color:var(--slate-d);
+  letter-spacing:.07em;text-transform:uppercase;padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:13px}
+.tl-months{display:grid;grid-template-columns:repeat(6,1fr)}
+.tl-lane{margin-bottom:15px}
+.tl-lane-n{font-size:11.4px;font-weight:700;color:#22374F;margin-bottom:7px;display:flex;align-items:center;gap:7px}
+.tl-lane-n i{width:7px;height:7px;border-radius:2px;flex:none}
+.tl-row{display:grid;grid-template-columns:118px 1fr;gap:12px;align-items:center;margin-bottom:6px}
+.tl-row .lbl{font-size:12.2px;color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-track{position:relative;height:19px;background:#F4F8FB;border-radius:5px}
+.tl-bar{position:absolute;top:3px;height:13px;border-radius:4px}
+.tl-ms{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--gold);z-index:3}
+.tl-ms::after{content:"";position:absolute;top:-4px;left:-3px;width:8px;height:8px;background:var(--gold);transform:rotate(45deg)}
+.tl-flag{display:inline-flex;align-items:center;gap:6px;background:rgba(232,145,58,.11);color:#B96C18;
+  font-size:11.6px;font-weight:700;padding:5px 11px;border-radius:100px;margin-top:8px}
+
+/* — comms rows — */
+.cm-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:13px;
+  border-bottom:1px solid var(--line);margin-bottom:6px}
+.cm-anchor{font-size:12.6px;color:var(--slate)}
+.cm-anchor b{color:var(--brand);font-weight:700}
+.cm-moved{font-size:11.4px;font-weight:700;color:#B96C18;background:rgba(232,145,58,.11);padding:4px 10px;border-radius:100px}
+.cm{display:grid;grid-template-columns:11px 1fr auto;gap:12px;align-items:center;padding:11px 2px;border-bottom:1px solid #F2F6FA}
+.cm:last-child{border-bottom:0}
+.cm .dot{width:9px;height:9px;border-radius:50%}
+.cm .m{font-size:13.8px;color:#22374F;font-weight:500;line-height:1.35}
+.cm .why{font-size:11.8px;color:var(--slate-d);margin-top:2px}
+.cm .why b{color:#B96C18;font-weight:600}
+.cm .st{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;padding:4px 10px;border-radius:100px;white-space:nowrap}
+.st-sent{background:rgba(16,185,129,.11);color:#0E7C5A}
+.st-over{background:rgba(239,68,68,.1);color:#C2373A}
+.st-blk{background:rgba(245,158,11,.13);color:#B96C18}
+.st-plan{background:#F2F6FA;color:#8FA3BF}
+
+/* — impact heat map — */
+.hm-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -2px}
+.hm{width:100%;min-width:330px;border-collapse:separate;border-spacing:5px;font-size:12.4px}
+.hm th{font-size:10.6px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--slate-d);
+  padding:0 0 4px;text-align:center;font-weight:700}
+.hm th:first-child{text-align:left}
+.hm td{text-align:center;padding:9px 4px;border-radius:7px;font-weight:700;font-size:11.4px}
+.hm td:first-child{text-align:left;font-weight:500;color:#22374F;font-size:12.8px;padding-left:2px;white-space:nowrap}
+.hm td .sz{display:block;font-size:10.6px;color:var(--slate-d);font-weight:500;margin-top:1px}
+.h-hi{background:rgba(239,68,68,.15);color:#B32B2E}
+.h-md{background:rgba(245,158,11,.19);color:#9C5A11}
+.h-lo{background:rgba(16,185,129,.14);color:#0E7C5A}
+.h-na{background:repeating-linear-gradient(45deg,#F4F8FB,#F4F8FB 5px,#E8EFF6 5px,#E8EFF6 10px);
+  color:#8FA3BF;font-weight:600;font-size:10.4px;border:1px dashed #D2DCE8}
+.hm-note{display:flex;gap:10px;align-items:flex-start;margin-top:15px;padding-top:14px;border-top:1px solid var(--line);
+  font-size:12.8px;color:var(--slate);line-height:1.55}
+.hm-note b{color:var(--brand)}
+
+/* ══ FEATURE GRID ═════════════════════════════════════════════════════ */
+.grid6{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.cell{background:#fff;padding:28px 26px;transition:background .25s}
+.cell:hover{background:#FAFCFE}
+.cell .ic{display:block;margin-bottom:14px}
+.cell .ic svg{width:23px;height:23px;stroke:var(--teal);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;fill:none}
+.cell h4{font-size:1.02rem;margin-bottom:7px}
+.cell p{font-size:14.4px;color:var(--slate);line-height:1.6}
+
+/* ══ PHASES ═══════════════════════════════════════════════════════════ */
+.phases{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;position:relative}
+.ph{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:26px 20px;transition:transform .3s,background .3s,border-color .3s}
+.ph:hover{transform:translateY(-5px);background:rgba(255,255,255,.08);border-color:rgba(232,145,58,.4)}
+.ph .num{font-size:12px;font-weight:800;letter-spacing:.12em;color:var(--gold);margin-bottom:11px}
+.ph h4{font-size:1.1rem;color:#fff;margin-bottom:8px}
+.ph p{font-size:14px;color:rgba(216,231,239,.66);line-height:1.58}
+.scope-note{margin-top:30px;text-align:center;font-size:15px;color:rgba(216,231,239,.7)}
+.scope-note b{color:var(--gold)}
+.align{max-width:760px;margin:26px auto 0;padding-top:24px;border-top:1px solid rgba(255,255,255,.09);
+  text-align:center;font-size:14.4px;line-height:1.68;color:rgba(216,231,239,.56)}
+.align b{color:rgba(255,255,255,.92);font-weight:600}
+
+/* ══ PRICING ══════════════════════════════════════════════════════════ */
+.price{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;align-items:stretch}
+.pl{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:34px 30px;display:flex;flex-direction:column;transition:transform .3s,box-shadow .3s}
+.pl:hover{transform:translateY(-4px);box-shadow:0 20px 48px -16px rgba(18,32,58,.16)}
+.pl.feat{border:2px solid var(--gold);box-shadow:0 20px 54px -18px rgba(232,145,58,.34);position:relative}
+.pl.feat::before{content:"Most likely fit";position:absolute;top:-12px;left:50%;transform:translateX(-50%);
+  background:var(--gold);color:#fff;font-size:11.5px;font-weight:700;letter-spacing:.07em;padding:5px 15px;border-radius:100px;white-space:nowrap}
+.pl h3{font-size:1.22rem;margin-bottom:5px}
+.pl .who{font-size:13.6px;color:var(--slate-d);margin-bottom:20px}
+.pl .amt{font-size:2.3rem;font-weight:800;letter-spacing:-.035em;color:var(--brand)}
+.pl .per{font-size:14px;color:var(--slate);font-weight:500;margin-bottom:22px}
+.pl ul{list-style:none;padding:0;margin:0 0 26px;display:grid;gap:11px;flex:1}
+.pl li{font-size:14.6px;color:#22374F;display:flex;gap:10px;align-items:flex-start;line-height:1.52}
+.pl li svg{flex:none;margin-top:3px}
+.pl .btn{width:100%;justify-content:center}
+.btn-outline{background:#fff;color:var(--brand);border:1.5px solid var(--line)}
+.btn-outline:hover{border-color:var(--brand);background:#F6F9FC}
+.price-note{text-align:center;margin-top:32px;font-size:14px;color:var(--slate-d)}
+
+/* ══ LEAD FORM ════════════════════════════════════════════════════════ */
+.lead-wrap{display:grid;grid-template-columns:.92fr 1.08fr;gap:60px;align-items:start}
+.lead-copy h2{color:#fff;margin-bottom:20px}
+.lead-copy p{color:rgba(216,231,239,.78);font-size:16.5px;margin-bottom:28px;line-height:1.68}
+.lead-pts{list-style:none;padding:0;margin:0;display:grid;gap:16px}
+.lead-pts li{display:flex;gap:14px;align-items:flex-start}
+.lead-pts .n{width:27px;height:27px;border-radius:8px;background:rgba(232,145,58,.16);color:var(--gold);
+  display:grid;place-items:center;font-size:13px;font-weight:800;flex:none}
+.lead-pts b{color:#fff;font-weight:600;font-size:15.4px;display:block;margin-bottom:2px}
+.lead-pts span{color:rgba(216,231,239,.66);font-size:14.4px;line-height:1.55}
+
+form.lead{background:#fff;border-radius:20px;padding:36px;box-shadow:0 34px 78px -22px rgba(0,0,0,.55)}
+form.lead h3{font-size:1.34rem;margin-bottom:6px}
+form.lead .fsub{font-size:14.4px;color:var(--slate);margin-bottom:26px}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.fg{display:flex;flex-direction:column;gap:7px}
+.fg.full{grid-column:1/-1}
+label{font-size:13.4px;font-weight:600;color:#22374F}
+label .req{color:var(--stop)}
+input,select,textarea{font-family:inherit;font-size:15px;color:#12203A;padding:12px 14px;border:1.5px solid var(--line);
+  border-radius:10px;background:#fff;transition:border-color .2s,box-shadow .2s;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3.5px rgba(28,114,147,.13)}
+input.err,select.err,textarea.err{border-color:var(--stop);box-shadow:0 0 0 3.5px rgba(239,68,68,.1)}
+textarea{resize:vertical;min-height:92px;line-height:1.55}
+.msg{font-size:12.6px;color:var(--stop);display:none}
+.msg.show{display:block}
+.hp{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important}
+.consent{display:flex;gap:11px;align-items:flex-start;margin:6px 0 22px;font-size:13.4px;color:var(--slate);line-height:1.55}
+.consent input{width:17px;height:17px;margin-top:2px;flex:none;accent-color:var(--teal)}
+form.lead .btn{width:100%;justify-content:center}
+.privacy{text-align:center;font-size:12.6px;color:var(--slate-d);margin-top:15px}
+
+/* success state — shows where the lead lands */
+.done{display:none;text-align:center;padding:14px 0 4px}
+.done.show{display:block;animation:pop .5s cubic-bezier(.16,1,.3,1)}
+@keyframes pop{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:none}}
+.done .check{width:58px;height:58px;border-radius:50%;background:rgba(16,185,129,.11);display:grid;place-items:center;margin:0 auto 20px}
+.done h3{font-size:1.34rem;margin-bottom:9px}
+.done>p{color:var(--slate);font-size:15.2px;margin-bottom:24px;line-height:1.6}
+.receipt{background:#0E1530;border-radius:13px;padding:17px 19px;text-align:left;color:var(--ice);font-size:13.4px}
+.receipt .rh{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+  color:rgba(216,231,239,.52);margin-bottom:13px}
+.receipt .rr{display:flex;justify-content:space-between;gap:16px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+.receipt .rr:last-child{border-bottom:0}
+.receipt .rr b{color:#fff;font-weight:600;text-align:right}
+.badge-new{background:rgba(232,145,58,.2);color:var(--gold);font-size:11px;font-weight:700;padding:2px 9px;border-radius:100px;letter-spacing:.06em}
+.done .again{margin-top:20px;background:none;border:0;color:var(--teal);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:underline}
+
+/* ══ FOOTER ═══════════════════════════════════════════════════════════ */
+footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;font-size:14.4px}
+.foot-top{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:40px;padding-bottom:40px;border-bottom:1px solid rgba(255,255,255,.08)}
+.foot-top .logo{color:#fff;margin-bottom:14px}
+.foot-top p{font-size:14.2px;line-height:1.62;max-width:290px}
+.fcol h5{color:#fff;font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin:0 0 15px}
+.fcol a{display:block;margin-bottom:10px;transition:color .2s}
+.fcol a:hover{color:var(--gold)}
+.foot-bot{display:flex;justify-content:space-between;gap:20px;padding-top:26px;font-size:13.4px;flex-wrap:wrap}
+.mock-flag{background:rgba(232,145,58,.14);border:1px solid rgba(232,145,58,.3);color:var(--gold);
+  padding:3px 12px;border-radius:100px;font-size:12.4px;font-weight:600}
+
+/* ══ RESPONSIVE ═══════════════════════════════════════════════════════ */
+@media (max-width:960px){
+  .nav-links{display:none}
+  .row,.lead-wrap{grid-template-columns:1fr;gap:40px}
+  .row.flip .copy,.row.flip .art{order:initial}
+  .row{margin-bottom:76px}
+  .cards3,.grid6,.price,.road{grid-template-columns:1fr}
+  .grid6{gap:1px}
+  .phases{grid-template-columns:repeat(2,1fr)}
+  .strip-in{grid-template-columns:repeat(2,1fr);gap:28px}
+  .foot-top{grid-template-columns:1fr 1fr}
+}
+@media (max-width:620px){
+  body{font-size:16px}
+  section{padding:74px 0}
+  header.hero{padding:124px 0 72px}
+  .wrap{padding:0 20px}
+  .fr{grid-template-columns:1fr}
+  form.lead{padding:26px 22px}
+  .phases{grid-template-columns:1fr}
+  .nav-cta .btn-ghost{display:none}
+  .foot-top{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════ NAV ══════════════════════════════ -->
+<nav id="nav">
+  <div class="wrap nav-in">
+    <a href="#top" class="logo"><span class="mark"></span>CHANGEFLOW</a>
+    <div class="nav-links">
+      <a href="#cora">CORA</a>
+      <a href="#platform">Platform</a>
+      <a href="#phases">How it works</a>
+      <a href="#pricing">Pricing</a>
+    </div>
+    <div class="nav-cta">
+      <a href="#" class="btn btn-ghost">Sign in</a>
+      <a href="#demo" class="btn btn-gold">Book a demo</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════ HERO ═════════════════════════════ -->
+<header class="hero" id="top">
+  <div class="mesh"><i></i><i></i><i></i></div>
+  <div class="grid-ov"></div>
+
+  <div class="wrap hero-in">
+    <div class="pill"><span class="pip"></span>AI-native change management</div>
+    <h1>Change management that <span class="grad">admits what it doesn't know.</span></h1>
+    <p class="hero-sub">
+      ChangeFlow runs enterprise change programmes end to end — impact, readiness, training and communications
+      in one place. CORA, the built-in AI, answers from your programme data and <strong style="color:#fff;font-weight:600">names the gaps
+      instead of averaging them away</strong>.
+    </p>
+    <div class="hero-btns">
+      <a href="#demo" class="btn btn-gold btn-lg">Book a demo →</a>
+      <a href="#cora" class="btn btn-ghost btn-lg">See CORA answer a question</a>
+    </div>
+    <p class="hero-note">30-minute walkthrough on your own scenario · No credit card · Pilot places open now</p>
+  </div>
+
+  <!-- The single real screenshot on the page — cropped and faded into the hero
+       so it works as a teaser rather than a wall of unreadable UI. -->
+  <div class="shot-hero rv">
+    <div class="frame teaser">
+      <div class="bar"><b></b><b></b><b></b><span class="url">app.changeflow.io / canvas</span></div>
+      <!-- Swap to img/hero-timeline.webp to lead with the timeline instead. -->
+      <img src="img/hero-cora.webp" alt="CORA summarising a live programme: phase completion, velocity and what the numbers do not cover"
+           width="1600" height="842" loading="eager">
+      <a href="#demo" class="teaser-cta">See the whole thing on a call →</a>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════ THE PROBLEM — one line ═══════════════════ -->
+<!-- This used to be a full section of three cards. The same three points are
+     made better, and with evidence, by the platform rows further down — so
+     here it is just the setup, in a single breath. -->
+<div class="claim">
+  <div class="wrap">
+    <p class="rv">Change programmes rarely fail because nobody was watching.
+      <span>They fail because the thing everyone was watching was quietly wrong.</span></p>
+  </div>
+</div>
+
+<!-- ══════════════════════════ CORA / AI ════════════════════════════ -->
+<section class="dark" id="cora">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">Meet CORA</span>
+      <h2>An AI that tells you<br>what it <span class="serif" style="color:var(--gold)">doesn't</span> have.</h2>
+      <p class="lede">
+        Most AI assistants are a chat box bolted onto a database, confidently filling silence. CORA is wired into
+        the programme model — and when the data isn't there, it says so.
+      </p>
+    </div>
+
+    <div class="row rv">
+      <div class="copy">
+        <span class="tag">Grounded, not generative</span>
+        <h3 class="punch">Ask the programme<br>a <em>real</em> question.</h3>
+        <p class="body">
+          "Are we ready for go-live?" "Which audiences have no training coverage?" "What changed this week?"
+          CORA answers from your live programme — impact ratings, readiness scores, training coverage, the comms
+          schedule — and shows the workings.
+        </p>
+        <ul class="ticks">
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b style="color:#fff">Answers from your data</b> — not from a general model's guess about change management</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b style="color:#fff">Names its own blind spots</b> — "no readiness survey has been run for Field Operations" beats a confident average</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b style="color:#fff">Separates internal from client-facing</b> — one sweep, two registers, so the steering pack never leaks the internal note</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span><b style="color:#fff">Drafts the pack</b> — steering summary, readiness brief, exec update, in your words not the model's</span></li>
+        </ul>
+        <a href="#demo" class="btn btn-gold">Watch CORA on your own programme →</a>
+      </div>
+      <div class="art">
+        <div class="ui">
+          <div class="ui-top"><span class="t">CORA · Meridian ERP rollout</span><span class="s">grounded in live programme data</span></div>
+          <div class="ui-body">
+            <div class="q-chip">Are we ready for go-live?</div>
+            <div class="cora-a">
+              <div class="cora-av">CO</div>
+              <div class="cora-t">
+                <b>Not yet — and one of the reasons is that I can't see part of it.</b>
+                Readiness is tracking at 72% across the five audiences that have been surveyed, and training
+                coverage sits at 58% with two weeks to go.
+                <div class="mini-stats">
+                  <div class="ms"><div class="v">72%</div><div class="k">Readiness · 5 of 6 audiences</div></div>
+                  <div class="ms"><div class="v">58%</div><div class="k">Training coverage</div></div>
+                </div>
+                <div class="gap-note">
+                  <span class="gi">⚠</span>
+                  <p><b>Field Operations has no readiness survey.</b> 340 people, rated high impact on process
+                    and technology. They are <b>not</b> in the 72% — that figure covers the audiences I have
+                    data for, not the programme.</p>
+                </div>
+                <div class="src">Sources · 6 audiences · 3 readiness surveys · 14 activities · comms schedule — read 4 minutes ago</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PLATFORM ═════════════════════════════ -->
+<section id="platform">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">The platform</span>
+      <h2>Three things every change<br>programme argues about.</h2>
+      <p class="lede">Scope, communications, and who is actually affected. ChangeFlow turns each one into a
+        number you can defend in a steering meeting.</p>
+    </div>
+
+    <!-- scope -->
+    <div class="row rv">
+      <div class="copy">
+        <span class="tag only">Nobody else does this</span>
+        <h3 class="punch">Run three phases,<br>not <em>five</em>.</h3>
+        <p class="body">
+          Every methodology tool assumes you run the whole method. Real programmes don't. Choose the phases this
+          programme actually needs, and the maths follows: completion is measured against the scope you chose,
+          not the method's full length.
+        </p>
+        <ul class="ticks">
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Deferred phases read as <b>"not part of this programme"</b> — never as 0% or overdue</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Phases open on the plan, all at once, or held back — the admin decides, and the decision is recorded</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>A phase closes when the work under it is <b>finished</b> — not when someone ticks a box</span></li>
+        </ul>
+      </div>
+      <div class="art">
+        <div class="ui">
+          <div class="ui-top"><span class="t">Programme scope · Kestrel Depot Consolidation</span><span class="s">confirmed 14 Jul</span></div>
+          <div class="ui-body">
+            <div class="chips">
+              <span class="chip on"><span class="cb"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Diagnose</span>
+              <span class="chip on"><span class="cb"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Design</span>
+              <span class="chip on"><span class="cb"><svg width="9" height="9" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Embed</span>
+            </div>
+            <div class="scope-out">Not part of this programme</div>
+            <div class="chips" style="margin-bottom:18px">
+              <span class="chip off"><span class="cb"></span>Engage</span>
+              <span class="chip off"><span class="cb"></span>Evaluate</span>
+            </div>
+            <div class="bar-row"><div class="bar"><i></i></div><b>60%</b></div>
+            <p class="calc">Measured across <b>3 selected phases</b>, not 5. Engage and Evaluate read as
+              <b>out of scope</b> everywhere — never as 0%, never as overdue.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- comms -->
+    <div class="row flip rv">
+      <div class="copy">
+        <span class="tag">Communications</span>
+        <h3 class="punch">Blocked is<br><em>not</em> late.</h3>
+        <p class="body">
+          Every message anchors to a milestone with an offset — "seven days before go-live". Move go-live and the
+          whole cascade moves. And when a message is past due, ChangeFlow asks why before it colours the dot.
+        </p>
+        <div class="legend" style="margin-bottom:22px">
+          <span><i class="dot" style="background:#EF4444"></i>Overdue — nothing was stopping it</span>
+          <span><i class="dot" style="background:#F59E0B"></i>Blocked — waiting on an upstream output</span>
+          <span><i class="dot" style="background:#10B981"></i>Sent</span>
+          <span><i class="dot" style="background:#94A3B8"></i>Planned</span>
+        </div>
+        <p class="body" style="font-size:15.4px">
+          Two problems, two owners, two different conversations. Most tools collapse both into one amber dot and
+          leave the change manager to work out which is which.
+        </p>
+      </div>
+      <div class="art">
+        <div class="ui">
+          <div class="ui-top"><span class="t">Comms plan</span><span class="s">9 items · anchored</span></div>
+          <div class="ui-body">
+            <div class="cm-head">
+              <span class="cm-anchor">Anchored to <b>Go-Live · 15 Feb 2027</b></span>
+              <span class="cm-moved">↻ moved +14 days — all dates followed</span>
+            </div>
+            <div class="cm"><span class="dot" style="background:#10B981"></span>
+              <div><div class="m">Leader briefing pack</div><div class="why">Go-Live −21d · 12 Jan</div></div>
+              <span class="st st-sent">Sent</span></div>
+            <div class="cm"><span class="dot" style="background:#10B981"></span>
+              <div><div class="m">All-staff announcement</div><div class="why">Go-Live −18d · 15 Jan</div></div>
+              <span class="st st-sent">Sent</span></div>
+            <div class="cm"><span class="dot" style="background:#EF4444"></span>
+              <div><div class="m">Manager talking points</div><div class="why">Go-Live −10d · 23 Jan — nothing upstream is blocking it</div></div>
+              <span class="st st-over">Overdue</span></div>
+            <div class="cm"><span class="dot" style="background:#F59E0B"></span>
+              <div><div class="m">Training enrolment invite</div><div class="why">Go-Live −7d · 26 Jan — waiting on <b>Training build complete</b></div></div>
+              <span class="st st-blk">Blocked</span></div>
+            <div class="cm"><span class="dot" style="background:#94A3B8"></span>
+              <div><div class="m">Go-live day comms</div><div class="why">Go-Live +0d · 15 Feb</div></div>
+              <span class="st st-plan">Planned</span></div>
+            <div class="cm"><span class="dot" style="background:#94A3B8"></span>
+              <div><div class="m">Week-one support reminder</div><div class="why">Go-Live +5d · 20 Feb</div></div>
+              <span class="st st-plan">Planned</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- audiences -->
+    <div class="row rv">
+      <div class="copy">
+        <span class="tag">Audiences &amp; impact</span>
+        <h3 class="punch">Unknown is<br><em>never</em> zero.</h3>
+        <p class="body">
+          Rate every audience across people, process, information and technology, and the heat map shows who is
+          carrying the most change. Where an impact hasn't been assessed yet, the cell says <em>not assessed</em> —
+          it does not quietly render as low.
+        </p>
+        <ul class="ticks">
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Headcount per audience, so "high impact" carries a number of actual people</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Training needs matrix and coverage reported by the people leaders who actually know</span></li>
+          <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>Readiness surveys per phase with thresholds you set, not thresholds we assumed</span></li>
+        </ul>
+      </div>
+      <div class="art">
+        <div class="ui">
+          <div class="ui-top"><span class="t">Impact heat map</span><span class="s">6 audiences · 4 domains</span></div>
+          <div class="ui-body">
+            <div class="hm-scroll">
+            <table class="hm">
+              <thead><tr><th>Audience</th><th>People</th><th>Process</th><th>Info</th><th>Tech</th></tr></thead>
+              <tbody>
+                <tr><td>Billing Operations <span class="sz">210 people</span></td>
+                  <td class="h-hi">High</td><td class="h-hi">High</td><td class="h-md">Med</td><td class="h-hi">High</td></tr>
+                <tr><td>Contact Centre <span class="sz">480 people</span></td>
+                  <td class="h-hi">High</td><td class="h-md">Med</td><td class="h-md">Med</td><td class="h-md">Med</td></tr>
+                <tr><td>Field Operations <span class="sz">340 people</span></td>
+                  <td class="h-na">Not assessed</td><td class="h-hi">High</td><td class="h-na">Not assessed</td><td class="h-hi">High</td></tr>
+                <tr><td>Finance <span class="sz">64 people</span></td>
+                  <td class="h-lo">Low</td><td class="h-md">Med</td><td class="h-hi">High</td><td class="h-lo">Low</td></tr>
+                <tr><td>People &amp; Culture <span class="sz">28 people</span></td>
+                  <td class="h-md">Med</td><td class="h-lo">Low</td><td class="h-lo">Low</td><td class="h-lo">Low</td></tr>
+              </tbody>
+            </table>
+            </div>
+            <div class="hm-note">
+              <span style="color:var(--gold);font-size:14px">⚠</span>
+              <span><b>Two cells are hatched, not green.</b> Field Operations hasn't been assessed on people or
+                information impact. That's an open question sitting in front of you — not a quiet low score.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ FEATURE GRID ═════════════════════════ -->
+<section class="tint">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">And the rest of it</span>
+      <h2>Everything else a programme runs on.</h2>
+    </div>
+    <div class="grid6 rv">
+      <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M7 14h5M7 17.5h9"/></svg></span>
+        <h4>Shared timeline</h4>
+        <p>Change phases and delivery workstreams in swimlanes on one canvas. Drag a milestone, everything anchored to it follows.</p></div>
+      <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg></span>
+        <h4>Reports that write themselves</h4>
+        <p>Native Word and PowerPoint packs on a schedule — steering summary, readiness brief, exec update.</p></div>
+      <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-3.8-.9L3 20.5l1.6-4.7A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.4z"/><path d="M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01"/></svg></span>
+        <h4>Conversation in context</h4>
+        <p>Channels, DMs and files attached to the programme. Mention CORA inline and it answers in thread.</p></div>
+      <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 2.5 8 12 13l9.5-5z"/><path d="M6 10.5V16c0 1.7 2.7 3 6 3s6-1.3 6-3v-5.5"/><path d="M21.5 8v6"/></svg></span>
+        <h4>Training coverage</h4>
+        <p>A needs matrix per audience, coverage reported by the people leaders who know, gaps visible until closed.</p></div>
+      <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M3 20V4M3 20h18"/><path d="m6.5 15 4-4.5 3.5 3 5-6.5"/><path d="M19 7h1.5v3"/></svg></span>
+        <h4>Trend &amp; velocity</h4>
+        <p>Daily snapshots build real history — with a forecast that admits when there's too little of it to project.</p></div>
+      <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/><path d="M12 14.5v2"/></svg></span>
+        <h4>Isolation at the database</h4>
+        <p>Tenant separation enforced by row-level security in the database, not by the app remembering to filter.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PHASES ═══════════════════════════════ -->
+<section class="dark" id="phases">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">How it works</span>
+      <h2>Five phases. Take what you need.</h2>
+      <p class="lede">A structured path from "something is changing" to "it stuck" — with content, exercises and
+        artifacts at every step, tailored to your industry.</p>
+    </div>
+    <div class="phases rv">
+      <div class="ph"><div class="num">PHASE 01</div><h4>Diagnose</h4>
+        <p>What is changing, who it lands on, and how ready they are today.</p></div>
+      <div class="ph"><div class="num">PHASE 02</div><h4>Design</h4>
+        <p>The change approach, the audiences, the impact ratings and the plan to close them.</p></div>
+      <div class="ph"><div class="num">PHASE 03</div><h4>Engage</h4>
+        <p>Communications, sponsors, champions — the work of bringing people with you.</p></div>
+      <div class="ph"><div class="num">PHASE 04</div><h4>Embed</h4>
+        <p>Training, go-live support and the readiness gates that decide if you go.</p></div>
+      <div class="ph"><div class="num">PHASE 05</div><h4>Evaluate</h4>
+        <p>Did it stick? Adoption, residual gaps and what the next programme should know.</p></div>
+    </div>
+    <p class="scope-note rv">
+      Only need Diagnose, Design and Embed? <b>Select those three.</b> The other two are marked as
+      out of scope everywhere they appear — and your completion percentage is calculated against what you
+      actually signed up to do.
+    </p>
+
+    <!-- Says the quiet part out loud. A Prosci-certified change manager will
+         notice these aren't ADKAR within ten seconds, so we get there first. -->
+    <p class="align rv">
+      These five phases are <b>structured around the process groups in the ACMP Standard for Change
+      Management</b> — assess impact and readiness, form the strategy, build the plan, execute it, close it out.
+      They are not ADKAR and not Prosci's three phases, because <b>ChangeFlow is a delivery platform, not a
+      competing methodology.</b> Run Prosci, Kotter or your own house model inside it — the phases are where your
+      work lives, not a replacement for how you do it.
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PRICING ══════════════════════════════ -->
+<section class="tint" id="pricing">
+  <div class="wrap">
+    <div class="sec-head rv">
+      <span class="eyebrow">Pricing</span>
+      <h2>Priced for one change manager<br>or a whole practice.</h2>
+      <p class="lede">Monthly, in Australian dollars, cancel any time. Pilot pricing is available while we're
+        onboarding our first cohort.</p>
+    </div>
+    <div class="price rv">
+      <div class="pl">
+        <h3>Practitioner</h3>
+        <p class="who">An independent change manager running their own engagements</p>
+        <div class="amt">$149</div><div class="per">per month, one user</div>
+        <ul>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Up to 2 active programmes</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>All five phases, full artifact library</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>CORA, fair-use limits</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Word &amp; PowerPoint reporting</li>
+        </ul>
+        <a href="#demo" class="btn btn-outline">Talk to us</a>
+      </div>
+
+      <div class="pl feat">
+        <h3>Programme</h3>
+        <p class="who">An in-house change team running enterprise transformation</p>
+        <div class="amt">$690</div><div class="per">per month, up to 15 users</div>
+        <ul>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Unlimited programmes and audiences</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Delivery swimlanes &amp; comms cascade</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Built-in messaging &amp; scheduled packs</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Client admin roles &amp; onboarding support</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Priority roadmap input</li>
+        </ul>
+        <a href="#demo" class="btn btn-gold">Book a demo</a>
+      </div>
+
+      <div class="pl">
+        <h3>Partner</h3>
+        <p class="who">Consultancies running change for multiple clients at once</p>
+        <div class="amt">Custom</div><div class="per">per seat, volume tiers</div>
+        <ul>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Multi-client workspace, isolated per client</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Your methodology loaded as templates</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Reseller margin &amp; co-branded reporting</li>
+          <li><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#1C7293" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>Named support contact</li>
+        </ul>
+        <a href="#demo" class="btn btn-outline">Discuss partnership</a>
+      </div>
+    </div>
+    <p class="price-note">All prices in AUD, excluding GST. Pilot cohort pricing available — ask when you book.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════ LEAD FORM ════════════════════════════ -->
+<section class="dark" id="demo" style="position:relative;overflow:hidden">
+  <div class="mesh" style="opacity:.55"><i style="width:520px;height:520px;background:var(--deep);top:-160px;right:-120px"></i><i style="width:400px;height:400px;background:var(--gold);bottom:-200px;left:-100px;opacity:.2"></i></div>
+  <div class="wrap" style="position:relative;z-index:2">
+    <div class="lead-wrap">
+
+      <div class="lead-copy rv">
+        <span class="eyebrow">Book a demo</span>
+        <h2>Bring us a programme<br>you're worried about.</h2>
+        <p>
+          The demo works best when it isn't a demo. Tell us about a change programme you're running — or one that
+          went sideways — and we'll walk it through ChangeFlow on the call.
+        </p>
+        <ul class="lead-pts">
+          <li><span class="n">1</span><div><b>30 minutes, no deck</b><span>We open the product and use your scenario. If it's not a fit, we'll say so on the call.</span></div></li>
+          <li><span class="n">2</span><div><b>A real answer on gaps</b><span>Ask what it can't do yet. You'll get a straight answer on the call rather than a discovery in week six.</span></div></li>
+          <li><span class="n">3</span><div><b>Pilot places</b><span>We're onboarding a small first cohort with extended free access in exchange for candid feedback.</span></div></li>
+        </ul>
+      </div>
+
+      <div class="rv">
+        <!-- ─────────────────────────────────────────────────────────────
+             DEMO REQUEST FORM
+             Mockup behaviour: validates, then shows the success state. It does
+             not submit anywhere yet. Field names map 1:1 to the proposed
+             public.leads table so wiring it up is a drop-in.
+             ───────────────────────────────────────────────────────────── -->
+        <form class="lead" id="leadForm" novalidate>
+          <div id="formBody">
+            <h3>Request a demo</h3>
+            <p class="fsub">We reply within one business day, from a real person.</p>
+
+            <!-- honeypot: bots fill it, humans never see it -->
+            <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+            <div class="fr">
+              <div class="fg">
+                <label for="fname">Full name <span class="req">*</span></label>
+                <input id="fname" name="full_name" type="text" placeholder="Jane Whitfield" autocomplete="name">
+                <span class="msg" data-for="fname">Please tell us your name</span>
+              </div>
+              <div class="fg">
+                <label for="femail">Work email <span class="req">*</span></label>
+                <input id="femail" name="email" type="email" placeholder="jane@company.com.au" autocomplete="email">
+                <span class="msg" data-for="femail">Please enter a valid work email</span>
+              </div>
+            </div>
+
+            <div class="fr">
+              <div class="fg">
+                <label for="forg">Organisation <span class="req">*</span></label>
+                <input id="forg" name="organisation" type="text" placeholder="Company or consultancy" autocomplete="organization">
+                <span class="msg" data-for="forg">Which organisation are you with?</span>
+              </div>
+              <div class="fg">
+                <label for="frole">Your role</label>
+                <select id="frole" name="role">
+                  <option value="">Select…</option>
+                  <option>Change Manager</option>
+                  <option>Head of Change / Transformation</option>
+                  <option>Programme / Project Manager</option>
+                  <option>Product Owner</option>
+                  <option>Consultant / Partner</option>
+                  <option>Executive Sponsor</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="fr">
+              <div class="fg">
+                <label for="fsize">Programme size</label>
+                <select id="fsize" name="programme_size">
+                  <option value="">Select…</option>
+                  <option>Under 100 people impacted</option>
+                  <option>100 – 500</option>
+                  <option>500 – 2,000</option>
+                  <option>2,000 – 10,000</option>
+                  <option>Over 10,000</option>
+                </select>
+              </div>
+              <div class="fg">
+                <label for="ftime">Timeframe</label>
+                <select id="ftime" name="timeframe">
+                  <option value="">Select…</option>
+                  <option>Live now — need help</option>
+                  <option>Starting in the next 3 months</option>
+                  <option>Planning for later this year</option>
+                  <option>Researching / no date yet</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="fr">
+              <div class="fg full">
+                <label for="fmsg">What are you trying to change?</label>
+                <textarea id="fmsg" name="message" placeholder="A sentence or two is plenty — the system you're replacing, who it affects, what's worrying you."></textarea>
+              </div>
+            </div>
+
+            <label class="consent">
+              <input type="checkbox" id="fconsent" name="consent">
+              <span>I'm happy for ChangeFlow to contact me about this request. No newsletter, no list — just a reply.</span>
+            </label>
+            <span class="msg" data-for="fconsent" style="margin:-16px 0 16px">Please tick to let us reply</span>
+
+            <button type="submit" class="btn btn-gold btn-lg" id="submitBtn">Request a demo →</button>
+            <p class="privacy">Your details go to the ChangeFlow team only. Never sold, never shared.</p>
+          </div>
+
+          <!-- success state — shows the lead landing in the admin queue -->
+          <div class="done" id="doneState">
+            <div class="check">
+              <svg width="27" height="27" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="#10B981" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <h3>Thanks — that's in.</h3>
+            <p>We'll come back to you within one business day with a couple of times that work.</p>
+            <div class="receipt">
+              <div class="rh"><span class="dot" style="background:#10B981"></span>ChangeFlow Admin → Leads <span class="badge-new">NEW</span></div>
+              <div class="rr"><span>Lead</span><b id="rName">—</b></div>
+              <div class="rr"><span>Organisation</span><b id="rOrg">—</b></div>
+              <div class="rr"><span>Source</span><b>Website · Book a demo</b></div>
+              <div class="rr"><span>Status</span><b style="color:#E8913A">New — unassigned</b></div>
+              <div class="rr"><span>Received</span><b id="rWhen">—</b></div>
+            </div>
+            <button type="button" class="again" id="againBtn">Submit another request</button>
+          </div>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ FOOTER ═══════════════════════════════ -->
+<footer>
+  <div class="wrap">
+    <div class="foot-top">
+      <div>
+        <div class="logo"><span class="mark"></span>CHANGEFLOW</div>
+        <p>Change management that admits what it doesn't know. Built in Australia for programmes that can't afford
+          a green dashboard and a red go-live.</p>
+      </div>
+      <div class="fcol"><h5>Product</h5>
+        <a href="#cora">CORA</a><a href="#platform">Platform</a><a href="#phases">How it works</a><a href="#pricing">Pricing</a></div>
+      <div class="fcol"><h5>Company</h5>
+        <a href="#pricing">Pricing</a><a href="#demo">Book a demo</a><a href="#demo">Partner programme</a><a href="#demo">Contact</a></div>
+      <div class="fcol"><h5>Legal</h5>
+        <a href="#">Privacy policy</a><a href="#">Terms of service</a><a href="#">Security</a><a href="#">Data residency</a></div>
+    </div>
+    <div class="foot-bot">
+      <span>© 2026 ChangeFlow. All rights reserved.</span>
+      <span class="mock-flag">Mockup — not a live site</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   1. Nav solidifies once you scroll off the hero
+   ══════════════════════════════════════════════════════════════════════ */
+const nav = document.getElementById('nav');
+const onScroll = () => nav.classList.toggle('solid', window.scrollY > 40);
+onScroll();
+addEventListener('scroll', onScroll, { passive: true });
+
+/* ══════════════════════════════════════════════════════════════════════
+   2. Reveal on scroll — anything with .rv fades up once, then stops
+      being observed so we're not paying for it on every frame.
+   ══════════════════════════════════════════════════════════════════════ */
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }
+}, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+document.querySelectorAll('.rv').forEach(el => io.observe(el));
+
+/* ══════════════════════════════════════════════════════════════════════
+   3. The demo request form
+      MOCKUP ONLY — validates and shows the success state. Nothing is sent.
+      Field `name` attributes match the proposed public.leads columns, so
+      swapping the fake submit for a real insert is a small, contained change.
+   ══════════════════════════════════════════════════════════════════════ */
+const form   = document.getElementById('leadForm');
+const body   = document.getElementById('formBody');
+const done   = document.getElementById('doneState');
+const btn    = document.getElementById('submitBtn');
+
+const showErr = (id, on) => {
+  const field = document.getElementById(id);
+  const msg   = document.querySelector(`.msg[data-for="${id}"]`);
+  if (field && field.type !== 'checkbox') field.classList.toggle('err', on);
+  if (msg) msg.classList.toggle('show', on);
+};
+
+// Clear a field's error as soon as the person starts fixing it — an error
+// that persists while you type reads as though nothing you do is working.
+['fname','femail','forg','fconsent'].forEach(id => {
+  const el = document.getElementById(id);
+  el?.addEventListener('input',  () => showErr(id, false));
+  el?.addEventListener('change', () => showErr(id, false));
+});
+
+form.addEventListener('submit', (ev) => {
+  ev.preventDefault();
+
+  // Honeypot: a hidden field only an automated filler would populate. If it
+  // has a value we show the success state anyway — a bot told it failed just
+  // tries again, so the quieter response is to look like it worked.
+  if (form.website.value) { body.style.display = 'none'; done.classList.add('show'); return; }
+
+  const name    = document.getElementById('fname').value.trim();
+  const email   = document.getElementById('femail').value.trim();
+  const org     = document.getElementById('forg').value.trim();
+  const consent = document.getElementById('fconsent').checked;
+
+  // Deliberately loose email check. Strict regexes reject valid addresses and
+  // the real validation is the reply landing in their inbox anyway.
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
+
+  let bad = false;
+  if (!name)    { showErr('fname', true);    bad = true; }
+  if (!emailOk) { showErr('femail', true);   bad = true; }
+  if (!org)     { showErr('forg', true);     bad = true; }
+  if (!consent) { showErr('fconsent', true); bad = true; }
+
+  if (bad) {
+    document.querySelector('.err, .msg.show')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+
+  // Pending state — a button that does nothing for a second reads as broken.
+  btn.textContent = 'Sending…';
+  btn.style.opacity = '.72';
+
+  setTimeout(() => {
+    // ── This is where the real insert goes ──────────────────────────────
+    // await supabase.from('leads').insert({ full_name: name, email, ... })
+    // Anon insert is allowed by RLS; nobody but an admin can read the table.
+    // ────────────────────────────────────────────────────────────────────
+    document.getElementById('rName').textContent = name;
+    document.getElementById('rOrg').textContent  = org;
+    document.getElementById('rWhen').textContent = new Date().toLocaleString('en-AU', {
+      day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit'
+    });
+
+    body.style.display = 'none';
+    done.classList.add('show');
+    done.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 850);
+});
+
+// Let the reviewer run through the form more than once without a page reload.
+document.getElementById('againBtn').addEventListener('click', () => {
+  form.reset();
+  done.classList.remove('show');
+  body.style.display = 'block';
+  btn.textContent = 'Request a demo →';
+  btn.style.opacity = '1';
+  document.querySelectorAll('.err').forEach(e => e.classList.remove('err'));
+  document.querySelectorAll('.msg.show').forEach(e => e.classList.remove('show'));
+  body.scrollIntoView({ behavior: 'smooth', block: 'center' });
+});
+</script>
+</body>
+</html>
