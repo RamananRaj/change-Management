@@ -4,6 +4,7 @@ import { OnboardingProvider } from './context/OnboardingContext'
 import ProtectedRoute         from './components/ProtectedRoute'
 
 import Landing        from './pages/Landing'
+import PublicDemo     from './pages/PublicDemo'
 import SignUp         from './pages/auth/SignUp'
 import SignIn         from './pages/auth/SignIn'
 import ResetPassword  from './pages/auth/ResetPassword'
@@ -30,6 +31,10 @@ export default function App() {
           <Routes>
             {/* Public */}
             <Route path="/"             element={<Landing />} />
+            {/* Anonymous CORA demo. Deliberately outside ProtectedRoute — it takes no
+                session, and gets its data from the demo-data Edge Function rather than
+                the tenant database, so no anonymous read path is opened to serve it. */}
+            <Route path="/try"          element={<PublicDemo />} />
             <Route path="/auth/signup"  element={<SignUp />} />
             <Route path="/auth/signin"  element={<SignIn />} />
             <Route path="/auth/reset"   element={<ResetPassword />} />
