@@ -142,6 +142,66 @@ h1 .grad{background:linear-gradient(105deg,var(--gold) 8%,#F5C87E 52%,var(--ice)
 .strip .n span{color:var(--gold)}
 .strip .l{font-size:12.5px;color:rgba(216,231,239,.56);margin-top:3px;letter-spacing:.03em}
 
+/* ══ LIVE DEMO PANEL (the hero) ═══════════════════════════════════════ */
+.live{border-radius:16px;overflow:hidden;background:#0E1530;border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 40px 90px -20px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.05);text-align:left}
+.live-bar{display:flex;align-items:center;gap:7px;padding:11px 15px;background:#151E3E;border-bottom:1px solid rgba(255,255,255,.07)}
+.live-bar b{width:11px;height:11px;border-radius:50%;background:#3C4870;display:block;flex:none}
+.live-bar .url{margin-left:12px;font-size:11.5px;color:rgba(216,231,239,.52);font-weight:500;
+  background:rgba(255,255,255,.05);padding:4px 13px;border-radius:6px}
+.live-tag{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
+.live-tag i{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 2.4s infinite}
+.live-body{padding:22px 22px 24px}
+.live-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.live-chips button{font-family:inherit;font-size:12.8px;font-weight:600;cursor:pointer;
+  padding:8px 14px;border-radius:100px;border:1px solid rgba(255,255,255,.17);
+  color:rgba(216,231,239,.9);background:rgba(255,255,255,.05);transition:all .2s}
+.live-chips button:hover:not(:disabled){border-color:var(--gold);color:#fff;background:rgba(232,145,58,.12)}
+.live-chips button:disabled{opacity:.4;cursor:default}
+.live-chips button.next{border-color:rgba(232,145,58,.42);color:var(--gold);background:rgba(232,145,58,.08)}
+.ask{display:flex;align-items:center;gap:11px;border:1px solid rgba(255,255,255,.16);border-radius:12px;
+  padding:13px 15px;background:rgba(255,255,255,.05);transition:border-color .25s;min-height:48px}
+.ask.on{border-color:var(--gold)}
+.ask-dot{width:7px;height:7px;border-radius:50%;background:var(--gold);flex:none}
+.ask-txt{font-size:14.6px;color:rgba(216,231,239,.45);min-width:0}
+.ask-txt.typing{color:#fff}
+.caret{display:inline-block;width:2px;height:15px;background:var(--gold);vertical-align:-2px;margin-left:1px;animation:blink 1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+.think{display:flex;align-items:center;gap:10px;font-size:13.4px;color:rgba(216,231,239,.62);margin-top:14px}
+.think-dots{display:flex;gap:4px}
+.think-dots i{width:6px;height:6px;border-radius:50%;background:var(--teal);display:block;animation:bob 1s infinite}
+.think-dots i:nth-child(2){animation-delay:.13s}.think-dots i:nth-child(3){animation-delay:.26s}
+@keyframes bob{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-5px);opacity:1}}
+.ans{margin-top:16px;display:flex;gap:13px;animation:pop .45s cubic-bezier(.16,1,.3,1)}
+.ans .av{width:31px;height:31px;border-radius:9px;flex:none;background:linear-gradient(135deg,var(--teal),var(--gold));
+  display:grid;place-items:center;font-size:10.5px;font-weight:800;color:#fff}
+.ans .col{flex:1;min-width:0}
+.ans .lead{font-size:14.8px;line-height:1.62;color:rgba(216,231,239,.9)}
+.ans .lead b{color:#fff;font-weight:600}
+.ans-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:9px;margin-top:14px}
+.ans-stats div{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.09);border-radius:10px;padding:11px 13px}
+.ans-stats .v{font-size:20px;font-weight:800;color:#fff;letter-spacing:-.03em;line-height:1.1}
+.ans-stats .k{font-size:10.8px;color:rgba(216,231,239,.5);margin-top:3px}
+.ans-rows{margin-top:13px;display:grid;gap:7px}
+.ans-row{display:flex;align-items:flex-start;gap:11px;background:rgba(255,255,255,.045);border-radius:10px;padding:10px 13px}
+.ans-row .pip{width:6px;height:6px;border-radius:50%;margin-top:6px;flex:none;background:var(--teal)}
+.ans-row.block .pip{background:#F59E0B}.ans-row.over .pip{background:#EF4444}.ans-row.gl .pip{background:var(--gold)}
+.ans-row .t{flex:1;min-width:0}
+.ans-row .n{font-size:13.4px;color:#fff;font-weight:500}
+.ans-row .m{font-size:11.6px;color:rgba(216,231,239,.55);margin-top:2px}
+.ans-cells{display:flex;gap:4px;flex:none}
+.ans-cells span{font-size:9.6px;font-weight:700;padding:3px 6px;border-radius:4px}
+.ans-cells .na{border:1px dashed rgba(255,255,255,.22);color:rgba(216,231,239,.45);font-weight:600}
+.ans-gap{margin-top:14px;display:flex;gap:11px;background:rgba(232,145,58,.1);border:1px solid rgba(232,145,58,.28);
+  border-left:3px solid var(--gold);border-radius:9px;padding:12px 14px}
+.ans-gap i{color:var(--gold);font-style:normal;flex:none;font-size:13px}
+.ans-gap p{font-size:13.2px;line-height:1.58;color:rgba(216,231,239,.88)}
+.ans-gap b{color:var(--gold);font-weight:700}
+.ans-src{margin-top:13px;padding-top:11px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:rgba(216,231,239,.42)}
+.next-lbl{font-size:11px;color:rgba(216,231,239,.45);margin:16px 0 8px}
+.live-fallback{font-size:13px;color:rgba(216,231,239,.5);text-align:center;padding:14px 0}
+
 /* ══ ONE-LINE CLAIM BAND ══════════════════════════════════════════════ */
 .claim{background:var(--ink-2);padding:54px 0;text-align:center}
 .claim p{font-size:clamp(1.15rem,2.5vw,1.6rem);font-weight:600;color:rgba(216,231,239,.5);
@@ -503,22 +563,42 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
       <a href="#demo" class="btn btn-gold btn-lg">Book a demo →</a>
       <!-- Straight into the live demo. The strongest thing this page can do is stop
            describing CORA and let someone use it. -->
-      <a href="/try" class="btn btn-ghost btn-lg">Try CORA on real data →</a>
+      <a href="#live" class="btn btn-ghost btn-lg">Try CORA on real data ↓</a>
     </div>
     <p class="hero-note">30-minute walkthrough on your own scenario · No credit card · Pilot places open now</p>
   </div>
 
   <!-- The single real screenshot on the page — cropped and faded into the hero
        so it works as a teaser rather than a wall of unreadable UI. -->
+  <!-- ═══ LIVE DEMO — the hero, replacing what used to be a screenshot ═══
+       A screenshot of CORA is a weaker argument than CORA working. This panel runs
+       against the real Meridian programme through the demo-data Edge Function, so a
+       visitor can ask a real question thirty seconds after landing, without leaving
+       the page, signing up, or being handed to a sales call first. -->
   <div class="shot-hero rv">
-    <div class="frame teaser">
-      <div class="bar"><b></b><b></b><b></b><span class="url">app.changeflow.io / canvas</span></div>
-      <!-- Root-absolute, NOT relative. Vercel redirects /marketing/ to /marketing, so a
-           relative "img/..." resolves against the site root and 404s into the SPA. Swap to
-           /marketing/img/hero-timeline.webp to lead with the timeline instead. -->
-      <img src="/marketing/img/hero-cora.webp" alt="CORA summarising a live programme: phase completion, velocity and what the numbers do not cover"
-           width="1600" height="842" loading="eager">
-      <a href="#demo" class="teaser-cta">See the whole thing on a call →</a>
+    <div class="live" id="live">
+      <div class="live-bar">
+        <b></b><b></b><b></b>
+        <span class="url">app.changeflow.io / canvas</span>
+        <span class="live-tag"><i></i>Live · real programme data</span>
+      </div>
+
+      <div class="live-body">
+        <div class="live-chips" id="chips"></div>
+
+        <div class="ask" id="ask">
+          <span class="ask-dot"></span>
+          <span class="ask-txt" id="askTxt">Pick a question — CORA answers from the live programme</span>
+        </div>
+
+        <div class="think" id="think" hidden>
+          <span class="think-dots"><i></i><i></i><i></i></span>
+          <span id="thinkTxt">Reading the programme…</span>
+        </div>
+
+        <div id="ans" class="ans" hidden></div>
+        <p class="live-fallback" id="liveErr" hidden>The live demo is unavailable right now — everything below still describes it.</p>
+      </div>
     </div>
   </div>
 </header>
@@ -565,7 +645,7 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
           <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 4.5 6 12 2.5 8.5" stroke="#E8913A" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span><b style="color:#fff">Drafts the pack</b> — steering summary, readiness brief, exec update, in your words not the model's</span></li>
         </ul>
-        <a href="/try" class="btn btn-gold">Ask CORA a question now →</a>
+        <a href="#live" class="btn btn-gold">Ask CORA a question ↑</a>
       </div>
       <div class="art">
         <div class="ui">
@@ -1051,6 +1131,191 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
    ══════════════════════════════════════════════════════════════════════ */
 const SUPABASE_URL = 'https://wvhoyvtwdchkvxmkhezj.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind2aG95dnR3ZGNoa3Z4bWtoZXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NjMxMTQsImV4cCI6MjA5NTQzOTExNH0.yHqp0RxTu2Hx2_Zo-eWJtavR5sLXDEMAPtRMlT6Z11s'
+
+/* ══════════════════════════════════════════════════════════════════════
+   0b. THE LIVE DEMO
+       CORA, in the hero, answering real questions about a real programme.
+
+       Data comes from the demo-data Edge Function, which reads the Meridian
+       tenant server-side with the service key and returns an allow-listed
+       shape. The browser never touches the tenant database.
+
+       No model is called. CORA's rules tier computes these answers; the model
+       is a last resort for free text it can't ground. Fixed questions keep it
+       entirely in the computed tier — no tokens, no cost per visitor, nothing
+       to prompt-inject, and identical answers every time, which is what you
+       want when someone is presenting this live.
+   ══════════════════════════════════════════════════════════════════════ */
+const DEMO_URL = `${SUPABASE_URL}/functions/v1/demo-data`
+
+const Q = {
+  tracking:  'How is Meridian tracking?',
+  golive:    'Are we ready for go-live?',
+  audiences: 'Which audiences carry the most change?',
+  comms:     "What's blocked in the comms plan?",
+  timeline:  'Show me the change timeline across the programme',
+}
+const THINKING = {
+  tracking:  ['Reading phase scope…', 'Rolling up completion…'],
+  golive:    ['Reading audiences…', 'Checking impact assessments…', 'Checking the comms plan…'],
+  audiences: ['Reading the audience register…', 'Scoring four impact domains…'],
+  comms:     ['Reading the comms schedule…', 'Separating blocked from late…'],
+  timeline:  ['Reading milestones…', 'Placing them across swimlanes…'],
+}
+// 'vh' is a real rating in this data. Omitting it once made the worst-affected
+// audience render as "not assessed" — the exact failure the product exists to stop.
+const HEAT = { vh:['V.High','#FECACA','#991B1B'], h:['High','#FEE2E2','#B32B2E'],
+               m:['Med','#FEF0DC','#9C5A11'],     l:['Low','#DCFCE7','#0E7C5A'] }
+const PHASE = { 1:'Diagnose', 2:'Design', 3:'Engage', 4:'Embed', 5:'Evaluate' }
+const fmtD = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'}) : null
+const esc  = t => String(t).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))
+const bold = t => esc(t).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+
+const A = {
+  tracking(d){
+    const inS = d.phases.filter(p=>p.lane_id), done = inS.filter(p=>p.status==='completed').length
+    const act = inS.find(p=>p.status==='active'), pct = inS.length ? Math.round(done/inS.length*100) : null
+    const def = d.phases.filter(p=>!p.lane_id)
+    return {
+      lead: pct==null ? `**${d.project.name}** has no phases in scope yet, so there is no completion figure to give you.`
+        : `**${d.project.name}** is **${pct}% complete** across the ${inS.length} phases this programme runs${act?`, with **${PHASE[act.phase_number]}** underway`:''}.`,
+      stats:[{v:pct==null?'—':pct+'%',k:`Across ${inS.length} phases in scope`},{v:`${done}/${inS.length}`,k:'Phases closed'}],
+      gap: def.length ? `${def.length} of the five phases are **not part of this programme** — excluded from that percentage rather than sitting at 0% and dragging it down.` : null,
+      next:['golive','timeline'], src:`${inS.length} phases · ${d.milestones.length} milestones`,
+    }
+  },
+  golive(d){
+    const un = d.audiences.filter(a=>!a.impact_people&&!a.impact_process&&!a.impact_information&&!a.impact_technology)
+    const nc = d.audiences.filter(a=>a.headcount==null)
+    const head = d.audiences.reduce((n,a)=>n+(a.headcount??0),0)
+    const gl = d.milestones.find(m=>/go.?live/i.test(m.name||''))
+    const blocked = d.comms.filter(c=>c.derived_status==='blocked').length
+    const over    = d.comms.filter(c=>c.derived_status==='overdue').length
+    return {
+      lead:`Not a straight yes — and part of the reason is that I can't see all of it.${gl?` Go-Live is set for **${fmtD(gl.milestone_date??gl.ends_on??gl.starts_on)}**.`:''}`,
+      stats:[{v:String(d.audiences.length),k:'Audiences identified'},{v:head?head.toLocaleString():'—',k:'People I can count'},{v:String(blocked+over),k:'Comms not out'}],
+      gap: un.length
+        ? `**${un.map(a=>a.name).join(', ')}** ${un.length===1?'has':'have'} no impact assessment. Not counted as low — simply not assessed, and any readiness figure ignoring that would be flattering.`
+        : nc.length
+          ? `Every audience is assessed, but **${nc.map(a=>a.name).join(', ')}** ${nc.length===1?'has':'have'} no headcount. So the impact rating there has no number of people behind it — **${head.toLocaleString()}** is who I can count, not everyone affected.`
+          : 'Every audience is assessed and counted, so nothing is hidden behind an average.',
+      next:['audiences','comms'], src:`${d.audiences.length} audiences · ${d.comms.length} comms items`,
+    }
+  },
+  audiences(d){
+    const rank = d.audiences.map(a=>{
+      const v=[a.impact_people,a.impact_process,a.impact_information,a.impact_technology]
+      return {...a, score:v.reduce((n,x)=>n+(x==='vh'?4:x==='h'?3:x==='m'?2:x==='l'?1:0),0), rated:v.filter(Boolean).length}
+    }).sort((a,b)=>b.score-a.score)
+    const top = rank.filter(a=>a.rated).slice(0,4), un = rank.filter(a=>!a.rated)
+    const nc  = rank.filter(a=>a.rated && a.headcount==null)
+    return {
+      lead: top.length ? `**${top[0].name}** carries the most change${top[0].headcount?` — ${top[0].headcount.toLocaleString()} people`:''}, scored across people, process, information and technology.` : 'No audience has been rated yet.',
+      rows: top.map(a=>({n:a.name, m:a.headcount?`${a.headcount.toLocaleString()} people`:'headcount not set', cells:[a.impact_people,a.impact_process,a.impact_information,a.impact_technology]})),
+      gap: un.length ? `${un.length} audience${un.length===1?'':'s'} unrated — shown as **not assessed**, never as low impact.`
+        : nc.length ? `**${nc.map(a=>a.name).join(', ')}** ${nc.length===1?'is':'are'} rated but ${nc.length===1?'has':'have'} no headcount, so the rating carries no number of people.` : null,
+      next:['golive','comms'], src:`${d.audiences.length} audiences · 4 impact domains`,
+    }
+  },
+  comms(d){
+    const bl = d.comms.filter(c=>c.derived_status==='blocked'), ov = d.comms.filter(c=>c.derived_status==='overdue')
+    const cnt = s => d.comms.filter(c=>c.derived_status===s).length
+    return {
+      lead: bl.length||ov.length ? `${bl.length} blocked, ${ov.length} overdue — **different problems with different owners**.` : 'Nothing is blocked or overdue.',
+      rows:[...bl.map(c=>({n:c.message,m:`Blocked — waiting on ${c.depends_name??'an upstream output'}`,tone:'block'})),
+            ...ov.map(c=>({n:c.message,m:`Overdue — nothing is blocking it${c.has_owner?'':', and it has no owner'}`,tone:'over'}))],
+      stats:[{v:String(cnt('sent')),k:'Sent'},{v:String(bl.length),k:'Blocked'},{v:String(ov.length),k:'Overdue'},{v:String(cnt('planned')),k:'Planned'}],
+      gap: bl.length ? 'A blocked message isn’t late — it’s waiting on something upstream. Chasing the sender would achieve nothing.' : null,
+      next:['timeline','golive'], src:`${d.comms.length} items anchored to milestones`,
+    }
+  },
+  timeline(d){
+    const dated = d.milestones.map(m=>({...m,on:m.milestone_date??m.ends_on??m.starts_on})).filter(m=>m.on)
+      .sort((a,b)=>String(a.on).localeCompare(String(b.on)))
+    const un = d.milestones.filter(m=>!(m.milestone_date??m.ends_on??m.starts_on))
+    const gl = dated.find(m=>/go.?live/i.test(m.name||''))
+    const lanes = [...new Set(dated.map(m=>m.lane).filter(Boolean))]
+    return {
+      lead: dated.length ? `The whole programme on one timeline — **${lanes.length} swimlanes**, change and delivery together, running ${fmtD(dated[0].on)} to ${fmtD(dated[dated.length-1].on)}.${gl?` Go-Live is **${fmtD(gl.on)}**.`:''}` : 'Nothing on the timeline carries a date yet.',
+      stats:[{v:String(dated.length),k:'Milestones scheduled'},{v:String(lanes.length),k:'Swimlanes'},{v:gl?fmtD(gl.on).replace(/ \d{4}$/,''):'—',k:'Go-Live'}],
+      rows: dated.slice(0,6).map(m=>({n:m.name, m:`${m.lane?m.lane+' · ':''}${fmtD(m.on)}`, tone:/go.?live/i.test(m.name)?'gl':null})),
+      gap: un.length ? `${un.length} milestone${un.length===1?'':'s'} ${un.length===1?'has':'have'} no date — not assumed on time, simply unscheduled, and nothing can anchor to ${un.length===1?'it':'them'} until ${un.length===1?'it does':'they do'}.` : 'Every milestone carries a date, so everything anchored to one moves when it moves.',
+      next:['comms','tracking'], src:`${d.milestones.length} milestones · ${d.lanes.length} lanes`,
+    }
+  },
+}
+
+;(function liveDemo(){
+  const el = id => document.getElementById(id)
+  const chips = el('chips'), askTxt = el('askTxt'), ask = el('ask')
+  const think = el('think'), thinkTxt = el('thinkTxt'), ansEl = el('ans')
+  let data = null, busy = false, timers = []
+
+  const clear = () => { timers.forEach(clearTimeout); timers = [] }
+
+  function renderChips(ids, isNext){
+    chips.innerHTML = ''
+    if (isNext) {
+      const p = document.createElement('p'); p.className = 'next-lbl'; p.textContent = 'Ask next'
+      chips.appendChild(p)
+    }
+    ids.forEach(id => {
+      const b = document.createElement('button')
+      b.textContent = Q[id]; b.disabled = busy || !data
+      if (isNext) b.className = 'next'
+      b.onclick = () => run(id)
+      chips.appendChild(b)
+    })
+  }
+
+  function run(id){
+    if (busy || !data) return
+    busy = true; clear(); ansEl.hidden = true; ansEl.innerHTML = ''
+    renderChips(Object.keys(Q))                       // disable during the run
+    const q = Q[id]
+    ask.classList.add('on'); askTxt.classList.add('typing')
+    ;[...q].forEach((_, i) => timers.push(setTimeout(() => {
+      askTxt.innerHTML = esc(q.slice(0, i + 1)) + '<span class="caret"></span>'
+    }, i * 17)))
+    const typeMs = q.length * 17
+    const steps = THINKING[id] ?? ['Reading the programme…']
+    timers.push(setTimeout(() => {
+      askTxt.innerHTML = esc(q); think.hidden = false
+    }, typeMs + 100))
+    steps.forEach((t, i) => timers.push(setTimeout(() => { thinkTxt.textContent = t }, typeMs + 140 + i * 400)))
+    timers.push(setTimeout(() => {
+      think.hidden = true; busy = false
+      draw(A[id](data))
+      renderChips(A[id](data).next, true)
+    }, typeMs + 200 + steps.length * 400))
+  }
+
+  function draw(a){
+    const stats = a.stats ? `<div class="ans-stats">${a.stats.map(s=>`<div><div class="v">${esc(s.v)}</div><div class="k">${esc(s.k)}</div></div>`).join('')}</div>` : ''
+    const rows = a.rows?.length ? `<div class="ans-rows">${a.rows.map(r=>{
+      const cells = r.cells ? `<div class="ans-cells">${r.cells.map(c=>{
+        const h = HEAT[c]
+        return h ? `<span style="background:${h[1]};color:${h[2]}">${h[0]}</span>` : `<span class="na">n/a</span>`
+      }).join('')}</div>` : ''
+      return `<div class="ans-row ${r.tone??''}"><span class="pip"></span><div class="t"><div class="n">${esc(r.n)}</div>${r.m?`<div class="m">${esc(r.m)}</div>`:''}</div>${cells}</div>`
+    }).join('')}</div>` : ''
+    const gap = a.gap ? `<div class="ans-gap"><i>⚠</i><p>${bold(a.gap)}</p></div>` : ''
+    ansEl.innerHTML = `<span class="av">CO</span><div class="col">
+      <p class="lead">${bold(a.lead)}</p>${stats}${rows}${gap}
+      <p class="ans-src">Sources · ${esc(a.src)} · read from the live programme, no model called</p></div>`
+    ansEl.hidden = false
+  }
+
+  renderChips(Object.keys(Q))
+  fetch(DEMO_URL, { headers: { apikey: SUPABASE_ANON_KEY } })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(r.status)))
+    .then(d => { data = d; renderChips(Object.keys(Q)) })
+    .catch(() => {
+      // Never let a dead endpoint break the page — the rest of the site still sells.
+      el('liveErr').hidden = false
+      chips.innerHTML = ''; ask.style.display = 'none'
+    })
+})()
 
 /* ══════════════════════════════════════════════════════════════════════
    1. Nav solidifies once you scroll off the hero
