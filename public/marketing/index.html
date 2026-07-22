@@ -1035,6 +1035,22 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
 
 <script>
 /* ══════════════════════════════════════════════════════════════════════
+   0. Supabase connection
+      This page is static HTML served from /public, so it cannot read the React
+      app's build-time env vars. The values are set here instead.
+
+      The anon key is PUBLIC BY DESIGN — it already ships inside the app's JS
+      bundle and is meant to be visible. It is not a secret and committing it
+      changes nothing. What protects the data is row-level security: `anon` holds
+      INSERT on public.leads and nothing else — no SELECT, so nobody can read the
+      pipeline back, not even their own submission.
+
+      → Paste your anon key below (Supabase dashboard → Project Settings → API).
+   ══════════════════════════════════════════════════════════════════════ */
+const SUPABASE_URL = 'https://wvhoyvtwdchkvxmkhezj.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind2aG95dnR3ZGNoa3Z4bWtoZXpqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4NjMxMTQsImV4cCI6MjA5NTQzOTExNH0.yHqp0RxTu2Hx2_Zo-eWJtavR5sLXDEMAPtRMlT6Z11s'
+
+/* ══════════════════════════════════════════════════════════════════════
    1. Nav solidifies once you scroll off the hero
    ══════════════════════════════════════════════════════════════════════ */
 const nav = document.getElementById('nav');
@@ -1079,12 +1095,18 @@ const showErr = (id, on) => {
   el?.addEventListener('change', () => showErr(id, false));
 });
 
-form.addEventListener('submit', (ev) => {
+form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
 
-  // Honeypot: a hidden field only an automated filler would populate. If it
-  // has a value we show the success state anyway — a bot told it failed just
-  // tries again, so the quieter response is to look like it worked.
+  // Honeypot: a hidden field only an automated filler would populate. We show the
+  // success state but send nothing — a bot told it failed simply tries again, so
+  // looking like it worked is the quieter response, and storing nothing means the
+  // table cannot be filled by whoever finds the endpoint.
+  //
+  // Worth being honest about the limit: this stops naive bots only. Anyone willing
+  // to post realistic-looking leads gets through, because PostgREST has no rate
+  // limiting. If that ever starts happening, this needs to move behind an edge
+  // function that can throttle by IP.
   if (form.website.value) { body.style.display = 'none'; done.classList.add('show'); return; }
 
   const name    = document.getElementById('fname').value.trim();
@@ -1110,12 +1132,38 @@ form.addEventListener('submit', (ev) => {
   // Pending state — a button that does nothing for a second reads as broken.
   btn.textContent = 'Sending…';
   btn.style.opacity = '.72';
+  btn.disabled = true;
 
-  setTimeout(() => {
-    // ── This is where the real insert goes ──────────────────────────────
-    // await supabase.from('leads').insert({ full_name: name, email, ... })
-    // Anon insert is allowed by RLS; nobody but an admin can read the table.
-    // ────────────────────────────────────────────────────────────────────
+  // Straight to PostgREST — no SDK needed for one insert, and it keeps this page a
+  // single file with no build step. `anon` holds INSERT on public.leads and nothing
+  // else, so this can create a row and cannot read one back.
+  //
+  // Prefer: return=minimal matters — without it PostgREST tries to return the new
+  // row, which needs SELECT, which anon deliberately does not have. The insert
+  // would succeed and then report a permissions error.
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({
+        full_name:      name,
+        email:          email,
+        organisation:   org,
+        role:           document.getElementById('frole').value || null,
+        programme_size: document.getElementById('fsize').value || null,
+        timeframe:      document.getElementById('ftime').value || null,
+        message:        document.getElementById('fmsg').value.trim() || null,
+        source:         'website',
+      }),
+    });
+
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+
     document.getElementById('rName').textContent = name;
     document.getElementById('rOrg').textContent  = org;
     document.getElementById('rWhen').textContent = new Date().toLocaleString('en-AU', {
@@ -1125,7 +1173,27 @@ form.addEventListener('submit', (ev) => {
     body.style.display = 'none';
     done.classList.add('show');
     done.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 850);
+
+  } catch (err) {
+    // Never swallow this. Someone took the trouble to fill in the form; losing it
+    // silently is the worst possible outcome, so give them a way through that does
+    // not depend on us.
+    console.error('Lead submission failed:', err);
+    btn.textContent = 'Request a demo →';
+    btn.style.opacity = '1';
+    btn.disabled = false;
+    let fallback = document.getElementById('sendFail');
+    if (!fallback) {
+      fallback = document.createElement('p');
+      fallback.id = 'sendFail';
+      fallback.style.cssText = 'color:#C2373A;font-size:13px;margin-top:12px;line-height:1.5';
+      btn.parentNode.insertBefore(fallback, btn.nextSibling);
+    }
+    fallback.innerHTML =
+      'Something went wrong sending that — sorry. Please email ' +
+      '<a href="mailto:hello@changeflow.io" style="color:#1C7293;font-weight:600">hello@changeflow.io</a> ' +
+      'and we will pick it up from there.';
+  }
 });
 
 // Let the reviewer run through the form more than once without a page reload.
@@ -1135,6 +1203,8 @@ document.getElementById('againBtn').addEventListener('click', () => {
   body.style.display = 'block';
   btn.textContent = 'Request a demo →';
   btn.style.opacity = '1';
+  btn.disabled = false;
+  document.getElementById('sendFail')?.remove();
   document.querySelectorAll('.err').forEach(e => e.classList.remove('err'));
   document.querySelectorAll('.msg.show').forEach(e => e.classList.remove('show'));
   body.scrollIntoView({ behavior: 'smooth', block: 'center' });

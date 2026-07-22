@@ -63,8 +63,29 @@ Deno.serve(async (req) => {
     const { error: pingErr } = await admin.from('clients').select('id', { count: 'exact', head: true })
     await check('Database (Supabase)', 'Server', async () => { if (pingErr) throw pingErr; return `${Date.now() - p0}ms response` })
 
-    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites', 'health_runs', 'templates', 'ai_usage', 'change_artifacts'])
+    for (const t of ['clients', 'projects', 'project_phases', 'project_pathways', 'project_milestones', 'project_members', 'phase_content', 'surveys', 'stakeholders', 'industries', 'roles', 'user_activities', 'project_invites', 'health_runs', 'templates', 'ai_usage', 'change_artifacts', 'leads'])
       await check(t, 'Data', head(t))
+
+    // ── Security ──
+    // Privileges held by anon/authenticated that are not on the allowlist. This
+    // exists because two real over-grants (anon INSERT beyond leads, and TRUNCATE on
+    // all 54 tables) broke nothing, failed no test and errored on no screen — they
+    // were only ever visible to someone who went looking at grants directly.
+    //
+    // TRUNCATE, REFERENCES and TRIGGER are not governed by row-level security, so no
+    // policy can compensate for granting them. This is the only thing that catches it.
+    await check('Public role privileges', 'Security', async () => {
+      const { data, error } = await admin.rpc('audit_public_grants')
+      if (error) throw error
+      const findings = data ?? []
+      if (findings.length === 0) return 'anon and authenticated hold only expected privileges'
+      // Fail loudly and name the worst offender, so the detail line is actionable
+      // rather than just a count.
+      const first = findings[0]
+      throw new Error(
+        `${findings.length} over-granted: ${first.grantee} on ${first.object_name} (${first.privileges}) — ${first.problem}`
+      )
+    })
 
     const total = checks.length
     const passed = checks.filter(c => c.ok).length
