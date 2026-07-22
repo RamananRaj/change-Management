@@ -473,8 +473,10 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
   <div class="shot-hero rv">
     <div class="frame teaser">
       <div class="bar"><b></b><b></b><b></b><span class="url">app.changeflow.io / canvas</span></div>
-      <!-- Swap to img/hero-timeline.webp to lead with the timeline instead. -->
-      <img src="img/hero-cora.webp" alt="CORA summarising a live programme: phase completion, velocity and what the numbers do not cover"
+      <!-- Root-absolute, NOT relative. Vercel redirects /marketing/ to /marketing, so a
+           relative "img/..." resolves against the site root and 404s into the SPA. Swap to
+           /marketing/img/hero-timeline.webp to lead with the timeline instead. -->
+      <img src="/marketing/img/hero-cora.webp" alt="CORA summarising a live programme: phase completion, velocity and what the numbers do not cover"
            width="1600" height="842" loading="eager">
       <a href="#demo" class="teaser-cta">See the whole thing on a call →</a>
     </div>
