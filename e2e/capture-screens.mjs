@@ -97,15 +97,20 @@ try {
 
   console.log('CORA canvas:')
   try {
-    const box = page.getByPlaceholder(/ask cora/i).first()
-    await box.click({ timeout: 6000 })          // the pill expands into an input
+    // The ask box sits in a dock that is COLLAPSED by default — only the "Ask CORA…" pill
+    // (a button with title="Ask CORA") is in the DOM. Click it to render the real input.
+    await page.getByTitle('Ask CORA').click({ timeout: 6000 }).catch(() => {})
+    await page.waitForTimeout(400)
+    // Now the real input exists — its placeholder reads "Ask CORA — risks, readiness…".
+    const box = page.getByPlaceholder(/risks, readiness|ask cora/i).first()
+    await box.click({ timeout: 6000 })
     await box.fill('Brief me on Meridian')
-    await box.press('Enter')
-    // Wait for the answer to render: the empty-state helper text disappears once CORA
-    // replies. Falling back to a fixed wait if that text isn't found, so we still capture.
+    await box.press('Enter')                    // the form submits on Enter
+    // The empty-state helper text disappears once an answer renders; wait for that, with
+    // a fixed fallback so we still capture something if the copy changes.
     await page.getByText(/tap a chip above|suggestion below/i)
-      .waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {})
-    await page.waitForTimeout(4000)             // let widgets/charts in the answer settle
+      .waitFor({ state: 'hidden', timeout: 25000 }).catch(() => {})
+    await page.waitForTimeout(4000)             // let the answer's widgets/charts settle
   } catch { /* capture whatever rendered */ }
   await shot(page, '01-cora-canvas', 'CORA answering a question')
 
