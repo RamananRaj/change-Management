@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope, inPlannedGap, addDays, milestoneAnchorDate, deriveCommsStatus, buildCommsSchedule, summariseComms } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope, inPlannedGap, addDays, milestoneAnchorDate, deriveCommsStatus, buildCommsSchedule, summariseComms, leadBucket, leadStaleness, canConvertLead, summariseLeads } from './analysis'
 
 const heat = {
   version: 1,
@@ -1299,5 +1299,98 @@ describe('comms plan — dates and status derived', () => {
     expect(s).toMatchObject({ total: 4, sent: 1, overdue: 1, blocked: 1, planned: 1 })
     expect(s.gaps.some(g => /blocked/.test(g) && /Change champion network/.test(g))).toBe(true)
     expect(s.gaps.some(g => /overdue/.test(g))).toBe(true)
+  })
+})
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LEAD PIPELINE
+   These mirror the lead_pipeline view. If the view is ever changed, one of these
+   should fail — that is the point of duplicating the rule here.
+   ══════════════════════════════════════════════════════════════════════════ */
+describe('lead pipeline', () => {
+  const today = '2026-07-22'
+
+  it('puts an untoggled open row in Leads and a toggled one in Opportunities', () => {
+    expect(leadBucket({ status: 'open', is_opportunity: false })).toBe('lead')
+    expect(leadBucket({ status: 'open', is_opportunity: true  })).toBe('opportunity')
+  })
+
+  it('treats closed as closed even when the toggle is still on', () => {
+    // A won lead is not "still an opportunity" just because nobody flipped the
+    // toggle back. Status has to win, or the pipeline double-counts its own wins.
+    expect(leadBucket({ status: 'won',  is_opportunity: true })).toBe('closed')
+    expect(leadBucket({ status: 'lost', is_opportunity: true })).toBe('closed')
+  })
+
+  it('defaults a row with no status to open', () => {
+    expect(leadBucket({ is_opportunity: false })).toBe('lead')
+  })
+
+  it('counts age by calendar date, not by hours elapsed', () => {
+    // A lead raised at 11pm and one raised at 1am the same day are the same age.
+    // Comparing a timestamptz against a date directly would make one of them older.
+    const late  = leadStaleness({ created_at: '2026-07-22T23:30:00Z', status: 'open' }, { today })
+    const early = leadStaleness({ created_at: '2026-07-22T01:00:00Z', status: 'open' }, { today })
+    expect(late.ageDays).toBe(0)
+    expect(early.ageDays).toBe(0)
+  })
+
+  it('starts the contact clock at arrival when nobody has replied', () => {
+    // An untouched lead is not "0 days since contact" — nobody has contacted it,
+    // so the honest reading is the full age.
+    const s = leadStaleness({ created_at: '2026-07-01', status: 'open' }, { today })
+    expect(s.ageDays).toBe(21)
+    expect(s.daysSinceContact).toBe(21)
+  })
+
+  it('uses last_contacted once someone has replied', () => {
+    const s = leadStaleness({ created_at: '2026-07-01', last_contacted: '2026-07-20', status: 'open' }, { today })
+    expect(s.ageDays).toBe(21)
+    expect(s.daysSinceContact).toBe(2)
+  })
+
+  it('flags an overdue next action, but not on a closed lead', () => {
+    expect(leadStaleness({ created_at: '2026-07-01', next_action_on: '2026-07-10', status: 'open' }, { today }).actionOverdue).toBe(true)
+    expect(leadStaleness({ created_at: '2026-07-01', next_action_on: '2026-07-30', status: 'open' }, { today }).actionOverdue).toBe(false)
+    // Chasing a lead that is already won or lost is noise.
+    expect(leadStaleness({ created_at: '2026-07-01', next_action_on: '2026-07-10', status: 'won' }, { today }).actionOverdue).toBe(false)
+  })
+
+  it('blocks conversion and says why, rather than just refusing', () => {
+    const bad = canConvertLead({ email: 'a@b.com' })
+    expect(bad.ok).toBe(false)
+    expect(bad.reasons.some(r => /organisation/i.test(r))).toBe(true)
+
+    const noEmail = canConvertLead({ organisation: 'Meridian' })
+    expect(noEmail.reasons.some(r => /email/i.test(r))).toBe(true)
+
+    const already = canConvertLead({ organisation: 'M', email: 'a@b.com', converted_client_id: 'c1' })
+    expect(already.reasons.some(r => /already been converted/i.test(r))).toBe(true)
+
+    expect(canConvertLead({ organisation: 'Meridian', email: 'a@b.com' }).ok).toBe(true)
+  })
+
+  it('summarises the pipeline and names what needs chasing', () => {
+    const rows = [
+      { id: '1', created_at: '2026-07-21', status: 'open', is_opportunity: false, owner_id: 'u1', next_action: 'Call', next_action_on: '2026-07-30', last_contacted: '2026-07-21' },
+      { id: '2', created_at: '2026-06-01', status: 'open', is_opportunity: false },                       // stale, unowned, no action
+      { id: '3', created_at: '2026-07-01', status: 'open', is_opportunity: true, owner_id: 'u1', next_action: 'Demo', next_action_on: '2026-07-10', last_contacted: '2026-07-20' }, // overdue
+      { id: '4', created_at: '2026-05-01', status: 'won',  is_opportunity: true, converted_client_id: 'c1' },
+      { id: '5', created_at: '2026-05-01', status: 'lost', is_opportunity: false },
+      { id: '6', created_at: '2026-07-20', status: 'open', is_opportunity: false, is_spam: true },        // excluded entirely
+    ]
+    const s = summariseLeads(rows, { today })
+    expect(s).toMatchObject({ total: 5, leads: 2, opportunities: 1, won: 1, lost: 1 })
+    expect(s.overdue).toBe(1)
+    expect(s.stale).toBe(1)        // only #2 — #3 was contacted 2 days ago
+    expect(s.unowned).toBe(1)      // closed rows are not chased
+    expect(s.noNextAction).toBe(1)
+    expect(s.gaps.some(g => /overdue next action/.test(g))).toBe(true)
+    expect(s.gaps.some(g => /no contact in 14\+ days/.test(g))).toBe(true)
+  })
+
+  it('says so when there are no leads at all', () => {
+    // Absent must not render as nothing-to-say.
+    expect(summariseLeads([], { today }).gaps).toContain('No leads captured yet.')
   })
 })

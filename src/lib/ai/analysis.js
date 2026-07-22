@@ -1219,3 +1219,85 @@ export function laneProgress(phases, { members = 1 } = {}) {
              undefinedPhases: roll.undefinedPhases }
   })
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LEAD PIPELINE
+   Mirrors the lead_pipeline view. The view is the source of truth when reading
+   from the database; these exist so the UI can classify a row it has just
+   changed without a round trip, and so the rules can be tested without one.
+   If the two ever disagree, the view wins — and a test here should have caught it.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// Which list a row belongs in. Closed beats everything: a won lead is not still an
+// opportunity, however the toggle happens to be left.
+export function leadBucket(lead) {
+  if (!lead) return null
+  if ((lead.status ?? 'open') !== 'open') return 'closed'
+  return (lead.is_opportunity ?? lead.isOpportunity) ? 'opportunity' : 'lead'
+}
+
+// created_at is a timestamptz; today is a plain date. Comparing them directly would
+// count a lead raised at 11pm as a day older than one raised at 1am on the same day.
+// Truncate to the calendar date first, then reuse the existing daysBetween.
+const asDate = v => (v == null ? null : String(v).slice(0, 10))
+
+// A lead nobody has touched. `last_contacted` falling back to `created_at` means a
+// brand-new lead starts its clock the moment it arrives, which is the honest reading:
+// nobody has replied to it yet.
+export function leadStaleness(lead, { today } = {}) {
+  if (!lead || !today) return { ageDays: null, daysSinceContact: null, actionOverdue: false }
+  const ageDays = daysBetween(asDate(lead.created_at), asDate(today))
+  const daysSinceContact = daysBetween(asDate(lead.last_contacted ?? lead.created_at), asDate(today))
+  const actionOverdue = !!lead.next_action_on
+    && (lead.status ?? 'open') === 'open'
+    && String(lead.next_action_on).slice(0, 10) < String(today).slice(0, 10)
+  return { ageDays, daysSinceContact, actionOverdue }
+}
+
+// Guard for the convert-to-client step. Returns the reasons it cannot proceed
+// rather than a bare false, so the UI can say which field is missing instead of
+// disabling a button with no explanation.
+export function canConvertLead(lead) {
+  const reasons = []
+  if (!lead)                                   reasons.push('No lead selected.')
+  else {
+    if (!(lead.organisation ?? '').trim())     reasons.push('Add an organisation name — it becomes the client name.')
+    if (!(lead.email ?? '').trim())            reasons.push('Add an email address — the invite is sent to it.')
+    if (lead.converted_client_id)              reasons.push('This lead has already been converted.')
+    if ((lead.status ?? 'open') === 'lost')    reasons.push('This lead is marked lost. Reopen it first.')
+  }
+  return { ok: reasons.length === 0, reasons }
+}
+
+// Counts for the pipeline header, plus the things worth being nagged about.
+// Note `unowned` and `noNextAction` are reported separately from stale: a lead with
+// nobody's name on it is a different failure from one that is simply old.
+export function summariseLeads(rows, { today, staleAfterDays = 14 } = {}) {
+  const list = (rows ?? []).filter(r => !r.is_spam)
+  const out = {
+    total: list.length, leads: 0, opportunities: 0, won: 0, lost: 0,
+    overdue: 0, stale: 0, unowned: 0, noNextAction: 0, gaps: [],
+  }
+  for (const r of list) {
+    const bucket = leadBucket(r)
+    if (bucket === 'lead')             out.leads++
+    else if (bucket === 'opportunity') out.opportunities++
+    if (r.status === 'won')  out.won++
+    if (r.status === 'lost') out.lost++
+    if ((r.status ?? 'open') !== 'open') continue      // closed rows are not chased
+
+    const s = leadStaleness(r, { today })
+    if (s.actionOverdue) out.overdue++
+    if (s.daysSinceContact != null && s.daysSinceContact >= staleAfterDays) out.stale++
+    if (!r.owner_id)     out.unowned++
+    if (!r.next_action)  out.noNextAction++
+  }
+  const open = out.leads + out.opportunities
+  if (out.overdue)      out.gaps.push(`${out.overdue} ${out.overdue === 1 ? 'lead has' : 'leads have'} an overdue next action.`)
+  if (out.stale)        out.gaps.push(`${out.stale} open ${out.stale === 1 ? 'lead has' : 'leads have'} had no contact in ${staleAfterDays}+ days.`)
+  if (out.unowned)      out.gaps.push(`${out.unowned} open ${out.unowned === 1 ? 'lead has' : 'leads have'} no owner.`)
+  if (out.noNextAction) out.gaps.push(`${out.noNextAction} open ${out.noNextAction === 1 ? 'lead has' : 'leads have'} no next action set.`)
+  // Absent must not render as nothing-to-say: an empty pipeline is a finding.
+  if (open === 0 && out.total === 0) out.gaps.push('No leads captured yet.')
+  return out
+}

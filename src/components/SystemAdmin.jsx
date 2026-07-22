@@ -1,15 +1,19 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { slmOptedIn, setSlmOptedIn, webgpuSupported } from '../lib/ai/slm'
+import AdminLeads from './AdminLeads'
 
 // Master Admin oversight hub. Its own sub-navigation keeps future views (users, invites,
 // activity, health…) contained here rather than adding tabs to the top Admin bar.
 // clientId set → scoped mode for a Client Admin (their client's users only).
 export default function SystemAdmin({ allRoles = [], clientId = null }) {
   const scoped = !!clientId
+  // 'Leads' is deliberately absent from the scoped list. A Client Admin must never see
+  // the sales pipeline — and RLS on public.leads enforces that independently, so this
+  // is only about not showing a tab that would return nothing.
   const subtabs = scoped
     ? ['User Management', 'Pending Invites', 'AI Usage']
-    : ['User Management', 'Pending Invites', 'System Health', 'E2E Tests', 'AI Usage', 'Reports', 'Notifications']
+    : ['Leads', 'User Management', 'Pending Invites', 'System Health', 'E2E Tests', 'AI Usage', 'Reports', 'Notifications']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -385,6 +389,9 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       )}
 
       {/* ── USER MANAGEMENT ── */}
+      {/* Leads & Opportunities — Master Admin only (never rendered in scoped mode). */}
+      {tab === 'Leads' && !scoped && <AdminLeads allRoles={allRoles} />}
+
       {tab === 'User Management' && (
         <div>
           <div className={`grid ${scoped ? 'grid-cols-3' : 'grid-cols-4'} gap-3 mb-5`}>
