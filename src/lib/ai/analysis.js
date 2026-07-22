@@ -192,6 +192,91 @@ export function inPlannedGap(on, phases) {
   return null
 }
 
+// ── Comms plan: dates and status derived, never stored ───────────────────────
+// JS mirror of the comms_schedule view. The SQL is authoritative (it runs live); this
+// exists so the canvas, the report and the tests compute the same thing, and so the
+// blocked-vs-overdue rule can be unit-tested without a database.
+//
+// Dates are handled as YYYY-MM-DD strings to match Postgres date arithmetic exactly —
+// constructing Date objects and adding days drifts across timezones and DST, and a comms
+// plan that moves a message by a day depending on the reader's timezone is worse than
+// useless.
+const MS_DAY = 864e5
+export function addDays(ymd, days) {
+  if (!ymd) return null
+  const [y, m, d] = ymd.slice(0, 10).split('-').map(Number)
+  const t = Date.UTC(y, m - 1, d) + (days || 0) * MS_DAY
+  return new Date(t).toISOString().slice(0, 10)
+}
+
+// A milestone is a point (milestone_date) or a band (starts_on..ends_on); an item
+// anchored to a band tracks its END — the output completes when the band closes.
+export function milestoneAnchorDate(m) {
+  if (!m) return null
+  return (m.milestone_date ?? m.ends_on ?? m.starts_on ?? null)?.slice(0, 10) ?? null
+}
+
+// One item → its derived date and status. `milestones` is a Map or object keyed by id.
+export function deriveCommsStatus(item, { milestones = {}, today = new Date().toISOString().slice(0, 10) } = {}) {
+  const get = id => (milestones instanceof Map ? milestones.get(id) : milestones[id]) || null
+  const anchor = item.anchor_milestone_id ? get(item.anchor_milestone_id) : null
+  const anchorDate = anchor ? milestoneAnchorDate(anchor) : null
+
+  // Derived date: milestone date + offset, or the fixed date.
+  const derived = item.anchor_milestone_id && anchorDate
+    ? addDays(anchorDate, item.offset_days || 0)
+    : (item.fixed_date ? item.fixed_date.slice(0, 10) : null)
+
+  // An override wins ("revise"); otherwise the item tracks its anchor (the cascade).
+  const effective = item.override_date ? item.override_date.slice(0, 10) : derived
+
+  // Detached: revised away from where the anchor would put it. Worth flagging, not hiding.
+  const detached = !!item.override_date && !!item.anchor_milestone_id
+    && !!derived && item.override_date.slice(0, 10) !== derived
+
+  const dep = item.depends_on_milestone_id ? get(item.depends_on_milestone_id) : null
+  const depDate = dep ? milestoneAnchorDate(dep) : null
+  const upstreamReady = !item.depends_on_milestone_id || (depDate != null && depDate <= today)
+
+  let status
+  if (item.sent) status = 'sent'
+  else if (effective == null) status = 'unscheduled'      // anchor has no date yet
+  else if (effective > today) status = 'planned'
+  else if (item.depends_on_milestone_id && depDate != null && depDate > today) status = 'blocked'
+  else status = 'overdue'                                  // past due, nothing blocking it
+
+  return { ...item, derivedDate: derived, effectiveDate: effective, detached,
+           upstreamReady, dependsDate: depDate, anchorName: anchor?.name ?? null,
+           dependsName: dep?.name ?? null, status }
+}
+
+// Whole plan, sorted the way it reads: by effective date, unscheduled last.
+export function buildCommsSchedule(items = [], milestones = {}, { today = new Date().toISOString().slice(0, 10) } = {}) {
+  const rows = (items || []).map(i => deriveCommsStatus(i, { milestones, today }))
+  return rows.sort((a, b) => {
+    if (a.effectiveDate == null) return 1
+    if (b.effectiveDate == null) return -1
+    return a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0
+  })
+}
+
+// The one-line read a change lead wants: how many sent, and the two failure modes kept
+// apart. Blocked names its upstream — that is the difference the plan exists to show.
+export function summariseComms(rows = []) {
+  const by = s => rows.filter(r => r.status === s)
+  const sent = by('sent'), blocked = by('blocked'), overdue = by('overdue')
+  const planned = by('planned'), unscheduled = by('unscheduled'), detached = rows.filter(r => r.detached)
+  const gaps = []
+  if (overdue.length) gaps.push(`${overdue.length} overdue — the date passed and nothing went out`)
+  if (blocked.length) gaps.push(`${blocked.length} blocked — waiting on ${[...new Set(blocked.map(b => b.dependsName).filter(Boolean))].join(', ') || 'an upstream output'}, not merely late`)
+  if (unscheduled.length) gaps.push(`${unscheduled.length} unscheduled — anchored to a milestone with no date yet`)
+  const noOwner = rows.filter(r => !r.sent && !r.owner_name).length
+  if (noOwner) gaps.push(`${noOwner} with no owner — a message near go-live nobody sends`)
+  return { total: rows.length, sent: sent.length, blocked: blocked.length, overdue: overdue.length,
+           planned: planned.length, unscheduled: unscheduled.length, detached: detached.length,
+           blockedItems: blocked, overdueItems: overdue, gaps }
+}
+
 export function computeTrend(snapshots = [], { plannedEnd = null, today = new Date(), phases = [] } = {}) {
   const pts = (snapshots || [])
     .filter(s => s && s.captured_on != null && s.pct != null)

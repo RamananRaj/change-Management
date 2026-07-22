@@ -290,6 +290,48 @@ const commsAspect = {
   scope: 'client',
   async build({ clientId, fmtDate }) {
     if (!clientId) return result(ASPECT_STATE.ABSENT, { note: 'No client in scope for a comms plan.' })
+
+    // The live comms_schedule view derives date and status. Read it first; the view's
+    // derived_status already distinguishes blocked from overdue, so nothing is recomputed
+    // here. The hand-authored artifact is only the fallback for a client with no rows.
+    const { data: sched } = await supabase.from('comms_schedule')
+      .select('message, audience, size, channel, owner_name, effective_date, derived_status, detached, depends_name, anchor_name')
+      .eq('client_id', clientId).order('effective_date', { ascending: true, nullsFirst: false })
+
+    if (sched && sched.length) {
+      const RAG = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', unscheduled: 'a' }
+      const blocked = sched.filter(i => i.derived_status === 'blocked')
+      const overdue = sched.filter(i => i.derived_status === 'overdue')
+      const unowned = sched.filter(i => i.derived_status !== 'sent' && !i.owner_name)
+      const detached = sched.filter(i => i.detached)
+      const anchorName = sched.find(i => i.anchor_name)?.anchor_name ?? 'go-live'
+      const section = {
+        heading: 'Comms plan', type: 'list',
+        headline: `Anchored to **${anchorName}** — ${sched.length} planned message${sched.length === 1 ? '' : 's'}, dates cascade when the milestone moves.`,
+        rows: sched.map(i => ({
+          rag: RAG[i.derived_status] ?? 'a',
+          name: i.message,
+          meta: `${i.audience ?? '—'}${i.size ? ` · ${i.size}` : ''} · ${i.channel ?? '—'}${i.owner_name ? ` · ${i.owner_name}` : ' · no owner'}`,
+          due: `${i.effective_date ? fmtDate(i.effective_date) : '—'}${
+            i.derived_status === 'blocked' ? ` · blocked on ${i.depends_name ?? 'upstream'}`
+            : i.derived_status === 'overdue' ? ' · overdue'
+            : i.detached ? ' · revised' : ''}`,
+        })),
+        empty: 'No comms items.',
+      }
+      const gaps = []
+      if (overdue.length) gaps.push(`${overdue.length} overdue — the date passed and nothing went out`)
+      if (blocked.length) gaps.push(`${blocked.length} blocked, waiting on ${[...new Set(blocked.map(b => b.depends_name).filter(Boolean))].join(', ') || 'an upstream output'} — not merely late`)
+      if (unowned.length) gaps.push(`${unowned.length} with no owner`)
+      if (detached.length) gaps.push(`${detached.length} revised off their anchor`)
+      if (!gaps.length) return result(ASPECT_STATE.PRESENT, { section })
+      return result(ASPECT_STATE.PARTIAL, { section, gaps,
+        note: `The comms plan has gaps: ${gaps.join('; ')}. Blocked is not the same as late — the upstream output is what needs finishing, and an unowned message near go-live is one nobody sends.`,
+        clientNote: `Communications plan is in place, with ${gaps.join('; ')}.`,
+      })
+    }
+
+    // Fallback: the legacy hand-authored artifact (static status).
     const { data: arts } = await supabase.from('change_artifacts')
       .select('data').eq('client_id', clientId).eq('type', 'comms_plan').eq('is_current', true).limit(1)
     const c = arts?.[0]?.data
@@ -297,7 +339,6 @@ const commsAspect = {
       note: 'No comms plan captured. Anchoring each message to a milestone rather than a fixed date means the whole cascade moves when go-live moves — which is the failure mode of every comms plan kept in a spreadsheet.',
       clientNote: 'Communications plan — not yet captured.',
     })
-
     const items = c.items ?? []
     const blocked = items.filter(i => i.status === 'blocked')
     const unowned = items.filter(i => !i.owner)
@@ -312,7 +353,6 @@ const commsAspect = {
       })),
       empty: 'No comms items.',
     }
-
     const gaps = []
     if (blocked.length) gaps.push(`${blocked.length} item${blocked.length === 1 ? ' is' : 's are'} blocked (${blocked.map(i => i.source ?? i.message).join('; ')})`)
     if (unowned.length) gaps.push(`${unowned.length} item${unowned.length === 1 ? ' has' : 's have'} no owner`)

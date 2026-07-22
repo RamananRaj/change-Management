@@ -1024,6 +1024,39 @@ async function runComms(_params, text, ctx) {
   const data = await loadData()
   const scope = resolveScope(text, ctx, data)
   const clientId = scope.client?.id ?? (scope.proj ? data.projRollup.find(p => p.id === scope.proj.id)?.client_id : null)
+
+  // Live schedule first — dates and statuses are derived in the view, so this is what the
+  // canvas, the report and CORA all read. The artifact is only the fallback.
+  let sq = supabase.from('comms_schedule')
+    .select('message, audience, size, channel, owner_name, effective_date, derived_status, detached, depends_name, anchor_name')
+    .order('effective_date', { ascending: true, nullsFirst: false })
+  if (clientId) sq = sq.eq('client_id', clientId)
+  const { data: sched } = await sq
+  if (sched && sched.length) {
+    const RAG = { sent: 'g', planned: 'a', blocked: 'r', overdue: 'r', unscheduled: 'a' }
+    const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—'
+    const rows = sched.map(i => ({
+      rag: RAG[i.derived_status] ?? 'a',
+      name: i.message,
+      meta: `${i.audience ?? '—'}${i.size ? ` · ${i.size}` : ''} · ${i.channel ?? '—'}${i.owner_name ? ` · ${i.owner_name}` : ' · no owner'}`,
+      due: `${fmt(i.effective_date)}${
+        i.derived_status === 'blocked' ? ` · blocked on ${i.depends_name ?? 'upstream'}`
+        : i.derived_status === 'overdue' ? ' · overdue'
+        : i.detached ? ' · revised' : ''}`,
+    }))
+    const sent = sched.filter(i => i.derived_status === 'sent').length
+    const blocked = sched.filter(i => i.derived_status === 'blocked')
+    const overdue = sched.filter(i => i.derived_status === 'overdue')
+    const anchorName = sched.find(i => i.anchor_name)?.anchor_name ?? 'the timeline'
+    const commentary = [
+      `**${sent}/${sched.length}** sent, anchored to **${anchorName}** — dates cascade when the milestone moves.`,
+      overdue.length ? `**${overdue.length} overdue** — the date has passed and nothing went out.` : null,
+      blocked.length ? `**${blocked.length} blocked**: ${blocked.map(b => `${b.message} — waiting on ${b.depends_name ?? 'upstream'}`).join('; ')}. Blocked is not the same as late; the upstream output is what needs finishing.` : null,
+    ].filter(Boolean).join(' ')
+    return withAspectFooter({ type: 'list', title: `Comms plan${scope.suffix}`, rows, commentary, empty: 'No comms planned.' },
+      { projects: scopedProjects(data, scope), clientId, today: data.today.toISOString().slice(0, 10) })
+  }
+
   let q = supabase.from('change_artifacts').select('client_id, title, data').eq('type', 'comms_plan').eq('is_current', true)
   if (clientId) q = q.eq('client_id', clientId)
   const { data: arts } = await q

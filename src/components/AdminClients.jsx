@@ -5,6 +5,7 @@ import ProjectTimeline from './ProjectTimeline'
 import ProjectAudiences from './ProjectAudiences'
 import ProjectTraining from './ProjectTraining'
 import ProjectCoverage from './ProjectCoverage'
+import ProjectComms from './ProjectComms'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -68,7 +69,7 @@ const TAB_GROUPS = [
   { key: 'pathway',  label: '🗺️ Pathway',   leaves: [['pathway',   'Pathway']],   clientOnly: true },
   { key: 'library',  label: '📚 Library',   leaves: [['content',   'Content'], ['templates', 'Templates']], clientOnly: true },
   { key: 'people',   label: '👥 People',    leaves: [['audiences', 'Audiences'], ['training', 'Training'], ['coverage', 'Coverage']] },
-  { key: 'delivery', label: '📅 Delivery',  leaves: [['timeline',  'Timeline'],  ['progress',  'Progress']] },
+  { key: 'delivery', label: '📅 Delivery',  leaves: [['timeline',  'Timeline'],  ['comms', 'Comms'], ['progress',  'Progress']] },
   { key: 'artifacts',label: '✦ Artifacts',  leaves: [['artifacts', 'Artifacts']] },
 ]
 
@@ -94,6 +95,8 @@ const TAB_INTRO = {
     'The grid IS the training needs analysis — groups down the side, modules across, a mark where a need exists. An empty cell means not required, which is a real answer.'],
   coverage:  ['How far through the training each group is.',
     'Reported by each group\'s leader as a count and a date, not by naming individuals. A blank is never shown as 0% — the screen says whether nobody was asked, nobody answered, or the group has no size yet.'],
+  comms:     ['Every planned communication, anchored to the timeline.',
+    'Each message hangs off a milestone with an offset, so moving go-live moves the whole cascade. A message past its date reads as blocked when it is waiting on an upstream output, and overdue only when nothing is stopping it — the two are different problems.'],
   timeline:  ['When everything happens.',
     'Swimlanes, phases, milestones and activities on one canvas. Drag to move or resize, click any bar to edit its dates, colour and percent complete.'],
   progress:  ['How {client} is actually tracking.',
@@ -152,6 +155,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
   const [audienceProject, setAudienceProject] = useState('') // which project's audiences we're editing
   const [trainingProject, setTrainingProject] = useState('') // and whose training matrix
   const [coverageProject, setCoverageProject] = useState('') // and whose coverage checks
+  const [commsProject,    setCommsProject]    = useState('') // and whose comms plan
 
   function initTab(key) {
     setClientTab(key)
@@ -167,6 +171,7 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
     if (key === 'audiences' && !audienceProject) setAudienceProject(projects[0]?.id ?? '')
     if (key === 'training'  && !trainingProject) setTrainingProject(projects[0]?.id ?? '')
     if (key === 'coverage'  && !coverageProject) setCoverageProject(projects[0]?.id ?? '')
+    if (key === 'comms'     && !commsProject)    setCommsProject(projects[0]?.id ?? '')
     if (key === 'progress') {
       const pid = progressProject || projects[0]?.id || ''
       setProgressProject(pid)
@@ -1800,6 +1805,28 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
             </div>
             {coverageProject && (
               <ProjectCoverage project={projects.find(p => p.id === coverageProject) ?? projects[0]} />
+            )}
+          </div>
+          )
+        )}
+
+        {clientTab === 'comms' && (
+          projects.length === 0 ? (
+            <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-100">
+              <p className="text-slate-400 text-sm">No projects yet.</p>
+              <p className="text-slate-300 text-xs mt-1">Create a project first — comms anchor to that project's milestones.</p>
+            </div>
+          ) : (
+          <div>
+            <div className="mb-4">
+              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Project</label>
+              <select value={commsProject} onChange={e => setCommsProject(e.target.value)}
+                className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#1F4E79] min-w-[220px]">
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            {commsProject && (
+              <ProjectComms project={projects.find(p => p.id === commsProject) ?? projects[0]} />
             )}
           </div>
           )

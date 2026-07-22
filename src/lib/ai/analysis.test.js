@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope, inPlannedGap } from './analysis'
+import { buildReportGantt, buildIntegratedInsight, normPhrase, distinctiveTokens, resolveScope, scopedProjects, buildPhaseDrill, groundedFallback, resolveUsageScope, renderTemplate, templateTokens, matchKnowledgeRule, computeTrend, trendSentence, buildTrendChart, buildLaneTree, laneStyle, rowsForLane, groupLaneRows, clampPct, fuzzyEntityMatch, matchByPartialName, distinctiveNameTokens, buildProgrammeStory, renderStory, heatmapFromAudiences, overallImpact, buildNeedsMatrix, summariseDemand, summariseCoverage, coverageTrend, coverageVerdict, isStale, aspectSections, narrateGaps, completenessLine, buildGapsSection, sortAspects, analyseHeatmap, phaseProgress, projectProgress, laneProgress, inScope, inPlannedGap, addDays, milestoneAnchorDate, deriveCommsStatus, buildCommsSchedule, summariseComms } from './analysis'
 
 const heat = {
   version: 1,
@@ -1165,5 +1165,139 @@ describe('computeTrend — planned gap', () => {
     const t = computeTrend(flat, { today: new Date('2026-10-15'), phases })
     expect(trendSentence(t)).toContain('Design')
     expect(trendSentence(t)).not.toContain('stalled')
+  })
+})
+
+describe('comms plan — dates and status derived', () => {
+  // Go-Live is a point milestone; a band is tested separately.
+  const golive = { id: 'gl', name: 'Go-Live', milestone_date: '2027-02-15' }
+  const champ  = { id: 'ch', name: 'Change champion network', starts_on: '2026-07-01', ends_on: '2026-10-30' }
+  const ms = { gl: golive, ch: champ }
+  const today = '2026-07-22'
+
+  it('addDays does timezone-safe date arithmetic', () => {
+    expect(addDays('2027-02-15', -7)).toBe('2027-02-08')
+    expect(addDays('2026-12-31', 1)).toBe('2027-01-01')   // year boundary
+    expect(addDays(null, 5)).toBeNull()
+  })
+
+  it('a band anchors to its end date, a point to its date', () => {
+    expect(milestoneAnchorDate(golive)).toBe('2027-02-15')
+    expect(milestoneAnchorDate(champ)).toBe('2026-10-30')  // ends_on
+  })
+
+  it('derives the date from anchor + offset (the cascade)', () => {
+    const r = deriveCommsStatus(
+      { message: 'x', anchor_milestone_id: 'gl', offset_days: -7 }, { milestones: ms, today })
+    expect(r.derivedDate).toBe('2027-02-08')
+    expect(r.effectiveDate).toBe('2027-02-08')
+    expect(r.status).toBe('planned')
+  })
+
+  it('moving the anchor moves the item', () => {
+    const item = { message: 'x', anchor_milestone_id: 'gl', offset_days: -7 }
+    const early = deriveCommsStatus(item, { milestones: { gl: { ...golive, milestone_date: '2027-02-15' } }, today })
+    const moved = deriveCommsStatus(item, { milestones: { gl: { ...golive, milestone_date: '2027-03-15' } }, today })
+    expect(early.effectiveDate).toBe('2027-02-08')
+    expect(moved.effectiveDate).toBe('2027-03-08')   // cascade followed go-live
+  })
+
+  it('BLOCKED: past due, waiting on an upstream milestone not yet reached', () => {
+    // due 2026-07-19 (before today), champion network ends 2026-10-30 (future).
+    const r = deriveCommsStatus(
+      { message: 'briefings', anchor_milestone_id: 'gl', offset_days: -211, depends_on_milestone_id: 'ch' },
+      { milestones: ms, today })
+    expect(r.effectiveDate <= today).toBe(true)
+    expect(r.upstreamReady).toBe(false)
+    expect(r.status).toBe('blocked')
+    expect(r.dependsName).toBe('Change champion network')
+  })
+
+  it('OVERDUE: past due with nothing blocking it', () => {
+    const r = deriveCommsStatus(
+      { message: 'follow-up', anchor_milestone_id: 'gl', offset_days: -215 },  // 2026-07-15
+      { milestones: ms, today })
+    expect(r.status).toBe('overdue')
+  })
+
+  it('blocked and overdue are NOT the same — the upstream is what differs', () => {
+    const base = { message: 'x', anchor_milestone_id: 'gl', offset_days: -211 }
+    const blocked = deriveCommsStatus({ ...base, depends_on_milestone_id: 'ch' }, { milestones: ms, today })
+    const overdue = deriveCommsStatus({ ...base }, { milestones: ms, today })
+    expect(blocked.status).toBe('blocked')
+    expect(overdue.status).toBe('overdue')
+  })
+
+  it('a met upstream downgrades blocked to overdue', () => {
+    // champion network already ended in the past → upstream ready → just late.
+    const past = { gl: golive, ch: { ...champ, ends_on: '2026-06-01' } }
+    const r = deriveCommsStatus(
+      { message: 'x', anchor_milestone_id: 'gl', offset_days: -211, depends_on_milestone_id: 'ch' },
+      { milestones: past, today })
+    expect(r.upstreamReady).toBe(true)
+    expect(r.status).toBe('overdue')
+  })
+
+  it('sent always wins, whatever the dates', () => {
+    const r = deriveCommsStatus(
+      { message: 'x', anchor_milestone_id: 'gl', offset_days: -215, sent: true },
+      { milestones: ms, today })
+    expect(r.status).toBe('sent')
+  })
+
+  it('a fixed date anchors without a milestone', () => {
+    const future = deriveCommsStatus({ message: 'newsletter', fixed_date: '2026-08-03' }, { milestones: ms, today })
+    expect(future.effectiveDate).toBe('2026-08-03')
+    expect(future.status).toBe('planned')
+  })
+
+  it('an override detaches from the anchor and the plan flags it', () => {
+    const r = deriveCommsStatus(
+      { message: 'walkthrough', anchor_milestone_id: 'gl', offset_days: -30, override_date: '2027-01-20' },
+      { milestones: ms, today })
+    expect(r.derivedDate).toBe('2027-01-16')   // where the anchor would put it
+    expect(r.effectiveDate).toBe('2027-01-20') // where the admin pinned it
+    expect(r.detached).toBe(true)
+  })
+
+  it('an override equal to the derived date is NOT detached', () => {
+    const r = deriveCommsStatus(
+      { message: 'x', anchor_milestone_id: 'gl', offset_days: -30, override_date: '2027-01-16' },
+      { milestones: ms, today })
+    expect(r.detached).toBe(false)
+  })
+
+  it('UNSCHEDULED: anchored to a milestone that has no date yet', () => {
+    const undated = { gl: { id: 'gl', name: 'Go-Live' } }  // no dates
+    const r = deriveCommsStatus(
+      { message: 'x', anchor_milestone_id: 'gl', offset_days: -7 }, { milestones: undated, today })
+    expect(r.effectiveDate).toBeNull()
+    expect(r.status).toBe('unscheduled')
+  })
+
+  it('buildCommsSchedule sorts by effective date, unscheduled last', () => {
+    const items = [
+      { id: 'a', message: 'later',  anchor_milestone_id: 'gl', offset_days: -7 },   // 2027-02-08
+      { id: 'b', message: 'sooner', anchor_milestone_id: 'gl', offset_days: -215 }, // 2026-07-15
+      { id: 'c', message: 'nodate', anchor_milestone_id: 'gl', offset_days: 0,
+        // anchor with no date → unscheduled
+      },
+    ]
+    const undatedMs = { gl: golive }
+    const rows = buildCommsSchedule(items.slice(0,2), undatedMs, { today })
+    expect(rows.map(r => r.id)).toEqual(['b', 'a'])
+  })
+
+  it('summariseComms keeps blocked and overdue apart and names the upstream', () => {
+    const rows = buildCommsSchedule([
+      { id: '1', message: 's', anchor_milestone_id: 'gl', offset_days: -250, sent: true },
+      { id: '2', message: 'o', anchor_milestone_id: 'gl', offset_days: -215 },
+      { id: '3', message: 'b', anchor_milestone_id: 'gl', offset_days: -211, depends_on_milestone_id: 'ch' },
+      { id: '4', message: 'p', anchor_milestone_id: 'gl', offset_days: -7 },
+    ], ms, { today })
+    const s = summariseComms(rows)
+    expect(s).toMatchObject({ total: 4, sent: 1, overdue: 1, blocked: 1, planned: 1 })
+    expect(s.gaps.some(g => /blocked/.test(g) && /Change champion network/.test(g))).toBe(true)
+    expect(s.gaps.some(g => /overdue/.test(g))).toBe(true)
   })
 })
