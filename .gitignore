@@ -35,3 +35,5 @@ vitest.config.js.timestamp-*.mjs
 /test-results/
 /playwright-report/
 /playwright/.cache/
+screenshots/
+e2e/.auth/

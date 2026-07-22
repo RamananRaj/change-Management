@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "e2e:install": "playwright install --with-deps chromium"
+    "e2e:install": "playwright install --with-deps chromium",
+    "shots": "node e2e/capture-screens.mjs",
+    "shots:login": "node e2e/capture-screens.mjs --login"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

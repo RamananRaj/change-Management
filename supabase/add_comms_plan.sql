@@ -121,6 +121,13 @@ DROP POLICY IF EXISTS "Members read their comms" ON public.comms_items;
 CREATE POLICY "Members read their comms" ON public.comms_items FOR SELECT
   USING (EXISTS (SELECT 1 FROM public.project_members m WHERE m.project_id = comms_items.project_id AND m.user_id = auth.uid()));
 
+-- Table-level GRANT — separate from RLS. RLS decides which ROWS a role sees; this decides
+-- whether the role may touch the table at all. Both gates must be open. Missing this
+-- surfaced as "permission denied for table comms_items" in the running app while the SQL
+-- editor (postgres superuser, bypasses grants) passed. Row visibility stays governed by
+-- the three policies above.
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.comms_items TO authenticated;
+
 -- ─────────────────────────────────────────────────────────────
 -- 3. The schedule view — where the date and the status are derived
 -- ─────────────────────────────────────────────────────────────
