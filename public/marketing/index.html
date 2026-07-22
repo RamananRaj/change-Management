@@ -71,8 +71,9 @@ nav.solid .logo{color:var(--brand)}
 nav.solid .nav-links{color:var(--slate)}
 .nav-links a:hover{color:var(--gold)}
 .nav-cta{display:flex;align-items:center;gap:14px}
-.btn{display:inline-flex;align-items:center;gap:8px;border:0;cursor:pointer;font-family:inherit;font-weight:600;
-  border-radius:11px;padding:12px 22px;font-size:15px;transition:transform .18s,box-shadow .25s,background .25s,color .25s;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;cursor:pointer;font-family:inherit;
+  font-weight:600;border-radius:11px;padding:12px 22px;font-size:15px;min-height:44px;text-align:center;
+  transition:transform .18s,box-shadow .25s,background .25s,color .25s;white-space:nowrap}
 .btn:active{transform:translateY(1px)}
 .btn-gold{background:var(--gold);color:#fff;box-shadow:0 4px 18px rgba(232,145,58,.34)}
 .btn-gold:hover{background:#d5822c;box-shadow:0 8px 26px rgba(232,145,58,.46)}
@@ -363,16 +364,22 @@ form.lead .fsub{font-size:14.4px;color:var(--slate);margin-bottom:26px}
 .fg.full{grid-column:1/-1}
 label{font-size:13.4px;font-weight:600;color:#22374F}
 label .req{color:var(--stop)}
-input,select,textarea{font-family:inherit;font-size:15px;color:#12203A;padding:12px 14px;border:1.5px solid var(--line);
-  border-radius:10px;background:#fff;transition:border-color .2s,box-shadow .2s;width:100%}
+/* min-height 46px: comfortably over the 44px minimum touch target, so these are
+   reliably tappable on a phone rather than "nearly" tappable. 16px font on the
+   inputs specifically stops iOS Safari zooming the page on focus. */
+input,select,textarea{font-family:inherit;font-size:16px;color:#12203A;padding:12px 14px;min-height:46px;
+  border:1.5px solid var(--line);border-radius:10px;background:#fff;transition:border-color .2s,box-shadow .2s;width:100%}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3.5px rgba(28,114,147,.13)}
 input.err,select.err,textarea.err{border-color:var(--stop);box-shadow:0 0 0 3.5px rgba(239,68,68,.1)}
 textarea{resize:vertical;min-height:92px;line-height:1.55}
 .msg{font-size:12.6px;color:var(--stop);display:none}
 .msg.show{display:block}
 .hp{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important}
-.consent{display:flex;gap:11px;align-items:flex-start;margin:6px 0 22px;font-size:13.4px;color:var(--slate);line-height:1.55}
-.consent input{width:17px;height:17px;margin-top:2px;flex:none;accent-color:var(--teal)}
+/* The whole label is the tap target, and the vertical padding gives it height on a
+   phone — a 17px checkbox on its own is a miserable thing to hit with a thumb. */
+.consent{display:flex;gap:12px;align-items:flex-start;margin:6px 0 22px;padding:8px 0;font-size:13.4px;
+  color:var(--slate);line-height:1.55;cursor:pointer}
+.consent input{width:21px;height:21px;min-height:0;margin-top:1px;flex:none;accent-color:var(--teal)}
 form.lead .btn{width:100%;justify-content:center}
 .privacy{text-align:center;font-size:12.6px;color:var(--slate-d);margin-top:15px}
 
@@ -398,7 +405,7 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
 .foot-top .logo{color:#fff;margin-bottom:14px}
 .foot-top p{font-size:14.2px;line-height:1.62;max-width:290px}
 .fcol h5{color:#fff;font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin:0 0 15px}
-.fcol a{display:block;margin-bottom:10px;transition:color .2s}
+.fcol a{display:block;padding:7px 0;transition:color .2s}
 .fcol a:hover{color:var(--gold)}
 .foot-bot{display:flex;justify-content:space-between;gap:20px;padding-top:26px;font-size:13.4px;flex-wrap:wrap}
 .mock-flag{background:rgba(232,145,58,.14);border:1px solid rgba(232,145,58,.3);color:var(--gold);
@@ -419,13 +426,44 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
 @media (max-width:620px){
   body{font-size:16px}
   section{padding:74px 0}
-  header.hero{padding:124px 0 72px}
+  header.hero{padding:118px 0 68px}
   .wrap{padding:0 20px}
   .fr{grid-template-columns:1fr}
   form.lead{padding:26px 22px}
   .phases{grid-template-columns:1fr}
   .nav-cta .btn-ghost{display:none}
   .foot-top{grid-template-columns:1fr}
+  .teaser{max-height:300px}
+  .teaser::after{height:100px}
+  .claim{padding:42px 0}
+  .row{margin-bottom:60px}
+  .ui-body{padding:18px 15px}
+  /* a 26px-tall link is hard to hit — give the logo real vertical size */
+  .logo{padding:6px 0}
+}
+
+/* ── Small phones (iPhone SE and friends) ────────────────────────────────
+   At 320px the logo plus the "Book a demo" button were 355px wide and pushed
+   the whole page sideways. Shrink both rather than dropping the CTA, which is
+   the one thing in the nav that earns its place. */
+@media (max-width:400px){
+  .wrap{padding:0 16px}
+  nav{padding:11px 0}
+  .logo{font-size:12.5px;letter-spacing:.09em;gap:8px}
+  .logo .mark{width:22px;height:22px;border-radius:7px}
+  .nav-cta .btn{padding:10px 14px;font-size:13.5px;border-radius:9px}
+  /* white-space:nowrap means a long label ("Watch CORA on your own programme")
+     can neither shrink nor wrap, so it pushes the whole document wider than the
+     phone. Release it on every button, not just the ones I happened to catch. */
+  .btn{white-space:normal}
+  .hero-btns{flex-direction:column;align-items:stretch}
+  .hero-btns .btn{width:100%;padding:14px 16px;font-size:15px}
+  .row .copy>.btn{width:100%}
+  .pill{font-size:11px;letter-spacing:.1em;padding:7px 13px}
+  .teaser{max-height:250px}
+  form.lead{padding:22px 18px}
+  .hm{min-width:300px}
+  .teaser-cta{font-size:12.5px;padding:9px 14px;white-space:normal;max-width:82%;text-align:center}
 }
 </style>
 </head>

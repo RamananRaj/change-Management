@@ -1,6 +1,16 @@
 # ChangeFlow — website mockup
 
-A single self-contained page. Open `index.html` in any browser; nothing to install.
+Live at **`/marketing`** on the Vercel deployment.
+
+> **Don't preview by double-clicking `index.html`.** The hero image uses a root-absolute
+> path (`/marketing/img/…`) because Vercel redirects `/marketing/` to `/marketing`, which
+> breaks relative paths. Opening the file directly makes that image 404. To preview locally,
+> serve `public/` as the web root:
+>
+> ```bash
+> cd changeflow/public && python3 -m http.server 8000
+> # then open http://localhost:8000/marketing/index.html
+> ```
 
 ```
 website-mockup/
@@ -11,8 +21,9 @@ website-mockup/
     01-…06-*.webp     the original captures, unused — kept as spares
 ```
 
-Verified at 1440px, 768px and 390px: no horizontal overflow, no console errors,
-form validation and success state both working.
+**Verified** at 1440, 768, 430, 390 and 320px: no horizontal overflow, no console errors,
+no broken images when served as deployed, form validation and success state both working.
+All primary buttons and form fields meet the 44px minimum touch target.
 
 ---
 
