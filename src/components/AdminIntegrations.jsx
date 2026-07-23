@@ -12,7 +12,8 @@ import { supabase } from '../lib/supabase'
 // includes the token. All Jira calls (test, fetch) run in the `jira` edge
 // function with the service role. The browser never sees the credential again.
 
-const DEFAULT_JQL = 'labels = "Change Management" ORDER BY updated DESC'
+// Jira labels can't contain spaces, so the default label is underscore-joined.
+const DEFAULT_JQL = 'labels = Change_Management ORDER BY updated DESC'
 
 const EMPTY = { base_url: '', auth_email: '', api_token: '', jql: DEFAULT_JQL, enabled: false }
 
@@ -110,7 +111,7 @@ export default function AdminIntegrations() {
           <strong className="text-[#1F4E79]">Bring change-relevant issues in from Jira.</strong>{' '}
           Connect a client's Jira, then point a query at whatever they use to flag change work —
           a label, a project, an issue type, a saved filter. CORA reads what the query returns to
-          understand impact. The default catches anything labelled <code className="bg-white px-1 rounded border border-slate-200">Change Management</code>.
+          understand impact. The default catches anything labelled <code className="bg-white px-1 rounded border border-slate-200">Change_Management</code> (Jira labels can't contain spaces).
         </p>
       </div>
 
@@ -196,7 +197,7 @@ export default function AdminIntegrations() {
                 ['Create an API token', <>In Jira, go to <strong>Account settings → Security → API tokens</strong> and create one. Copy it — it is shown once.</>],
                 ['Use the token owner’s email', <>The account email above must be the one that created the token. That account’s Jira permissions decide what CORA can see.</>],
                 ['Set the base URL', <>Your Jira address, e.g. <code className="bg-slate-50 px-1 rounded">https://acme.atlassian.net</code> — no trailing path.</>],
-                ['Point the query', <>Leave the default to catch <code className="bg-slate-50 px-1 rounded">Change Management</code>-labelled issues, or edit the JQL to match this client’s convention.</>],
+                ['Point the query', <>Leave the default to catch <code className="bg-slate-50 px-1 rounded">Change_Management</code>-labelled issues, or edit the JQL to match this client’s convention.</>],
                 ['Save, then Test', <>Save the connection, then Test to confirm the credentials work before enabling.</>],
                 ['Enable & preview', <>Turn on <em>Enabled</em>, then preview the issues below to check the query returns what you expect.</>],
               ].map(([h, b], i) => (

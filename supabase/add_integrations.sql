@@ -9,7 +9,7 @@
 --
 -- FLEXIBLE BY DESIGN — A QUERY, NOT A HARD-CODED LABEL
 --   Every Jira is set up differently. Rather than assume a fixed label, the
---   connection stores a JQL query. It defaults to  labels = "Change Management"
+--   connection stores a JQL query. It defaults to  labels = Change_Management
 --   but an admin can change it to anything — a different label, a project, an
 --   issue type, a saved filter. The platform captures whatever the query returns;
 --   it never dictates how the client tags their work.
@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.client_integrations (
   api_token     text,                     -- server-side only; never selected by the UI
 
   -- The flexible bit: what counts as change-relevant, as a JQL query the admin owns.
-  jql           text NOT NULL DEFAULT 'labels = "Change Management" ORDER BY updated DESC'
+  jql           text NOT NULL DEFAULT 'labels = Change_Management ORDER BY updated DESC'
                 CHECK (length(jql) <= 2000),
 
   enabled       boolean NOT NULL DEFAULT false,

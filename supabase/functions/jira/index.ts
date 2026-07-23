@@ -87,11 +87,21 @@ Deno.serve(async (req) => {
       try {
         const r = await fetch(`${base}/rest/api/3/myself`, { headers })
         ok = r.ok
-        note = r.ok
-          ? `Connected as ${(await r.json())?.displayName ?? cfg.auth_email}.`
-          : `Jira returned ${r.status}. Check the URL, email and token.`
+        if (r.ok) {
+          note = `Connected as ${(await r.json())?.displayName ?? cfg.auth_email}.`
+        } else if (r.status === 401) {
+          note = 'Jira rejected the credentials (401). Check the account email and API token.'
+        } else if (r.status === 404) {
+          // /myself 404s when the site has no Jira, not when the token is wrong —
+          // saying "check the token" here sends people down the wrong path.
+          note = 'No Jira found at that address (404). The site may not have Jira enabled, or the base URL is wrong.'
+        } else if (r.status === 403) {
+          note = 'The account is authenticated but not permitted (403). Check its Jira access.'
+        } else {
+          note = `Jira returned ${r.status}. Check the base URL, email and token.`
+        }
       } catch (e) {
-        note = 'Could not reach Jira — check the base URL.'
+        note = 'Could not reach Jira — check the base URL is a valid https address.'
       }
       // Record the result on the row so the UI shows status without re-testing.
       await admin.from('client_integrations')
