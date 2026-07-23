@@ -1,0 +1,90 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+*{margin:0;box-sizing:border-box;font-family:Calibri,Arial,sans-serif}
+body{background:#fff}
+.card{width:1320px;padding:24px 28px;background:#fff}
+.g-scale{display:flex;gap:14px;margin-bottom:10px}
+.g-scale .lbl{width:250px;flex:none}
+.g-scale .track{position:relative;flex:1;height:16px;border-bottom:1px solid #E3EAF2}
+.g-scale i{position:absolute;top:0;font-size:12px;color:#8FA3BF;transform:translateX(0);font-style:normal}
+.lane{position:relative;border-radius:8px;padding:8px 0;margin-bottom:10px}
+.lane-h{font-size:14px;font-weight:700;margin:0 0 6px 10px;display:flex;align-items:center;gap:8px}
+.sw{width:10px;height:10px;border-radius:3px;display:block}
+.row{display:flex;gap:14px;align-items:center;margin-bottom:4px}
+.row .lbl{width:250px;flex:none;padding-left:10px}
+.row .nm{font-size:12.5px;color:#22374F;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .dt{font-size:10.5px;color:#8FA3BF}
+.track{position:relative;flex:1;height:24px}
+.bar{position:absolute;top:4px;height:16px;border-radius:4px;display:flex;align-items:center;padding:0 7px;overflow:hidden}
+.bar span{font-size:11px;color:#fff;font-weight:600;white-space:nowrap}
+.fill{position:absolute;top:0;left:0;bottom:0;background:rgba(0,0,0,.22);border-radius:4px 0 0 4px}
+.dia{position:absolute;top:5px;width:14px;height:14px;margin-left:-7px;transform:rotate(45deg);border:2px solid #fff}
+.range{position:absolute;top:6px;font-size:10.5px;color:#8FA3BF;white-space:nowrap}
+.today{position:absolute;top:0;bottom:0;width:0;border-left:2px solid #E23B3B;z-index:5}
+.today-lbl{position:absolute;top:-16px;transform:translateX(-50%);font-size:10.5px;font-weight:700;color:#E23B3B;font-style:normal;background:#fff;padding:0 4px}
+</style></head><body>
+
+<div class="card" id="gantt">
+  <div class="g-scale"><span class="lbl"></span><span class="track" id="scale"></span></div>
+  <div id="lanes"></div>
+</div>
+
+<script>
+const MIN='2026-05-01', MAX='2027-03-31', TODAY='2026-07-22'
+const t=d=>(Date.parse(d)-Date.parse(MIN))/(Date.parse(MAX)-Date.parse(MIN))*100
+const dm=d=>{const p=d.split('-');return p[2]+'/'+p[1]}
+// each item: [name, start, end, color, pct(0-100 or null), point]
+const lanes=[
+  {name:'Change programme', tint:'#F1FAF9', rows:[
+    ['Impact assessment','2026-05-18','2026-07-10','0d9488',100,0],
+    ['Awareness campaign','2026-06-15','2026-08-28','0891b2',35,0],
+    ['Change champion network','2026-07-01','2026-10-30','7c3aed',20,0],
+    ['Training needs analysis','2026-07-06','2026-08-21','16a34a',15,0],
+    ['Leader briefings','2026-07-13','2026-12-18','0891b2',10,0],
+    ['Train the trainer','2026-10-05','2026-11-13','16a34a',null,0],
+    ['End-user training','2026-11-16','2027-02-05','16a34a',null,0],
+    ['Go-live comms','2027-01-18','2027-02-20','0891b2',null,0],
+    ['Business readiness gate','2027-01-29','2027-01-29','dc2626',null,1],
+  ]},
+  {name:'Delivery', tint:'#EFF5FC', rows:[
+    ['Design authority sign-off','2026-06-26','2026-06-26','1F4E79',null,1],
+    ['Build — release 1','2026-06-01','2026-09-25','1F4E79',60,0],
+    ['Build — release 2','2026-09-28','2026-12-18','378ADD',null,0],
+    ['UAT','2027-01-04','2027-02-12','E8913A',null,0],
+    ['Go-Live','2027-02-15','2027-02-15','dc2626',null,1],
+    ['Hypercare','2027-02-16','2027-03-27','64748b',null,0],
+  ]},
+]
+const scale=document.getElementById('scale')
+const M=[['May','2026-05-01'],['Jun','2026-06-01'],['Jul','2026-07-01'],['Aug','2026-08-01'],['Sep','2026-09-01'],['Oct','2026-10-01'],['Nov','2026-11-01'],['Dec','2026-12-01'],["Jan '27",'2027-01-01'],['Feb','2027-02-01'],['Mar','2027-03-01']]
+M.forEach(([l,d])=>{const i=document.createElement('i');i.textContent=l;i.style.left=t(d)+'%';scale.appendChild(i)})
+const host=document.getElementById('lanes')
+lanes.forEach(l=>{
+  const box=document.createElement('div');box.className='lane';box.style.background=l.tint
+  const h=document.createElement('div');h.className='lane-h';h.style.color='#21295C'
+  h.innerHTML=`<span class="sw" style="background:#21295C"></span>${l.name}`;box.appendChild(h)
+  l.rows.forEach(([n,s,e,c,pct,point])=>{
+    const r=document.createElement('div');r.className='row'
+    const x=t(s), w=Math.max(t(e)-x,0.5), late=x>78
+    let bar
+    if(point){
+      bar=`<span class="dia" style="left:${x}%;background:#${c}"></span>`+
+          `<span class="range" style="left:${x}%;margin-left:12px">${dm(s)}</span>`
+    }else{
+      const fill = pct!=null ? `<span class="fill" style="width:${pct}%"></span>` : ''
+      const lbl = w>14 ? `<span>${n}</span>` : ''
+      bar=`<span class="bar" style="left:${x}%;width:${w}%;background:#${c}">${fill}${lbl}</span>`+
+          (late?`<span class="range" style="right:${100-x}%;margin-right:8px">${dm(s)}–${dm(e)}</span>`
+               :`<span class="range" style="left:${x+w}%;margin-left:8px">${dm(s)}–${dm(e)}</span>`)
+    }
+    r.innerHTML=`<span class="lbl"><div class="nm">${n}</div><div class="dt">${point?dm(s):dm(s)+' – '+dm(e)}</div></span><span class="track">${bar}</span>`
+    box.appendChild(r)
+  })
+  host.appendChild(box)
+})
+// today line across all tracks
+document.querySelectorAll('#lanes .track').forEach((tr,i)=>{
+  const g=document.createElement('span');g.className='today';g.style.left=t(TODAY)+'%';tr.appendChild(g)
+  if(i===0){const lb=document.createElement('span');lb.className='today-lbl';lb.textContent='Today';lb.style.left=t(TODAY)+'%';tr.appendChild(lb)}
+})
+</script>
+</body></html>

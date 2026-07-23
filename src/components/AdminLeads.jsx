@@ -361,6 +361,7 @@ export default function AdminLeads({ allRoles = [] }) {
                     <td className="px-4 py-3 text-[12px] text-slate-500">
                       {sourceLabel(r.source)}
                       {r.source_detail && <span className="block text-[11px] text-slate-400">{r.source_detail}</span>}
+                      {r.report_sent && <span className="inline-block mt-1 text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded">📄 Report sent</span>}
                     </td>
                     <td className="px-4 py-3 text-[12px]">
                       <span className="text-slate-600">{s.ageDays}d old</span>

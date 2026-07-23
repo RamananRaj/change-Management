@@ -440,6 +440,21 @@ h2{font-size:clamp(1.95rem,4vw,2.85rem);margin-bottom:18px}
 .btn-outline:hover{border-color:var(--brand);background:#F6F9FC}
 .price-note{text-align:center;margin-top:32px;font-size:14px;color:var(--slate-d)}
 
+/* ══ REPORT GATE ══════════════════════════════════════════════════════ */
+.report-wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:center}
+.report-copy h2{color:#fff;margin-bottom:18px}
+.report-copy p{color:rgba(216,231,239,.78);font-size:16.5px;margin-bottom:22px;line-height:1.68}
+.report-pts{list-style:none;padding:0;margin:0 0 26px;display:grid;gap:11px}
+.report-pts li{display:flex;gap:11px;align-items:flex-start;font-size:15px;color:rgba(216,231,239,.88)}
+.report-pts .rk{color:var(--ok);font-weight:800;flex:none}
+.report-thumbs{position:relative;display:flex;gap:12px;padding:4px}
+.report-thumbs img{width:33%;border-radius:8px;border:1px solid rgba(255,255,255,.14);box-shadow:0 14px 34px -14px rgba(0,0,0,.6)}
+.report-thumbs img:nth-child(2){opacity:.6}
+.report-thumbs img:nth-child(3){opacity:.32}
+.report-thumbs .lock{position:absolute;right:8px;bottom:10px;background:rgba(8,13,28,.82);color:var(--ice);
+  font-size:11.5px;font-weight:600;padding:6px 12px;border-radius:100px;backdrop-filter:blur(6px)}
+@media (max-width:900px){ .report-wrap{grid-template-columns:1fr;gap:36px} }
+
 /* ══ LEAD FORM ════════════════════════════════════════════════════════ */
 .lead-wrap{display:grid;grid-template-columns:.92fr 1.08fr;gap:60px;align-items:start}
 .lead-copy h2{color:#fff;margin-bottom:20px}
@@ -913,6 +928,78 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
       <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/><path d="M12 14.5v2"/></svg></span>
         <h4>Isolation at the database</h4>
         <p>Tenant separation enforced by row-level security in the database, not by the app remembering to filter.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════ REPORT GATE ══════════════════════════════
+     A visitor trades an email for the full Meridian report. On submit it writes a
+     lead (flagged report_sent) to the SAME leads table as the demo form, so it lands
+     in Admin → Leads as a line item — then unlocks the download. -->
+<section class="dark" id="report" style="position:relative;overflow:hidden">
+  <div class="mesh" style="opacity:.5"><i style="width:480px;height:480px;background:var(--deep);top:-140px;left:-120px"></i><i style="width:360px;height:360px;background:var(--gold);bottom:-180px;right:-100px;opacity:.2"></i></div>
+  <div class="wrap" style="position:relative;z-index:2">
+    <div class="report-wrap">
+
+      <div class="report-copy rv">
+        <span class="eyebrow">See a full report</span>
+        <h2>The whole thing,<br>as a Word document.</h2>
+        <p>This is a real ChangeFlow report on the Meridian programme — the same output the
+          product generates on a schedule. Timeline, readiness heat map, comms status, trend,
+          and a written insight that names its own gaps.</p>
+        <ul class="report-pts">
+          <li><span class="rk">✓</span>Five pages, native Word — nothing pasted in</li>
+          <li><span class="rk">✓</span>Every figure real; where a number is missing, it says so</li>
+          <li><span class="rk">✓</span>The timeline and trend exactly as they appear in the app</li>
+        </ul>
+        <!-- teaser: three real pages, the last two faded behind a lock -->
+        <div class="report-thumbs">
+          <img src="/marketing/img/report-cover.webp" alt="Report cover" loading="lazy">
+          <img src="/marketing/img/report-timeline.webp" alt="Report timeline page" loading="lazy">
+          <img src="/marketing/img/report-trend.webp" alt="Report trend page" loading="lazy">
+          <span class="lock">🔒 Full report unlocks below</span>
+        </div>
+      </div>
+
+      <div class="rv">
+        <form class="lead" id="reportForm" novalidate>
+          <div id="reportBody">
+            <h3>Get the sample report</h3>
+            <p class="fsub">Three details, and it's yours — instantly, no wait.</p>
+            <input class="hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+            <div class="fg" style="margin-bottom:14px">
+              <label for="rname">Full name <span class="req">*</span></label>
+              <input id="rname" type="text" placeholder="Jane Whitfield" autocomplete="name">
+              <span class="msg" data-for="rname">Please tell us your name</span>
+            </div>
+            <div class="fg" style="margin-bottom:14px">
+              <label for="remail">Work email <span class="req">*</span></label>
+              <input id="remail" type="email" placeholder="jane@company.com.au" autocomplete="email">
+              <span class="msg" data-for="remail">Please enter a valid work email</span>
+            </div>
+            <div class="fg" style="margin-bottom:18px">
+              <label for="rorg">Organisation <span class="req">*</span></label>
+              <input id="rorg" type="text" placeholder="Company or consultancy" autocomplete="organization">
+              <span class="msg" data-for="rorg">Which organisation are you with?</span>
+            </div>
+            <button type="submit" class="btn btn-gold btn-lg" id="reportBtn" style="width:100%;justify-content:center">Unlock the report →</button>
+            <p class="privacy">Your details go to the ChangeFlow team only. Never sold, never shared.</p>
+          </div>
+
+          <div class="done" id="reportDone">
+            <div class="check"><svg width="27" height="27" viewBox="0 0 24 24" fill="none"><path d="M20 6 9 17l-5-5" stroke="#10B981" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <h3>It's yours — thanks.</h3>
+            <p>Download below. We've also noted your interest and someone from the team may reach out.</p>
+            <div style="display:grid;gap:10px">
+              <a id="dlPdf" href="/marketing/ChangeFlow-Sample-Report-Meridian.pdf" download class="btn btn-gold btn-lg" style="justify-content:center">📄 Download the report (PDF)</a>
+              <a id="dlDocx" href="/marketing/ChangeFlow-Sample-Report-Meridian.docx" download class="btn btn-outline" style="justify-content:center;background:transparent;color:#fff;border-color:rgba(255,255,255,.28)">Prefer Word? Download .docx</a>
+            </div>
+            <p class="privacy" style="margin-top:16px">Didn't start? <a href="/marketing/ChangeFlow-Sample-Report-Meridian.pdf" download style="color:var(--gold)">Click here</a>.</p>
+          </div>
+          <p class="live-fallback" id="reportErr" hidden>Something went wrong — email <a href="mailto:hello@changeflow.io" style="color:var(--teal)">hello@changeflow.io</a> and we'll send it over.</p>
+        </form>
+      </div>
+
     </div>
   </div>
 </section>
@@ -1561,6 +1648,69 @@ document.getElementById('againBtn').addEventListener('click', () => {
   document.querySelectorAll('.msg.show').forEach(e => e.classList.remove('show'));
   body.scrollIntoView({ behavior: 'smooth', block: 'center' });
 });
+
+/* ══════════════════════════════════════════════════════════════════════
+   The report gate.
+   Same leads table, same INSERT, as the demo form — so a report request lands
+   in Admin → Leads as its own line item, flagged report_sent=true so an admin
+   can see they came for the report. On success the download unlocks; the file
+   is public regardless (a static asset), so the fallback link always works.
+   ══════════════════════════════════════════════════════════════════════ */
+(function reportGate(){
+  const form = document.getElementById('reportForm')
+  if (!form) return
+  const rbody = document.getElementById('reportBody')
+  const rdone = document.getElementById('reportDone')
+  const rbtn  = document.getElementById('reportBtn')
+  const err   = document.getElementById('reportErr')
+  const showErr = (id, on) => {
+    document.getElementById(id)?.classList.toggle('err', on)
+    document.querySelector(`.msg[data-for="${id}"]`)?.classList.toggle('show', on)
+  }
+  ;['rname','remail','rorg'].forEach(id => document.getElementById(id)
+    ?.addEventListener('input', () => showErr(id, false)))
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault()
+    // Honeypot: unlock quietly without storing, same as the demo form.
+    if (form.website.value) { rbody.style.display='none'; rdone.classList.add('show'); return }
+
+    const name  = document.getElementById('rname').value.trim()
+    const email = document.getElementById('remail').value.trim()
+    const org   = document.getElementById('rorg').value.trim()
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)
+    let bad = false
+    if (!name)    { showErr('rname', true);  bad = true }
+    if (!emailOk) { showErr('remail', true); bad = true }
+    if (!org)     { showErr('rorg', true);   bad = true }
+    if (bad) { document.querySelector('#reportForm .err')?.scrollIntoView({behavior:'smooth',block:'center'}); return }
+
+    rbtn.textContent = 'Unlocking…'; rbtn.style.opacity = '.72'; rbtn.disabled = true
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+        method: 'POST',
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                   'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          full_name: name, email, organisation: org,
+          source: 'website', source_detail: 'Sample report',
+          report_sent: true, report_sent_at: new Date().toISOString(),
+          message: 'Downloaded the Meridian sample report.',
+        }),
+      })
+      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`)
+      rbody.style.display = 'none'
+      rdone.classList.add('show')
+      rdone.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } catch (e) {
+      // The report is a public file, so never trap them — show the error path,
+      // which still links straight to the download.
+      console.error('Report lead failed:', e)
+      rbtn.textContent = 'Unlock the report →'; rbtn.style.opacity = '1'; rbtn.disabled = false
+      err.hidden = false
+    }
+  })
+})();
 </script>
 </body>
 </html>
