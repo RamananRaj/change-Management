@@ -90,7 +90,7 @@ function answerGoLive(d) {
   const head = (d.audiences ?? []).reduce((n, a) => n + (a.headcount ?? 0), 0)
   const noCount = (d.audiences ?? []).filter(a => a.headcount == null)
   return {
-    lead: `Not a straight yes — and part of the reason is that I cannot see all of it.${gl ? ` Go-Live is set for **${fmtDate(gl.milestone_date ?? gl.ends_on ?? gl.starts_on)}**.` : ''}`,
+    lead: `Close. Readiness is tracking well across the audiences assessed${gl ? `, with Go-Live set for **${fmtDate(gl.milestone_date ?? gl.ends_on ?? gl.starts_on)}**` : ''} — and there's one thing worth closing before you commit:`,
     stats: [
       { v: String(d.audiences.length), k: 'Audiences identified' },
       { v: head ? head.toLocaleString() : '—', k: 'People impacted' },

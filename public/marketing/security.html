@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Security — ChangeFlow</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/marketing/legal.css">
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <a href="/marketing/" class="logo"><span class="mark"></span>CHANGEFLOW</a>
+    <a href="/marketing/" class="back">← Back to site</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <span class="tag">Trust</span>
+    <h1>Security</h1>
+    <p class="updated">Last updated: [DATE] · Draft for review</p>
+
+    <div class="draft">
+      <b>Draft — state only what is true.</b> A security page is a promise. Every claim below
+      must be verified against how ChangeFlow is actually configured before it is published —
+      an overstated control here is worse than a missing one. Remove anything you cannot stand
+      behind. Do not claim certifications (SOC 2, ISO 27001) you do not hold.
+    </div>
+
+    <h2>How we protect your data</h2>
+
+    <h3>Tenant isolation</h3>
+    <p>
+      Each client’s data is isolated at the database level using row-level security, not by
+      application logic alone. A user can only ever read or write data belonging to their own
+      client. This is enforced by the database itself.
+    </p>
+
+    <h3>Encryption</h3>
+    <p>
+      Data is encrypted in transit (TLS) and [CONFIRM: at rest]. [SPECIFY key management if you
+      make a claim about it.]
+    </p>
+
+    <h3>Access control</h3>
+    <p>
+      Roles (Master Admin, Client Admin, member) scope what each user can see and do.
+      Administrative actions that use elevated privileges run server-side; the elevated key is
+      never exposed to the browser.
+    </p>
+
+    <h3>Monitoring</h3>
+    <p>
+      We run automated health checks [SPECIFY frequency] and an end-to-end test suite. [Describe
+      any logging, alerting or intrusion monitoring only if it genuinely exists.]
+    </p>
+
+    <h2>What we have not done yet</h2>
+    <p>
+      We would rather tell you than have you find out. As of [DATE], ChangeFlow does <b>not</b>
+      hold SOC 2 or ISO 27001 certification, and does not yet offer single sign-on (SSO/SAML).
+      These are on the roadmap. [Update this section honestly as the posture matures — the
+      candour is the point, and it is consistent with how the product itself reports gaps.]
+    </p>
+
+    <h2>Reporting a vulnerability</h2>
+    <p>
+      If you believe you have found a security issue, please email
+      <a href="mailto:[SECURITY EMAIL]">[SECURITY EMAIL]</a>. We will acknowledge your report
+      and work with you to resolve it. Please do not publicly disclose an issue before we have
+      had a reasonable chance to fix it.
+    </p>
+
+    <h2>Sub-processors</h2>
+    <p>
+      A current list of the third parties that process data on our behalf is available in our
+      <a href="/marketing/privacy.html">Privacy Policy</a> and
+      <a href="/marketing/data-residency.html">Data residency</a> page.
+    </p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>© 2026 ChangeFlow. Draft — under review.</span>
+    <span>
+      <a href="/marketing/privacy.html">Privacy</a>
+      <a href="/marketing/terms.html">Terms</a>
+      <a href="/marketing/security.html">Security</a>
+      <a href="/marketing/data-residency.html">Data residency</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

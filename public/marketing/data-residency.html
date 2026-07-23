@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Data residency — ChangeFlow</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/marketing/legal.css">
+</head>
+<body>
+<header>
+  <div class="wrap nav">
+    <a href="/marketing/" class="logo"><span class="mark"></span>CHANGEFLOW</a>
+    <a href="/marketing/" class="back">← Back to site</a>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <span class="tag">Trust</span>
+    <h1>Data residency</h1>
+    <p class="updated">Last updated: [DATE] · Draft for review</p>
+
+    <div class="draft">
+      <b>Draft — confirm the actual regions.</b> This page must state where data really lives.
+      Check the hosting region of your Supabase project and each sub-processor before publishing;
+      Australian buyers, especially in government and utilities, will ask, and a wrong answer
+      here is a broken commitment. Complete every [BRACKET].
+    </div>
+
+    <h2>Where your data is stored</h2>
+    <p>
+      ChangeFlow’s primary database and file storage are hosted in [REGION — e.g. “Sydney,
+      Australia (ap-southeast-2)”] with [Supabase]. [If data is not in Australia, say so plainly
+      and explain why.]
+    </p>
+
+    <h2>Sub-processors and their locations</h2>
+    <p>The third parties that process data on our behalf, and where they store it:</p>
+    <table>
+      <tr><th>Provider</th><th>Purpose</th><th>Region</th></tr>
+      <tr><td>[Supabase]</td><td>Database, authentication, file storage</td><td>[REGION]</td></tr>
+      <tr><td>[Vercel]</td><td>Website and application hosting</td><td>[REGION]</td></tr>
+      <tr><td>[Email provider]</td><td>Transactional email</td><td>[REGION]</td></tr>
+      <tr><td>[AI provider, if used]</td><td>[Optional model-backed answers — describe when and what is sent]</td><td>[REGION]</td></tr>
+    </table>
+    <p>
+      [If any provider processes data outside Australia, state which, and the safeguards in
+      place. Note whether the built-in AI runs on-device or off, and what leaves the user’s
+      environment when it does.]
+    </p>
+
+    <h2>Cross-border transfers</h2>
+    <p>
+      Where a sub-processor is located outside Australia, we take reasonable steps to ensure the
+      recipient handles personal information consistently with the Australian Privacy Principles,
+      as described in our <a href="/marketing/privacy.html">Privacy Policy</a>.
+    </p>
+
+    <h2>Data export and deletion</h2>
+    <p>
+      You can request an export of your data at any time. On account closure, [SPECIFY the export
+      window and the timeframe within which data is deleted from live systems and backups].
+    </p>
+
+    <h2>Questions</h2>
+    <p>
+      For data-residency questions, including for a procurement or security review, email
+      <a href="mailto:[CONTACT EMAIL]">[CONTACT EMAIL]</a>.
+    </p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>© 2026 ChangeFlow. Draft — under review.</span>
+    <span>
+      <a href="/marketing/privacy.html">Privacy</a>
+      <a href="/marketing/terms.html">Terms</a>
+      <a href="/marketing/security.html">Security</a>
+      <a href="/marketing/data-residency.html">Data residency</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>
