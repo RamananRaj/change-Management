@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { slmOptedIn, setSlmOptedIn, webgpuSupported } from '../lib/ai/slm'
 import AdminLeads from './AdminLeads'
+import AdminIntegrations from './AdminIntegrations'
 
 // Master Admin oversight hub. Its own sub-navigation keeps future views (users, invites,
 // activity, health…) contained here rather than adding tabs to the top Admin bar.
@@ -13,7 +14,7 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
   // is only about not showing a tab that would return nothing.
   const subtabs = scoped
     ? ['User Management', 'Pending Invites', 'AI Usage']
-    : ['Leads', 'User Management', 'Pending Invites', 'System Health', 'E2E Tests', 'AI Usage', 'Reports', 'Notifications']
+    : ['Leads', 'User Management', 'Pending Invites', 'External Integrations', 'System Health', 'E2E Tests', 'AI Usage', 'Reports', 'Notifications']
   const [tab, setTab]         = useState('User Management')
   const [loading, setLoading] = useState(true)
   const [clients, setClients] = useState([])
@@ -391,6 +392,9 @@ export default function SystemAdmin({ allRoles = [], clientId = null }) {
       {/* ── USER MANAGEMENT ── */}
       {/* Leads & Opportunities — Master Admin only (never rendered in scoped mode). */}
       {tab === 'Leads' && !scoped && <AdminLeads allRoles={allRoles} />}
+
+      {/* External Integrations — Master Admin only. Jira connection + defect pull. */}
+      {tab === 'External Integrations' && !scoped && <AdminIntegrations />}
 
       {tab === 'User Management' && (
         <div>
