@@ -110,6 +110,8 @@ h1 .grad{background:linear-gradient(105deg,var(--gold) 8%,#F5C87E 52%,var(--ice)
 .hero-sub{font-size:clamp(1.06rem,2.05vw,1.28rem);color:rgba(216,231,239,.86);max-width:760px;margin:0 auto 38px;line-height:1.62}
 .hero-btns{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-bottom:22px}
 .hero-note{font-size:13.5px;color:rgba(216,231,239,.5)}
+.hero-origin{font-size:clamp(.95rem,1.7vw,1.08rem);font-weight:500;font-style:italic;color:var(--gold);
+  max-width:640px;margin:0 auto 34px;line-height:1.5}
 
 /* hero product shot */
 .shot-hero{position:relative;z-index:2;max-width:1080px;margin:66px auto 0;padding:0 28px}
@@ -228,6 +230,12 @@ h1 .grad{background:linear-gradient(105deg,var(--gold) 8%,#F5C87E 52%,var(--ice)
 .ans-src{margin-top:13px;padding-top:11px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:rgba(216,231,239,.42)}
 .next-lbl{font-size:11px;color:rgba(216,231,239,.45);margin:16px 0 8px}
 .live-fallback{font-size:13px;color:rgba(216,231,239,.5);text-align:center;padding:14px 0}
+
+/* ══ CATEGORY BAND ════════════════════════════════════════════════════ */
+.category{background:var(--ink);padding:56px 0 8px;text-align:center}
+.cat-line{font-size:clamp(1.3rem,3vw,2rem);font-weight:800;letter-spacing:-.025em;line-height:1.35;margin:0}
+.cat-not{color:rgba(216,231,239,.34);margin-right:.4em}
+.cat-yes{color:var(--gold);display:inline-block}
 
 /* ══ ONE-LINE CLAIM BAND ══════════════════════════════════════════════ */
 .claim{background:var(--ink-2);padding:54px 0;text-align:center}
@@ -579,13 +587,18 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
   <div class="grid-ov"></div>
 
   <div class="wrap hero-in">
-    <div class="pill"><span class="pip"></span>AI-native change management</div>
+    <!-- The pill now states the CATEGORY, not just the buzzword. This is change
+         management DELIVERY software — not a methodology, not a project tool. -->
+    <div class="pill"><span class="pip"></span>Change management delivery software</div>
     <h1>Change management that <span class="grad">admits what it doesn't know.</span></h1>
     <p class="hero-sub">
       ChangeFlow runs enterprise change programmes end to end — impact, readiness, training and communications
       in one place. CORA, the built-in AI, answers from your programme data and <strong style="color:#fff;font-weight:600">names the gaps
       instead of averaging them away</strong>.
     </p>
+    <!-- Credibility line: built from real practice, not a product brief. Kept
+         unnamed for now — add the founder's name once the brand is ready to carry it. -->
+    <p class="hero-origin">Made by a change manager, for change managers — from the pain, not a product brief.</p>
     <div class="hero-btns">
       <a href="#demo" class="btn btn-gold btn-lg">Book a demo →</a>
       <!-- Straight into the live demo. The strongest thing this page can do is stop
@@ -629,6 +642,19 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
     </div>
   </div>
 </header>
+
+<!-- ══════════════════════ CATEGORY — what this is ═══════════════════ -->
+<!-- Defines the category by naming what it is NOT. Prosci sells the method;
+     project tools track tasks; ChangeFlow is where the change gets delivered. -->
+<div class="category">
+  <div class="wrap rv">
+    <p class="cat-line">
+      <span class="cat-not">Not a methodology.</span>
+      <span class="cat-not">Not a project tool.</span>
+      <span class="cat-yes">The software that delivers the change.</span>
+    </p>
+  </div>
+</div>
 
 <!-- ══════════════════════ THE PROBLEM — one line ═══════════════════ -->
 <!-- This used to be a full section of three cards. The same three points are
