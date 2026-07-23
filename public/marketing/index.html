@@ -575,7 +575,9 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
       <a href="#pricing">Pricing</a>
     </div>
     <div class="nav-cta">
-      <a href="#" class="btn btn-ghost">Sign in</a>
+      <!-- Root-absolute path into the React app's login route. The marketing page is
+           static under /public; /auth/signin is served by the SPA at the site root. -->
+      <a href="/auth/signin" class="btn btn-ghost">Sign in</a>
       <a href="#demo" class="btn btn-gold">Book a demo</a>
     </div>
   </div>
