@@ -105,7 +105,8 @@ export default function AdminIntegrations() {
     new Set(rows.map(r => r.client_id)), [rows])
 
   return (
-    <div>
+    // pb-32 keeps the defects table clear of the floating CORA widget at the page foot.
+    <div className="pb-32">
       <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 mb-5">
         <p className="text-[13px] text-slate-600 leading-relaxed">
           <strong className="text-[#1F4E79]">Bring change-relevant issues in from Jira.</strong>{' '}
@@ -243,13 +244,16 @@ export default function AdminIntegrations() {
                         <th className="text-left font-semibold px-4 py-2.5">Type</th>
                         <th className="text-left font-semibold px-4 py-2.5">Priority</th>
                         <th className="text-left font-semibold px-4 py-2.5">Status</th>
+                        <th className="text-right font-semibold px-4 py-2.5">Link</th>
                       </tr>
                     </thead>
                     <tbody>
                       {defects.issues.map(it => (
-                        <tr key={it.key} className="border-t border-slate-100">
-                          <td className="px-4 py-2.5 font-mono text-[12px] text-[#1F4E79]">
-                            {it.url ? <a href={it.url} target="_blank" rel="noreferrer" className="hover:underline">{it.key}</a> : it.key}
+                        <tr key={it.key} className="border-t border-slate-100 hover:bg-slate-50/60">
+                          <td className="px-4 py-2.5">
+                            {it.url
+                              ? <a href={it.url} target="_blank" rel="noreferrer" className="inline-block font-mono text-[12px] font-semibold text-[#0052CC] bg-[#0052CC]/8 px-2 py-0.5 rounded hover:bg-[#0052CC]/15">{it.key}</a>
+                              : <span className="font-mono text-[12px] text-slate-500">{it.key}</span>}
                           </td>
                           <td className="px-4 py-2.5 text-[13px] text-slate-700 max-w-md truncate">{it.summary}</td>
                           <td className="px-4 py-2.5 text-[12px] text-slate-500">{it.type ?? '—'}</td>
@@ -259,6 +263,17 @@ export default function AdminIntegrations() {
                               <span className="w-2 h-2 rounded-full" style={{ background: CAT[it.statusCategory] ?? '#94A3B8' }} />
                               {it.status ?? '—'}
                             </span>
+                          </td>
+                          {/* Dedicated Link column — opens the issue in Jira, new tab. */}
+                          <td className="px-4 py-2.5 text-right">
+                            {it.url ? (
+                              <a href={it.url} target="_blank" rel="noreferrer" title="Open in Jira (new tab)"
+                                 className="inline-grid place-items-center w-7 h-7 rounded-lg text-[#0052CC] hover:bg-[#0052CC]/10 transition-colors">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                                  <path d="M7 17 17 7M8 7h9v9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              </a>
+                            ) : <span className="text-slate-300">—</span>}
                           </td>
                         </tr>
                       ))}
