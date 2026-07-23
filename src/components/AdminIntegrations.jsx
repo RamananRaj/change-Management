@@ -17,8 +17,6 @@ const DEFAULT_JQL = 'labels = Change_Management ORDER BY updated DESC'
 
 const EMPTY = { base_url: '', auth_email: '', api_token: '', jql: DEFAULT_JQL, enabled: false }
 
-const CAT = { 'new':'#64748B', 'indeterminate':'#E8913A', 'done':'#10B981' } // statusCategory → colour
-
 export default function AdminIntegrations() {
   const [clients, setClients]   = useState([])
   const [rows, setRows]         = useState([])       // from the safe view
@@ -28,8 +26,6 @@ export default function AdminIntegrations() {
   const [note, setNote]         = useState(null)     // { type, text }
   const [busy, setBusy]         = useState(false)
   const [testing, setTesting]   = useState(false)
-  const [defects, setDefects]   = useState(null)     // fetch result
-  const [loadingDefects, setLoadingDefects] = useState(false)
 
   useEffect(() => { load() }, [])
 
@@ -44,7 +40,7 @@ export default function AdminIntegrations() {
 
   // When a client is picked, prefill from its safe-view row (never the token).
   function pickClient(id) {
-    setClientId(id); setDefects(null); setNote(null)
+    setClientId(id); setNote(null)
     const row = rows.find(r => r.client_id === id) ?? null
     setExisting(row)
     setForm(row
@@ -90,15 +86,6 @@ export default function AdminIntegrations() {
     await load()
     const { data: row } = await supabase.from('client_integrations_safe').select('*').eq('client_id', clientId).eq('provider','jira').single()
     setExisting(row ?? null)
-  }
-
-  async function fetchDefects() {
-    if (!clientId) return
-    setLoadingDefects(true); setDefects(null); setNote(null)
-    const { data, error } = await supabase.functions.invoke('jira', { body: { action:'fetch', client_id: clientId } })
-    setLoadingDefects(false)
-    if (error || data?.error) { setNote({ type:'err', text: data?.error ?? 'Fetch failed.' }); return }
-    setDefects(data)
   }
 
   const configuredClients = useMemo(() =>
@@ -215,89 +202,41 @@ export default function AdminIntegrations() {
         </div>
       )}
 
-      {/* ── Defect preview ── */}
+      {/* Once connected, the issues themselves live under the client — this is the
+          setup place, not the working view. Point there rather than duplicate it. */}
       {clientId && existing?.enabled && (
-        <div className="mt-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-[#1F4E79]">Change-relevant issues</h3>
-            <button onClick={fetchDefects} disabled={loadingDefects}
-              className="bg-[#E8913A] text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-[#d07e2e] disabled:opacity-60">
-              {loadingDefects ? 'Pulling from Jira…' : 'Preview from Jira'}
-            </button>
-          </div>
-
-          {defects && (
-            <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <Stat label="Matched" v={defects.total} />
-                <Stat label="Still open" v={defects.open} c="text-amber-600" />
-                <Stat label="Statuses" v={Object.keys(defects.byStatus ?? {}).length} />
-                <Stat label="Priorities" v={Object.keys(defects.byPriority ?? {}).length} />
-              </div>
-              {defects.issues?.length ? (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="text-left font-semibold px-4 py-2.5">Key</th>
-                        <th className="text-left font-semibold px-4 py-2.5">Summary</th>
-                        <th className="text-left font-semibold px-4 py-2.5">Type</th>
-                        <th className="text-left font-semibold px-4 py-2.5">Priority</th>
-                        <th className="text-left font-semibold px-4 py-2.5">Status</th>
-                        <th className="text-right font-semibold px-4 py-2.5">Link</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {defects.issues.map(it => (
-                        <tr key={it.key} className="border-t border-slate-100 hover:bg-slate-50/60">
-                          <td className="px-4 py-2.5">
-                            {it.url
-                              ? <a href={it.url} target="_blank" rel="noreferrer" className="inline-block font-mono text-[12px] font-semibold text-[#0052CC] bg-[#0052CC]/8 px-2 py-0.5 rounded hover:bg-[#0052CC]/15">{it.key}</a>
-                              : <span className="font-mono text-[12px] text-slate-500">{it.key}</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-[13px] text-slate-700 max-w-md truncate">{it.summary}</td>
-                          <td className="px-4 py-2.5 text-[12px] text-slate-500">{it.type ?? '—'}</td>
-                          <td className="px-4 py-2.5 text-[12px] text-slate-500">{it.priority ?? '—'}</td>
-                          <td className="px-4 py-2.5">
-                            <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-600">
-                              <span className="w-2 h-2 rounded-full" style={{ background: CAT[it.statusCategory] ?? '#94A3B8' }} />
-                              {it.status ?? '—'}
-                            </span>
-                          </td>
-                          {/* Dedicated Link column — opens the issue in Jira, new tab. */}
-                          <td className="px-4 py-2.5 text-right">
-                            {it.url ? (
-                              <a href={it.url} target="_blank" rel="noreferrer" title="Open in Jira (new tab)"
-                                 className="inline-grid place-items-center w-7 h-7 rounded-lg text-[#0052CC] hover:bg-[#0052CC]/10 transition-colors">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-                                  <path d="M7 17 17 7M8 7h9v9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              </a>
-                            ) : <span className="text-slate-300">—</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-10 bg-slate-50 rounded-xl border border-slate-200 text-slate-400 text-sm">
-                  The query returned no issues. Check the JQL matches how this client tags change work.
-                </div>
-              )}
-            </>
-          )}
+        <div className="mt-5 flex items-start gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3.5">
+          <span className="text-lg leading-none">✓</span>
+          <p className="text-[13px] text-green-800 leading-relaxed">
+            <strong>Connected.</strong> The change-relevant issues now appear under this client on the
+            <strong> Risks / Issues</strong> tab — open the client from <em>Admin → Clients</em> to work them.
+            Setup lives here; the issues live with the programme.
+          </p>
         </div>
       )}
-    </div>
-  )
-}
 
-function Stat({ label, v, c = 'text-[#1F4E79]' }) {
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3">
-      <div className={`text-2xl font-bold ${c}`}>{v}</div>
-      <div className="text-[11px] text-slate-500 mt-0.5">{label}</div>
+      {/* Coming next — this tab is the integration hub, not Jira-only. */}
+      {!clientId && (
+        <div className="mt-8">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-3">Connectors</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[
+              ['Jira', 'Live', 'border-[#0052CC]/30 bg-[#0052CC]/5', 'text-[#0052CC]'],
+              ['Confluence', 'Roadmap', 'border-slate-200 bg-slate-50', 'text-slate-400'],
+              ['Microsoft Teams', 'Roadmap', 'border-slate-200 bg-slate-50', 'text-slate-400'],
+              ['Slack', 'Roadmap', 'border-slate-200 bg-slate-50', 'text-slate-400'],
+            ].map(([name, badge, box, tone]) => (
+              <div key={name} className={`rounded-xl border px-4 py-3.5 ${box}`}>
+                <div className="text-[14px] font-semibold text-slate-700">{name}</div>
+                <div className={`text-[11px] font-bold mt-1 ${tone}`}>{badge}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400 mt-3">
+            One place to wire the client's tools in. Teams and Slack notifications, and Confluence pull, reuse this same per-client, credential-safe pattern.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

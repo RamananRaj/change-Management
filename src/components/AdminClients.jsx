@@ -6,6 +6,7 @@ import ProjectAudiences from './ProjectAudiences'
 import ProjectTraining from './ProjectTraining'
 import ProjectCoverage from './ProjectCoverage'
 import ProjectComms from './ProjectComms'
+import ClientRisks from './ClientRisks'
 
 const PHASES = [1, 2, 3, 4, 5]
 const PHASE_NAMES = { 1: 'Diagnose', 2: 'Design', 3: 'Engage', 4: 'Embed', 5: 'Evaluate' }
@@ -70,6 +71,7 @@ const TAB_GROUPS = [
   { key: 'library',  label: '📚 Library',   leaves: [['content',   'Content'], ['templates', 'Templates']], clientOnly: true },
   { key: 'people',   label: '👥 People',    leaves: [['audiences', 'Audiences'], ['training', 'Training'], ['coverage', 'Coverage']] },
   { key: 'delivery', label: '📅 Delivery',  leaves: [['timeline',  'Timeline'],  ['comms', 'Comms'], ['progress',  'Progress']] },
+  { key: 'risks',    label: '⚠️ Risks / Issues', leaves: [['risks', 'Risks / Issues']] },
   { key: 'artifacts',label: '✦ Artifacts',  leaves: [['artifacts', 'Artifacts']] },
 ]
 
@@ -101,6 +103,8 @@ const TAB_INTRO = {
     'Swimlanes, phases, milestones and activities on one canvas. Drag to move or resize, click any bar to edit its dates, colour and percent complete.'],
   progress:  ['How {client} is actually tracking.',
     'Snapshots taken daily, so this answers "are we moving?" and not just "where are we?". The trend and any forecast come from that history.'],
+  risks:     ['The delivery issues that bear on {client}\'s change, live from Jira.',
+    'These come straight from the client\'s own Jira via the query set in External Integrations — not a copy. A heavily-defected area is a change risk, so change reads them where delivery records them. Connect the Jira once under System Admin; the issues live here.'],
   artifacts: ['Everything captured for {client}.',
     'Working artifacts the AI generated or that were uploaded. This store is shrinking by design — the heat map already moved to Audiences, and gates and comms follow as they get proper homes.'],
 }
@@ -1808,6 +1812,10 @@ export default function AdminClients({ allRoles = [], lockedClientId = null, ini
             )}
           </div>
           )
+        )}
+
+        {clientTab === 'risks' && (
+          <ClientRisks clientId={selectedClient.id} clientName={selectedClient.name} />
         )}
 
         {clientTab === 'comms' && (
