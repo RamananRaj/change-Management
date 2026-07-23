@@ -407,6 +407,15 @@ h2{font-size:clamp(1.95rem,4vw,2.85rem);margin-bottom:18px}
 .cell .ic svg{width:23px;height:23px;stroke:var(--teal);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;fill:none}
 .cell h4{font-size:1.02rem;margin-bottom:7px}
 .cell p{font-size:14.4px;color:var(--slate);line-height:1.6}
+/* Full-width feature — spans the last row so it reads as a highlight, not an orphan.
+   Icon left, copy right; the gradient tint sets it apart from the six above. */
+.cell.wide{grid-column:1 / -1;display:flex;align-items:flex-start;gap:20px;
+  background:linear-gradient(105deg,#F0F6FB,#FBFDFE)}
+.cell.wide .ic{margin-bottom:0;flex:none}
+.cell.wide .ic svg{width:30px;height:30px;stroke:var(--gold)}
+.cell.wide h4{font-size:1.14rem}
+.cell.wide p{font-size:15px;max-width:760px}
+@media (max-width:620px){ .cell.wide{flex-direction:column;gap:12px} }
 
 /* ══ PHASES ═══════════════════════════════════════════════════════════ */
 .phases{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;position:relative}
@@ -928,6 +937,9 @@ footer{background:var(--ink-2);color:rgba(216,231,239,.62);padding:62px 0 34px;f
       <div class="cell"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="10.5" width="16" height="10" rx="2.2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/><path d="M12 14.5v2"/></svg></span>
         <h4>Isolation at the database</h4>
         <p>Tenant separation enforced by row-level security in the database, not by the app remembering to filter.</p></div>
+      <div class="cell wide"><span class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2 3 7l9 5 9-5-9-5z"/><path d="M3 12l9 5 9-5M3 17l9 5 9-5"/></svg></span>
+        <div><h4>Connects to the tools your delivery already runs on</h4>
+        <p>Pull the delivery defects that bear on the change — from your own Jira, by whatever query your team already uses — so a heavily-defected area reads as a risk, not a surprise. Microsoft Teams and Slack next.</p></div></div>
     </div>
   </div>
 </section>
